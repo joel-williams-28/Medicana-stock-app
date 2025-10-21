@@ -1,7 +1,0 @@
-{
-  "JWilliams": { "password": "medicana01!", "email": "joel.williams@medicana.co.uk", "firstName": "Joel", "fullName": "Joel Williams", "role": "Stock Manager" },
-  "NGiudice": { "password": "medicana01!", "email": "Nicolas.Giudice@Medicana.co.uk", "firstName": "Nicolas", "fullName": "Nicolas Del Giudice", "role": "Stock Manager" },
-  "SBeale":   { "password": "medicana01!", "email": "Sonia.Beale@Medicana.co.uk", "firstName": "Sonia", "fullName": "Sonia Beale", "role": "Stock Manager" },
-  "ABadiani": { "password": "medicana01!", "email": "Aasit.Badiani@Medicana.co.uk", "firstName": "Ash",  "fullName": "Aasit Badiani", "role": "Pharmacist" }
-}
-
