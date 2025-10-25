@@ -47,6 +47,17 @@ window.api = (function () {
     return out;
   }
 
+  async function transferStock(payload) {
+    const res = await fetch('/.netlify/functions/stock-transfer', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const out = await res.json();
+    if (!res.ok || !out.success) throw new Error(out.message || 'Transfer failed');
+    return out;
+  }
+
   async function loginUser(username, password) {
     const res = await fetch(LOGIN_ENDPOINT, {
       method: 'POST',
@@ -83,6 +94,7 @@ window.api = (function () {
     adjustStock,
     addMedication,
     addBatch,
+    transferStock,
     loginUser,
     startPolling,
     stopPolling

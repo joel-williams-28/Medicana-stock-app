@@ -456,95 +456,8 @@
               error: ''
             }));
           }
-          const savedMeds = storage.load('medicana_medications');
-          if (Array.isArray(savedMeds) && savedMeds.length > 0) {
-            // Merge saved medications with sample medications to ensure barcodes are available
-            const sampleMedications = [
-              { 
-                id: 1, name: 'Paracetamol 500mg', minLevel: 200, unit: 'tablets', type: 'tablet', location: 'Cupboard 1', barcode: '123456789012', standardItemsPerBox: 100,
-                batches: [
-                  { id: 1, quantity: 300, expiryDate: '2026-03', itemsPerBox: 100, brand: 'Actavis', batchNumber: 'PAR2603A' },
-                  { id: 2, quantity: 200, expiryDate: '2026-05', itemsPerBox: 100, brand: 'Accord', batchNumber: 'ACC2605P' }
-                ]
-              },
-              { 
-                id: 2, name: 'Ibuprofen 400mg', minLevel: 150, unit: 'tablets', type: 'tablet', location: 'Cupboard 2', barcode: '234567890123', standardItemsPerBox: 40,
-                batches: [ { id: 1, quantity: 200, expiryDate: '2026-01', itemsPerBox: 40, brand: 'Wockhardt', batchNumber: 'IBU2601W' } ]
-              },
-              { 
-                id: 3, name: 'Amoxicillin 500mg', minLevel: 100, unit: 'capsules', type: 'capsule', location: 'Cupboard 3', barcode: '345678901234', standardItemsPerBox: 21,
-                batches: [ { id: 1, quantity: 84, expiryDate: '2025-11', itemsPerBox: 21, brand: 'Sandoz', batchNumber: 'AMX2511S' }, { id: 2, quantity: 60, expiryDate: '2026-02', itemsPerBox: 15, brand: 'Teva', batchNumber: 'TEV2602A' } ]
-              },
-              { 
-                id: 4, name: 'Omeprazole 20mg', minLevel: 150, unit: 'capsules', type: 'capsule', location: 'Cupboard 1', barcode: '456789012345', standardItemsPerBox: 28,
-                batches: [ { id: 1, quantity: 168, expiryDate: '2026-06', itemsPerBox: 28, brand: 'Dr Reddy', batchNumber: 'OME2606R' }, { id: 2, quantity: 140, expiryDate: '2026-08', itemsPerBox: 28, brand: 'Mylan', batchNumber: 'MYL2608O' } ]
-              },
-              { 
-                id: 5, name: 'Atorvastatin 20mg', minLevel: 100, unit: 'tablets', type: 'tablet', location: 'Cupboard 2', barcode: '567890123456', standardItemsPerBox: 30,
-                batches: [ { id: 1, quantity: 120, expiryDate: '2026-01', itemsPerBox: 30, brand: 'Pfizer', batchNumber: 'ATO2601P' }, { id: 2, quantity: 84, expiryDate: '2026-03', itemsPerBox: 28, brand: 'Accord', batchNumber: 'ACC2603A' } ]
-              },
-              { 
-                id: 6, name: 'Metformin 500mg', minLevel: 200, unit: 'tablets', type: 'tablet', location: 'Cupboard 3', barcode: '678901234567', standardItemsPerBox: 84,
-                batches: [ { id: 1, quantity: 252, expiryDate: '2026-02', itemsPerBox: 84, brand: 'Actavis', batchNumber: 'MET2602A' }, { id: 2, quantity: 168, expiryDate: '2026-04', itemsPerBox: 84, brand: 'Sandoz', batchNumber: 'SAN2604M' } ]
-              },
-              { 
-                id: 7, name: 'Amlodipine 5mg', minLevel: 100, unit: 'tablets', type: 'tablet', location: 'Cupboard 1', barcode: '789012345678', standardItemsPerBox: 28,
-                batches: [ { id: 1, quantity: 56, expiryDate: '2025-10', itemsPerBox: 28, brand: 'Teva', batchNumber: 'AML2510T' }, { id: 2, quantity: 84, expiryDate: '2025-11', itemsPerBox: 28, brand: 'Accord', batchNumber: 'AML2511A' } ]
-              },
-              { 
-                id: 8, name: 'Salbutamol 100mcg', minLevel: 20, unit: 'inhalers', type: 'inhaler', location: 'Cupboard 2', barcode: '890123456789', standardItemsPerBox: null,
-                batches: [ { id: 1, quantity: 6, expiryDate: '2027-01', itemsPerBox: null, brand: 'GSK', batchNumber: 'SAL2701G' }, { id: 2, quantity: 4, expiryDate: '2027-03', itemsPerBox: null, brand: 'Cipla', batchNumber: 'CIP2703S' } ]
-              },
-              { 
-                id: 9, name: 'Lisinopril 10mg', minLevel: 50, unit: 'tablets', type: 'tablet', location: 'Cupboard 3', barcode: '901234567890', standardItemsPerBox: 28,
-                batches: [ { id: 1, quantity: 84, expiryDate: '2026-07', itemsPerBox: 28, brand: 'Teva', batchNumber: 'LIS2607T' }, { id: 2, quantity: 60, expiryDate: '2026-09', itemsPerBox: 30, brand: 'Accord', batchNumber: 'LIS2609A' } ]
-              },
-              { 
-                id: 10, name: 'Simvastatin 20mg', minLevel: 30, unit: 'tablets', type: 'tablet', location: 'Cupboard 1', barcode: '012345678901', standardItemsPerBox: 30,
-                batches: [ { id: 1, quantity: 90, expiryDate: '2026-08', itemsPerBox: 30, brand: 'Mylan', batchNumber: 'SIM2608M' }, { id: 2, quantity: 56, expiryDate: '2026-10', itemsPerBox: 28, brand: 'Dr Reddy', batchNumber: 'SIM2610R' } ]
-              },
-              { 
-                id: 11, name: 'Aspirin 75mg', minLevel: 100, unit: 'tablets', type: 'tablet', location: 'Cupboard 2', barcode: '112233445566', standardItemsPerBox: 100,
-                batches: [ { id: 1, quantity: 200, expiryDate: '2026-12', itemsPerBox: 100, brand: 'Bayer', batchNumber: 'ASP2612B' }, { id: 2, quantity: 150, expiryDate: '2027-02', itemsPerBox: 75, brand: 'Boots', batchNumber: 'BOO2702A' } ]
-              },
-              { 
-                id: 12, name: 'Warfarin 3mg', minLevel: 20, unit: 'tablets', type: 'tablet', location: 'Cupboard 3', barcode: '223344556677', standardItemsPerBox: 28,
-                batches: [ { id: 1, quantity: 28, expiryDate: '2026-11', itemsPerBox: 28, brand: 'Marevan', batchNumber: 'WAR2611M' }, { id: 2, quantity: 56, expiryDate: '2027-01', itemsPerBox: 28, brand: 'Coumadin', batchNumber: 'COU2701W' } ]
-              }
-            ];
-            
-            // Merge saved medications with sample medications (sample medications take precedence for barcodes, standardItemsPerBox, and location)
-            const mergedMedications = savedMeds.map(savedMed => {
-              const sampleMed = sampleMedications.find(sample => sample.id === savedMed.id);
-              // Update location from sample if the saved location is 'Medication Stock L1' (old location)
-              if (sampleMed) {
-                const updatedLocation = savedMed.location === 'Medication Stock L1' ? sampleMed.location : savedMed.location;
-                return { ...savedMed, barcode: sampleMed.barcode, standardItemsPerBox: sampleMed.standardItemsPerBox, location: updatedLocation };
-              }
-              return savedMed;
-            });
-            
-            // Add any sample medications that don't exist in saved data
-            sampleMedications.forEach(sampleMed => {
-              if (!mergedMedications.find(med => med.id === sampleMed.id)) {
-                mergedMedications.push(sampleMed);
-              }
-            });
-            
-            // Backward compatibility: Set standardItemsPerBox from existing batches if not set
-            mergedMedications.forEach(med => {
-              if (!med.standardItemsPerBox && med.batches && med.batches.length > 0) {
-                const batchWithBoxes = med.batches.find(b => b.itemsPerBox);
-                if (batchWithBoxes) {
-                  med.standardItemsPerBox = batchWithBoxes.itemsPerBox;
-                }
-              }
-            });
-            
-            setMedications(mergedMedications);
-          }
-          const savedTx = storage.load('medicana_transactions');
-          if (Array.isArray(savedTx) && savedTx.length > 0) setTransactions(savedTx);
+          // NO LONGER load medications or transactions from localStorage
+          // After login, they will be loaded from Neon database
           const savedUi = storage.load('medicana_ui');
           if (savedUi && typeof savedUi === 'object') {
             setUi(prev => ({
@@ -568,8 +481,7 @@
 
         // Persist key state slices to localStorage
         useEffect(() => { storage.save('medicana_auth', auth); }, [auth]);
-        useEffect(() => { storage.save('medicana_medications', medications); }, [medications]);
-        useEffect(() => { storage.save('medicana_transactions', transactions); }, [transactions]);
+        // NO LONGER save medications or transactions to localStorage - Neon is the source of truth
         useEffect(() => {
           storage.save('medicana_ui', {
             currentLocation: ui.currentLocation,
@@ -1158,23 +1070,25 @@
           // Store user info in sessionStorage
           sessionStorage.setItem('currentUser', JSON.stringify(data.user));
           
-          setAuth(prev => ({ ...prev, isLoggedIn: true, error: '' }));
-          
-          // Reset UI to default state on login
-          setUi(prev => ({
-            ...prev,
-            activeTab: 'medications',
-            currentLocation: 'All',
-            searchTerm: '',
-            selectedMed: null,
-            expandedMedId: null
-          }));
-          
-          // Load medications and transactions from backend
+          // Load medications and transactions from backend BEFORE setting isLoggedIn
+          // This prevents the flash of empty/old data
           try {
             const backendData = await window.api.fetchAllData();
             setMedications(backendData.medications || []);
             setTransactions(backendData.transactions || []);
+            
+            // NOW set logged in - UI will render with real Neon data already loaded
+            setAuth(prev => ({ ...prev, isLoggedIn: true, error: '' }));
+            
+            // Reset UI to default state on login
+            setUi(prev => ({
+              ...prev,
+              activeTab: 'medications',
+              currentLocation: 'All',
+              searchTerm: '',
+              selectedMed: null,
+              expandedMedId: null
+            }));
             
             // Start polling to keep data in sync
             window.api.startPolling({
@@ -1184,21 +1098,21 @@
               },
               intervalMs: 20000
             });
+            
+            // Show low stock alert for pharmacist (Aasit) if there are low stock medications
+            if (auth.currentUser === 'ABadiani' && data.user.role === 'Pharmacist') {
+              // Use setTimeout to ensure the component has rendered and lowStockMedications is calculated
+              setTimeout(() => {
+                const currentLowStock = backendData.medications.filter(med => getTotalQuantity(med) < med.minLevel);
+                if (currentLowStock.length > 0) {
+                  setModals(prev => ({ ...prev, showLowStockAlert: true }));
+                }
+              }, 500);
+            }
           } catch (err) {
             console.error('Failed to load initial data:', err);
-            setAuth(prev => ({ ...prev, error: 'Failed to load data from server.', isLoggedIn: false }));
+            setAuth(prev => ({ ...prev, error: 'Failed to load data from server.' }));
             return;
-          }
-          
-          // Show low stock alert for pharmacist (Aasit) if there are low stock medications
-          if (auth.currentUser === 'ABadiani' && data.user.role === 'Pharmacist') {
-            // Use setTimeout to ensure the component has rendered and lowStockMedications is calculated
-            setTimeout(() => {
-              const currentLowStock = medications.filter(med => getTotalQuantity(med) < med.minLevel);
-              if (currentLowStock.length > 0) {
-                setModals(prev => ({ ...prev, showLowStockAlert: true }));
-              }
-            }, 500);
           }
         } catch (e) {
           setAuth(prev => ({ ...prev, error: 'Network or server error.', password: '' }));
@@ -1777,47 +1691,56 @@ Medicana Stock Management System`;
               return;
             }
 
-            // Call API to adjust stock (negative delta for stock out)
+            // Determine if this is an internal transfer or external dispensing
             const isInternalTransfer = LOCATIONS.includes(adjustmentForm.location);
             const displayAmount = formatQuantityDisplay(amount, selectedBatch.itemsPerBox, ui.selectedMed.unit, adjustmentForm.type, adjustmentForm.type === 'boxes' ? adjustmentForm.amount : null);
             let transactionNote = adjustmentForm.note || (isInternalTransfer ? `Transfer to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}` : `Dispensed to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}`);
             if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
 
-            await window.api.adjustStock({
-              userId: currentUser.id,
-              medicationId: ui.selectedMed.id,
-              locationId: ui.selectedMed.location,
-              batchId: selectedBatch.id,
-              delta: -amount,
-              reason: transactionNote
-            });
+            if (isInternalTransfer) {
+              // Use the dedicated transfer API for internal transfers
+              await window.api.transferStock({
+                userId: currentUser.id,
+                medicationId: ui.selectedMed.id,
+                batchId: selectedBatch.id,
+                sourceLocationId: ui.selectedMed.location,
+                targetLocationId: adjustmentForm.location,
+                quantity: amount,
+                reason: transactionNote
+              });
+            } else {
+              // External dispensing - just remove stock
+              await window.api.adjustStock({
+                userId: currentUser.id,
+                medicationId: ui.selectedMed.id,
+                locationId: ui.selectedMed.location,
+                batchId: selectedBatch.id,
+                delta: -amount,
+                reason: transactionNote
+              });
 
-            // Handle cupboard stock removal - if removing from a cupboard, also remove from Medication Stock L1
-            if (['Cupboard 1', 'Cupboard 2', 'Cupboard 3'].includes(ui.selectedMed.location)) {
-              const mainStockMed = medications.find(m => m.name === ui.selectedMed.name && m.location === 'Medication Stock L1');
-              if (mainStockMed) {
-                const mainStockBatch = mainStockMed.batches.find(b => 
-                  b.expiryDate === selectedBatch.expiryDate && 
-                  b.brand === selectedBatch.brand && 
-                  b.itemsPerBox === selectedBatch.itemsPerBox
-                );
-                
-                if (mainStockBatch && mainStockBatch.quantity >= amount) {
-                  await window.api.adjustStock({
-                    userId: currentUser.id,
-                    medicationId: mainStockMed.id,
-                    locationId: 'Medication Stock L1',
-                    batchId: mainStockBatch.id,
-                    delta: -amount,
-                    reason: `Auto-adjustment: ${transactionNote}`
-                  });
+              // Handle cupboard stock removal - if removing from a cupboard, also remove from Medication Stock L1
+              if (['Cupboard 1', 'Cupboard 2', 'Cupboard 3'].includes(ui.selectedMed.location)) {
+                const mainStockMed = medications.find(m => m.name === ui.selectedMed.name && m.location === 'Medication Stock L1');
+                if (mainStockMed) {
+                  const mainStockBatch = mainStockMed.batches.find(b => 
+                    b.expiryDate === selectedBatch.expiryDate && 
+                    b.brand === selectedBatch.brand && 
+                    b.itemsPerBox === selectedBatch.itemsPerBox
+                  );
+                  
+                  if (mainStockBatch && mainStockBatch.quantity >= amount) {
+                    await window.api.adjustStock({
+                      userId: currentUser.id,
+                      medicationId: mainStockMed.id,
+                      locationId: 'Medication Stock L1',
+                      batchId: mainStockBatch.id,
+                      delta: -amount,
+                      reason: `Auto-adjustment: ${transactionNote}`
+                    });
+                  }
                 }
               }
-            }
-
-            // If internal transfer, add stock to destination
-            if (isInternalTransfer) { 
-              await handleInternalTransfer(updatedMed, selectedBatch, amount, overrideReason, currentUser); 
             }
 
             // Refresh data from backend
@@ -1832,57 +1755,6 @@ Medicana Stock Management System`;
           }
       };
 
-      const handleInternalTransfer = async (updatedMed, selectedBatch, amount, overrideReason, currentUser) => {
-          const destinationMed = medications.find(med => med.name === ui.selectedMed.name && med.location === adjustmentForm.location);
-        
-        // Need to find or create the destination batch
-        // If destination med exists, find matching batch or use an existing batch
-        let destBatchId = null;
-        if (destinationMed) {
-          const destBatch = destinationMed.batches.find(b => 
-            b.expiryDate === selectedBatch.expiryDate && 
-            b.brand === selectedBatch.brand && 
-            b.itemsPerBox === selectedBatch.itemsPerBox && 
-            b.batchNumber === selectedBatch.batchNumber
-          );
-          if (destBatch) {
-            destBatchId = destBatch.id;
-          } else if (destinationMed.batches.length > 0) {
-            // Use first batch as fallback
-            destBatchId = destinationMed.batches[0].id;
-          }
-        }
-
-        // If we don't have a destination batch, we need to add the batch to destination location
-        // This is complex - for now, we'll use addBatch to create the stock at destination
-        if (!destBatchId) {
-          const note = `Transfer received from ${ui.selectedMed.location} - Brand: ${selectedBatch.brand}, Expiry: ${formatExpiry(selectedBatch.expiryDate)}`;
-          await window.api.addBatch({
-            medicationId: ui.selectedMed.id,
-            batchNumber: selectedBatch.batchNumber || `BATCH-${Date.now()}`,
-            expiryMonth: selectedBatch.expiryDate ? parseInt(selectedBatch.expiryDate.split('-')[1]) : new Date().getMonth() + 1,
-            expiryYear: selectedBatch.expiryDate ? parseInt(selectedBatch.expiryDate.split('-')[0]) : new Date().getFullYear(),
-            brand: selectedBatch.brand,
-            itemsPerBox: selectedBatch.itemsPerBox,
-            quantityBoxes: 0,
-            quantityIndividuals: amount,
-            locationId: adjustmentForm.location,
-            userId: currentUser.id,
-            note
-          });
-        } else {
-          // Add to existing batch at destination
-          const note = `Transfer received from ${ui.selectedMed.location}`;
-          await window.api.adjustStock({
-            userId: currentUser.id,
-            medicationId: destinationMed.id,
-            locationId: adjustmentForm.location,
-            batchId: destBatchId,
-            delta: amount,
-            reason: note
-          });
-        }
-      };
 
       const handleExternalDispensing = (updatedMed, selectedBatch, amount, overrideReason) => {
         setMedications(medications.map(med => med.id === ui.selectedMed.id ? updatedMed : med));
@@ -1934,43 +1806,16 @@ Medicana Stock Management System`;
             let transactionNote = adjustmentForm.note || `Stock received from ${adjustmentForm.sourceDepartment} - Brand: ${sourceBatch.brand}, Expiry: ${formatExpiry(sourceBatch.expiryDate)}`;
             if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
 
-            // Remove from source
-            await window.api.adjustStock({
+            // Use the dedicated transfer API
+            await window.api.transferStock({
               userId: currentUser.id,
               medicationId: sourceMed.id,
-              locationId: adjustmentForm.sourceDepartment,
               batchId: sourceBatch.id,
-              delta: -amount,
-              reason: `Transfer to ${ui.selectedMed.location}`
+              sourceLocationId: adjustmentForm.sourceDepartment,
+              targetLocationId: ui.selectedMed.location,
+              quantity: amount,
+              reason: transactionNote
             });
-
-            // Add to destination
-            const destBatch = ui.selectedMed.batches.find(b => b.expiryDate === sourceBatch.expiryDate && b.brand === sourceBatch.brand && b.itemsPerBox === sourceBatch.itemsPerBox && b.batchNumber === sourceBatch.batchNumber);
-            if (destBatch) {
-              await window.api.adjustStock({
-                userId: currentUser.id,
-                medicationId: ui.selectedMed.id,
-                locationId: ui.selectedMed.location,
-                batchId: destBatch.id,
-                delta: amount,
-                reason: transactionNote
-              });
-            } else {
-              // Need to create new batch at destination
-              await window.api.addBatch({
-                medicationId: ui.selectedMed.id,
-                batchNumber: sourceBatch.batchNumber || `BATCH-${Date.now()}`,
-                expiryMonth: sourceBatch.expiryDate ? parseInt(sourceBatch.expiryDate.split('-')[1]) : new Date().getMonth() + 1,
-                expiryYear: sourceBatch.expiryDate ? parseInt(sourceBatch.expiryDate.split('-')[0]) : new Date().getFullYear(),
-                brand: sourceBatch.brand,
-                itemsPerBox: sourceBatch.itemsPerBox,
-                quantityBoxes: 0,
-                quantityIndividuals: amount,
-                locationId: ui.selectedMed.location,
-                userId: currentUser.id,
-                note: transactionNote
-              });
-            }
           } else {
             // Stock in from delivery (already handled by processAdjustment delivery flow)
             let transactionNote = adjustmentForm.note || `Stock received from ${adjustmentForm.stockInSource === 'delivery' ? 'Delivery' : adjustmentForm.sourceDepartment} - Brand: ${selectedBatch.brand}, Expiry: ${formatExpiry(selectedBatch.expiryDate)}`;
