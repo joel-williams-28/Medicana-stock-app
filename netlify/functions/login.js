@@ -53,6 +53,7 @@ exports.handler = async (event) => {
 
     // Return only non-sensitive fields
     const safeUser = {
+      id: user.id,
       username: user.username,
       email: user.email,
       firstName: user.first_name,

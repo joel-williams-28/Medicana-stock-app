@@ -439,85 +439,9 @@
         const INACTIVITY_TIMEOUT = 150000; // 2.5 minutes in milliseconds
         const WARNING_DURATION = 30000; // 30 seconds in milliseconds
 
-        const [medications, setMedications] = useState([
-          { 
-            id: 1, name: 'Paracetamol 500mg', minLevel: 200, unit: 'tablets', type: 'tablet', location: 'Cupboard 1', barcode: '123456789012', standardItemsPerBox: 100,
-            batches: [
-              { id: 1, quantity: 300, expiryDate: '2026-03', itemsPerBox: 100, brand: 'Actavis', batchNumber: 'PAR2603A' },
-              { id: 2, quantity: 200, expiryDate: '2026-05', itemsPerBox: 100, brand: 'Accord', batchNumber: 'ACC2605P' }
-            ]
-          },
-          { 
-            id: 2, name: 'Ibuprofen 400mg', minLevel: 150, unit: 'tablets', type: 'tablet', location: 'Cupboard 2', barcode: '234567890123', standardItemsPerBox: 40,
-            batches: [ { id: 1, quantity: 200, expiryDate: '2026-01', itemsPerBox: 40, brand: 'Wockhardt', batchNumber: 'IBU2601W' } ]
-          },
-          { 
-            id: 3, name: 'Amoxicillin 500mg', minLevel: 100, unit: 'capsules', type: 'capsule', location: 'Cupboard 3', barcode: '345678901234', standardItemsPerBox: 21,
-            batches: [ { id: 1, quantity: 84, expiryDate: '2025-11', itemsPerBox: 21, brand: 'Sandoz', batchNumber: 'AMX2511S' }, { id: 2, quantity: 60, expiryDate: '2026-02', itemsPerBox: 15, brand: 'Teva', batchNumber: 'TEV2602A' } ]
-          },
-          { 
-            id: 4, name: 'Omeprazole 20mg', minLevel: 150, unit: 'capsules', type: 'capsule', location: 'Cupboard 1', barcode: '456789012345', standardItemsPerBox: 28,
-            batches: [ { id: 1, quantity: 168, expiryDate: '2026-06', itemsPerBox: 28, brand: 'Dr Reddy', batchNumber: 'OME2606R' }, { id: 2, quantity: 140, expiryDate: '2026-08', itemsPerBox: 28, brand: 'Mylan', batchNumber: 'MYL2608O' } ]
-          },
-          { 
-            id: 5, name: 'Atorvastatin 20mg', minLevel: 100, unit: 'tablets', type: 'tablet', location: 'Cupboard 2', barcode: '567890123456', standardItemsPerBox: 30,
-            batches: [ { id: 1, quantity: 120, expiryDate: '2026-01', itemsPerBox: 30, brand: 'Pfizer', batchNumber: 'ATO2601P' }, { id: 2, quantity: 84, expiryDate: '2026-03', itemsPerBox: 28, brand: 'Accord', batchNumber: 'ACC2603A' } ]
-          },
-          { 
-            id: 6, name: 'Metformin 500mg', minLevel: 200, unit: 'tablets', type: 'tablet', location: 'Cupboard 3', barcode: '678901234567', standardItemsPerBox: 84,
-            batches: [ { id: 1, quantity: 252, expiryDate: '2026-02', itemsPerBox: 84, brand: 'Actavis', batchNumber: 'MET2602A' }, { id: 2, quantity: 168, expiryDate: '2026-04', itemsPerBox: 84, brand: 'Sandoz', batchNumber: 'SAN2604M' } ]
-          },
-          { 
-            id: 7, name: 'Amlodipine 5mg', minLevel: 100, unit: 'tablets', type: 'tablet', location: 'Cupboard 1', barcode: '789012345678', standardItemsPerBox: 28,
-            batches: [ { id: 1, quantity: 56, expiryDate: '2025-10', itemsPerBox: 28, brand: 'Teva', batchNumber: 'AML2510T' }, { id: 2, quantity: 84, expiryDate: '2025-11', itemsPerBox: 28, brand: 'Accord', batchNumber: 'AML2511A' } ]
-          },
-          { 
-            id: 8, name: 'Salbutamol 100mcg', minLevel: 20, unit: 'inhalers', type: 'inhaler', location: 'Cupboard 2', barcode: '890123456789', standardItemsPerBox: null,
-            batches: [ { id: 1, quantity: 6, expiryDate: '2027-01', itemsPerBox: null, brand: 'GSK', batchNumber: 'SAL2701G' }, { id: 2, quantity: 4, expiryDate: '2027-03', itemsPerBox: null, brand: 'Cipla', batchNumber: 'CIP2703S' } ]
-          },
-          { 
-            id: 9, name: 'Lisinopril 10mg', minLevel: 50, unit: 'tablets', type: 'tablet', location: 'Cupboard 3', barcode: '901234567890', standardItemsPerBox: 28,
-            batches: [ { id: 1, quantity: 84, expiryDate: '2026-07', itemsPerBox: 28, brand: 'Teva', batchNumber: 'LIS2607T' }, { id: 2, quantity: 60, expiryDate: '2026-09', itemsPerBox: 30, brand: 'Accord', batchNumber: 'LIS2609A' } ]
-          },
-          { 
-            id: 10, name: 'Simvastatin 20mg', minLevel: 30, unit: 'tablets', type: 'tablet', location: 'Cupboard 1', barcode: '012345678901', standardItemsPerBox: 30,
-            batches: [ { id: 1, quantity: 90, expiryDate: '2026-08', itemsPerBox: 30, brand: 'Mylan', batchNumber: 'SIM2608M' }, { id: 2, quantity: 56, expiryDate: '2026-10', itemsPerBox: 28, brand: 'Dr Reddy', batchNumber: 'SIM2610R' } ]
-          },
-          { 
-            id: 11, name: 'Aspirin 75mg', minLevel: 100, unit: 'tablets', type: 'tablet', location: 'Cupboard 2', barcode: '112233445566', standardItemsPerBox: 100,
-            batches: [ { id: 1, quantity: 200, expiryDate: '2026-12', itemsPerBox: 100, brand: 'Bayer', batchNumber: 'ASP2612B' }, { id: 2, quantity: 150, expiryDate: '2027-02', itemsPerBox: 75, brand: 'Boots', batchNumber: 'BOO2702A' } ]
-          },
-          { 
-            id: 12, name: 'Warfarin 3mg', minLevel: 20, unit: 'tablets', type: 'tablet', location: 'Cupboard 3', barcode: '223344556677', standardItemsPerBox: 28,
-            batches: [ { id: 1, quantity: 28, expiryDate: '2026-11', itemsPerBox: 28, brand: 'Marevan', batchNumber: 'WAR2611M' }, { id: 2, quantity: 56, expiryDate: '2027-01', itemsPerBox: 28, brand: 'Coumadin', batchNumber: 'COU2701W' } ]
-          }
-        ]);
+        const [medications, setMedications] = useState([]);
 
-        const [transactions, setTransactions] = useState([
-          { id: 1, medId: 1, medName: 'Paracetamol 500mg', type: 'out', amount: 50, user: 'Dr Smith', location: 'Ward 2', timestamp: new Date(Date.now() - 3600000).toISOString(), note: 'Ward dispensing - 2 boxes (100 tablets)' },
-          { id: 2, medId: 2, medName: 'Ibuprofen 400mg', type: 'out', amount: 40, user: 'Nurse Williams', location: 'PACU', timestamp: new Date(Date.now() - 10800000).toISOString(), note: 'Transfer to PACU - 1 box (40 tablets) - Brand: Wockhardt' },
-          { id: 3, medId: 8, medName: 'Salbutamol 100mcg', type: 'order', amount: 10, user: 'JWilliams', location: 'Order Request', timestamp: new Date(Date.now() - 14400000).toISOString(), note: 'Order placed - Quantity: 10 inhalers - Urgency: ROUTINE - Sent to: joel.williams@medicana.co.uk' },
-          { id: 4, medId: 3, medName: 'Amoxicillin 500mg', type: 'in', amount: 105, user: 'Pharmacist Jones', location: 'Delivery', timestamp: new Date(Date.now() - 86400000 - 3600000).toISOString(), note: 'Delivery received - Brand: Sandoz, Expiry: Nov 2025 - 5 boxes (105 capsules)' },
-          { id: 5, medId: 4, medName: 'Omeprazole 20mg', type: 'out', amount: 56, user: 'Dr Patel', location: 'Ward 1', timestamp: new Date(Date.now() - 86400000 - 7200000).toISOString(), note: 'Ward dispensing - 2 boxes (56 capsules)' },
-          { id: 6, medId: 5, medName: 'Atorvastatin 20mg', type: 'out', amount: 30, user: 'Nurse Thompson', location: 'Theatre 1', timestamp: new Date(Date.now() - 86400000 - 10800000).toISOString(), note: 'Transfer to Theatre 1 - 1 box (30 tablets) - Brand: Pfizer' },
-          { id: 7, medId: 1, medName: 'Paracetamol 500mg', type: 'out', amount: 100, user: 'Dr Martinez', location: 'Sapphire Clinic', timestamp: new Date(Date.now() - 86400000 - 14400000).toISOString(), note: 'Dispensed to Sapphire Clinic - 1 box (100 tablets) - Brand: Actavis' },
-          { id: 8, medId: 6, medName: 'Metformin 500mg', type: 'in', amount: 84, user: 'Pharmacist Jones', location: 'Theatre 2', timestamp: new Date(Date.now() - 86400000 - 18000000).toISOString(), note: 'Transfer received from Theatre 2 - Brand: Actavis, Expiry: Feb 2026' },
-          { id: 9, medId: 8, medName: 'Salbutamol 100mcg', type: 'out', amount: 3, user: 'Nurse Brown', location: 'Ward 3', timestamp: new Date(Date.now() - 172800000 - 3600000).toISOString(), note: 'Ward dispensing - 3 inhalers' },
-          { id: 10, medId: 2, medName: 'Ibuprofen 400mg', type: 'order', amount: 200, user: 'JWilliams', location: 'Order Request', timestamp: new Date(Date.now() - 172800000 - 10800000).toISOString(), note: 'Order placed - Quantity: 200 tablets - Urgency: ROUTINE - Sent to: joel.williams@medicana.co.uk' },
-          { id: 11, medId: 5, medName: 'Atorvastatin 20mg', type: 'out', amount: 28, user: 'Dr Singh', location: 'Radiology', timestamp: new Date(Date.now() - 172800000 - 14400000).toISOString(), note: 'Transfer to Radiology - 1 box (28 tablets) - Brand: Accord' },
-          { id: 12, medId: 7, medName: 'Amlodipine 5mg', type: 'order_fulfilled', amount: 168, user: 'Pharmacist Jones', location: 'Delivery', timestamp: new Date(Date.now() - 259200000 - 3600000).toISOString(), note: 'Order fulfilled - 6 boxes (168 tablets) received' },
-          { id: 13, medId: 7, medName: 'Amlodipine 5mg', type: 'in', amount: 168, user: 'Pharmacist Jones', location: 'Delivery', timestamp: new Date(Date.now() - 259200000 - 3700000).toISOString(), note: 'Delivery received - Brand: Teva, Expiry: Oct 2025 - 6 boxes (168 tablets)' },
-          { id: 14, medId: 1, medName: 'Paracetamol 500mg', type: 'out', amount: 200, user: 'Nurse Jackson', location: 'Ward 2', timestamp: new Date(Date.now() - 259200000 - 7200000).toISOString(), note: 'Ward dispensing - 2 boxes (200 tablets)' },
-          { id: 15, medId: 4, medName: 'Omeprazole 20mg', type: 'out', amount: 28, user: 'Dr Wilson', location: 'PACU', timestamp: new Date(Date.now() - 259200000 - 10800000).toISOString(), note: 'Transfer to PACU - 1 box (28 capsules) - Brand: Dr Reddy' },
-          { id: 16, medId: 6, medName: 'Metformin 500mg', type: 'in', amount: 168, user: 'Pharmacist Jones', location: 'Delivery', timestamp: new Date(Date.now() - 259200000 - 14400000).toISOString(), note: 'Delivery received - Brand: Sandoz, Expiry: Apr 2026 - 2 boxes (168 tablets)' },
-          { id: 17, medId: 3, medName: 'Amoxicillin 500mg', type: 'out', amount: 21, user: 'Dr Anderson', location: 'Pharmacy', timestamp: new Date(Date.now() - 345600000 - 3600000).toISOString(), note: 'Dispensed to Pharmacy - 1 box (21 capsules) - Brand: Sandoz' },
-          { id: 18, medId: 8, medName: 'Salbutamol 100mcg', type: 'order', amount: 10, user: 'JWilliams', location: 'Order Request', timestamp: new Date(Date.now() - 345600000 - 14400000).toISOString(), note: 'Order placed - Quantity: 10 inhalers - Urgency: ROUTINE - Sent to: joel.williams@medicana.co.uk' },
-          { id: 19, medId: 2, medName: 'Ibuprofen 400mg', type: 'order_fulfilled', amount: 200, user: 'Pharmacist Jones', location: 'Delivery', timestamp: new Date(Date.now() - 432000000 - 3600000).toISOString(), note: 'Order fulfilled - 5 boxes (200 tablets) received' },
-          { id: 20, medId: 2, medName: 'Ibuprofen 400mg', type: 'in', amount: 200, user: 'Pharmacist Jones', location: 'Delivery', timestamp: new Date(Date.now() - 432000000 - 3700000).toISOString(), note: 'Delivery received - Brand: Wockhardt, Expiry: Jan 2026 - 5 boxes (200 tablets)' },
-          { id: 21, medId: 5, medName: 'Atorvastatin 20mg', type: 'in', amount: 30, user: 'JWilliams', location: 'System', timestamp: new Date(Date.now() - 432000000 - 7200000).toISOString(), note: 'Minimum level updated from 3 boxes to 4 boxes (120 tablets)' },
-          { id: 22, medId: 4, medName: 'Omeprazole 20mg', type: 'out', amount: 3, user: 'Nurse Davies', location: 'Batch Removal', timestamp: new Date(Date.now() - 432000000 - 10800000).toISOString(), note: 'Batch removed - Brand: Dr Reddy, Expiry: 2026-06 - Reason: Damaged - stock compromised - Quantity: 3 capsules' },
-          { id: 23, medId: 1, medName: 'Paracetamol 500mg', type: 'out', amount: 100, user: 'Dr Cooper', location: 'Ward 3', timestamp: new Date(Date.now() - 432000000 - 14400000).toISOString(), note: 'Ward dispensing - 1 box (100 tablets)' }
-        ]);
+        const [transactions, setTransactions] = useState([]);
 
         // Load saved state from localStorage on first mount
       useEffect(() => {
@@ -760,6 +684,7 @@
               // Auto logout
               clearInterval(countdownTimer);
               warningShownRef.current = false;
+              window.api.stopPolling();
               setAuth({ currentUser: '', password: '', isLoggedIn: false, error: '' });
               setSessionTimeout({ showWarning: false, warningCountdown: 30, lastActivity: Date.now(), warningStartTime: null });
             } else {
@@ -1245,6 +1170,26 @@
             expandedMedId: null
           }));
           
+          // Load medications and transactions from backend
+          try {
+            const backendData = await window.api.fetchAllData();
+            setMedications(backendData.medications || []);
+            setTransactions(backendData.transactions || []);
+            
+            // Start polling to keep data in sync
+            window.api.startPolling({
+              onData: ({ medications: meds, transactions: txs }) => {
+                setMedications(meds || []);
+                setTransactions(txs || []);
+              },
+              intervalMs: 20000
+            });
+          } catch (err) {
+            console.error('Failed to load initial data:', err);
+            setAuth(prev => ({ ...prev, error: 'Failed to load data from server.', isLoggedIn: false }));
+            return;
+          }
+          
           // Show low stock alert for pharmacist (Aasit) if there are low stock medications
           if (auth.currentUser === 'ABadiani' && data.user.role === 'Pharmacist') {
             // Use setTimeout to ensure the component has rendered and lowStockMedications is calculated
@@ -1260,6 +1205,7 @@
         }
       };
       const handleLogout = () => {
+        window.api.stopPolling();
         setAuth({ currentUser: '', password: '', isLoggedIn: false, error: '' });
           storage.remove('medicana_auth');
           sessionStorage.removeItem('currentUser');
@@ -1445,7 +1391,7 @@ Medicana Stock Management System`;
           setModals(prev => ({ ...prev, showChangePassword: false }));
         };
 
-      const handleAddNewMedication = () => {
+      const handleAddNewMedication = async () => {
         if (ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') {
           setAddMedForm(prev => ({ ...prev, error: 'Please select a specific location (Cupboard 1, 2, or 3) before adding stock' }));
           return;
@@ -1464,7 +1410,7 @@ Medicana Stock Management System`;
           setAddMedForm(prev => ({ ...prev, error: 'Please enter expiry date and brand' }));
           return;
         }
-        const expiryDate = `${addMedForm.expiryYear}-${addMedForm.expiryMonth.padStart(2, '0')}`;
+        
         let totalQuantity = 0;
         let itemsPerBox = 0;
         if (addMedForm.quantityType === 'boxes') {
@@ -1486,96 +1432,87 @@ Medicana Stock Management System`;
           }
         }
 
-        if (addMedForm.mode === 'existing') {
-          const referenceMed = medications.find(med => med.id === parseInt(addMedForm.selectedExistingMedId));
-          if (!referenceMed) {
-            setAddMedForm(prev => ({ ...prev, error: 'Selected medication not found' }));
+        try {
+          const currentUser = getCurrentUserInfo();
+          if (!currentUser || !currentUser.id) {
+            setAddMedForm(prev => ({ ...prev, error: 'User not logged in' }));
             return;
           }
-          const medInCurrentLocation = medications.find(med => 
-            med.name === referenceMed.name && med.location === ui.currentLocation
-          );
-          if (medInCurrentLocation) {
-            const updatedMed = { ...medInCurrentLocation };
-            // Set standardItemsPerBox if this is the first time we're seeing a box size for this medication
-            if (itemsPerBox && !updatedMed.standardItemsPerBox) {
-              updatedMed.standardItemsPerBox = itemsPerBox;
-            }
-            const matchingBatch = updatedMed.batches.find(batch => 
-              batch.expiryDate === expiryDate &&
-              batch.brand === addMedForm.brand &&
-              batch.itemsPerBox === (itemsPerBox || null)
-            );
-            if (matchingBatch) {
-              updatedMed.batches = updatedMed.batches.map(batch =>
-                batch.id === matchingBatch.id 
-                  ? { ...batch, quantity: batch.quantity + totalQuantity }
-                  : batch
-              );
-            } else {
-              const newBatchId = Math.max(...updatedMed.batches.map(b => b.id), 0) + 1;
-                updatedMed.batches.push({ id: newBatchId, quantity: totalQuantity, expiryDate, itemsPerBox: itemsPerBox || null, brand: addMedForm.brand, batchNumber: addMedForm.batchNumber || null });
-              }
-            setMedications(medications.map(med => med.id === medInCurrentLocation.id ? updatedMed : med));
-            const newTransaction = createTransaction({
-                medId: medInCurrentLocation.id, medName: medInCurrentLocation.name, type: 'in', amount: totalQuantity, user: getCurrentUserInfo()?.fullName || auth.currentUser, location: 'Stock Delivery',
-              note: `Stock added to ${ui.currentLocation} - Brand: ${addMedForm.brand} - ${addMedForm.quantityType === 'boxes' ? `${addMedForm.boxQuantity} boxes (${itemsPerBox} per box)` : `${addMedForm.individualQuantity} items`}`
-            }, transactions.length + 1);
-            setTransactions([newTransaction, ...transactions]);
-          } else {
-            const newMedId = Math.max(...medications.map(m => m.id), 0) + 1;
-            const newMed = {
-                id: newMedId, name: referenceMed.name, minLevel: 0, unit: referenceMed.unit, type: referenceMed.type, location: ui.currentLocation,
-                standardItemsPerBox: itemsPerBox || null,
-                batches: [{ id: 1, quantity: totalQuantity, expiryDate, itemsPerBox: itemsPerBox || null, brand: addMedForm.brand, batchNumber: addMedForm.batchNumber || null }]
-              };
-            setMedications([...medications, newMed]);
-            const newTransaction = createTransaction({
-                medId: newMedId, medName: newMed.name, type: 'in', amount: totalQuantity, user: getCurrentUserInfo()?.fullName || auth.currentUser, location: 'Stock Delivery',
-              note: `Initial stock entry in ${ui.currentLocation} - Brand: ${addMedForm.brand} - ${addMedForm.quantityType === 'boxes' ? `${addMedForm.boxQuantity} boxes (${itemsPerBox} per box)` : `${addMedForm.individualQuantity} items`}`
-            }, transactions.length + 1);
-            setTransactions([newTransaction, ...transactions]);
-            
-          }
-        } else {
-          let minLevel = 0;
-          if (addMedForm.minLevelType === 'boxes' && addMedForm.minLevelBoxes && parseInt(addMedForm.minLevelBoxes) > 0) {
-            if (!itemsPerBox) {
-              setAddMedForm(prev => ({ ...prev, error: 'Items per box must be specified to use box-based minimum level' }));
+
+          let medicationId;
+          let medicationName;
+
+          if (addMedForm.mode === 'existing') {
+            const referenceMed = medications.find(med => med.id === parseInt(addMedForm.selectedExistingMedId));
+            if (!referenceMed) {
+              setAddMedForm(prev => ({ ...prev, error: 'Selected medication not found' }));
               return;
             }
-            minLevel = parseInt(addMedForm.minLevelBoxes) * itemsPerBox;
-          } else if (addMedForm.minLevel && parseInt(addMedForm.minLevel) > 0) {
-            minLevel = parseInt(addMedForm.minLevel);
-          }
-          const unitName = getUnitName(addMedForm.type);
-          const newMed = {
-            id: Math.max(...medications.map(m => m.id), 0) + 1,
-            name: `${addMedForm.name} ${addMedForm.strength}`,
+            medicationId = referenceMed.id;
+            medicationName = referenceMed.name;
+          } else {
+            // New medication - generate ID and create it
+            medicationId = String(Math.max(...medications.map(m => parseInt(m.id) || 0), 0) + 1);
+            medicationName = `${addMedForm.name} ${addMedForm.strength}`;
+            
+            let minLevel = 0;
+            if (addMedForm.minLevelType === 'boxes' && addMedForm.minLevelBoxes && parseInt(addMedForm.minLevelBoxes) > 0) {
+              if (!itemsPerBox) {
+                setAddMedForm(prev => ({ ...prev, error: 'Items per box must be specified to use box-based minimum level' }));
+                return;
+              }
+              minLevel = parseInt(addMedForm.minLevelBoxes) * itemsPerBox;
+            } else if (addMedForm.minLevel && parseInt(addMedForm.minLevel) > 0) {
+              minLevel = parseInt(addMedForm.minLevel);
+            }
+            
+            await window.api.addMedication({
+              id: medicationId,
+              name: addMedForm.name,
+              strength: addMedForm.strength,
+              type: addMedForm.type,
+              barcode: addMedForm.barcode || '',
               minLevel,
-            unit: unitName,
-            type: addMedForm.type,
-            location: ui.currentLocation,
-            barcode: addMedForm.barcode || null,
-            standardItemsPerBox: itemsPerBox || null,
-              batches: [{ id: 1, quantity: totalQuantity, expiryDate, itemsPerBox: itemsPerBox || null, brand: addMedForm.brand }]
-            };
-          setMedications([...medications, newMed]);
-          const newTransaction = createTransaction({
-              medId: newMed.id, medName: newMed.name, type: 'in', amount: totalQuantity, user: getCurrentUserInfo()?.fullName || auth.currentUser, location: 'Stock Delivery',
-            note: `Initial stock entry - Brand: ${addMedForm.brand} - ${addMedForm.quantityType === 'boxes' ? `${addMedForm.boxQuantity} boxes (${itemsPerBox} per box)` : `${addMedForm.individualQuantity} items`}`
-          }, transactions.length + 1);
-          setTransactions([newTransaction, ...transactions]);
-
+              standardItemsPerBox: itemsPerBox || null
+            });
           }
-        setAddMedForm({
+
+          // Add batch/stock
+          const note = addMedForm.quantityType === 'boxes' 
+            ? `Stock added to ${ui.currentLocation} - Brand: ${addMedForm.brand} - ${addMedForm.boxQuantity} boxes (${itemsPerBox} per box)`
+            : `Stock added to ${ui.currentLocation} - Brand: ${addMedForm.brand} - ${addMedForm.individualQuantity} items`;
+
+          await window.api.addBatch({
+            medicationId,
+            batchNumber: addMedForm.batchNumber || `BATCH-${Date.now()}`,
+            expiryMonth: parseInt(addMedForm.expiryMonth),
+            expiryYear: parseInt(addMedForm.expiryYear),
+            brand: addMedForm.brand,
+            itemsPerBox: itemsPerBox || null,
+            quantityBoxes: addMedForm.quantityType === 'boxes' ? parseInt(addMedForm.boxQuantity) : 0,
+            quantityIndividuals: addMedForm.quantityType === 'individuals' ? parseInt(addMedForm.individualQuantity) : 0,
+            locationId: ui.currentLocation,
+            userId: currentUser.id,
+            note
+          });
+
+          // Refresh data from backend
+          const data = await window.api.fetchAllData();
+          setMedications(data.medications || []);
+          setTransactions(data.transactions || []);
+
+          setAddMedForm({
             mode: 'existing', selectedExistingMedId: '', searchTerm: '', name: '', strength: '', type: 'tablet', expiryMonth: '', expiryYear: '',
             quantityType: 'boxes', boxQuantity: '', itemsPerBox: '', individualQuantity: '', minLevelType: 'boxes', minLevel: '', minLevelBoxes: '', brand: '', batchNumber: '', error: ''
-        });
-        setModals(prev => ({ ...prev, showAddMedication: false }));
+          });
+          setModals(prev => ({ ...prev, showAddMedication: false }));
+        } catch (err) {
+          console.error('Failed to add medication/batch:', err);
+          setAddMedForm(prev => ({ ...prev, error: err.message || 'Failed to add medication' }));
+        }
       };
 
-      const handleBarcodeNewMedication = () => {
+      const handleBarcodeNewMedication = async () => {
         // Validate required fields
         if (!barcodeNewMedForm.name.trim() || !barcodeNewMedForm.strength.trim()) {
           setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter medication name and strength' }));
@@ -1590,7 +1527,6 @@ Medicana Stock Management System`;
           return;
         }
 
-        const expiryDate = `${barcodeNewMedForm.expiryYear}-${barcodeNewMedForm.expiryMonth.padStart(2, '0')}`;
         let totalQuantity = 0;
         let itemsPerBox = 0;
         
@@ -1625,52 +1561,73 @@ Medicana Stock Management System`;
           minLevel = parseInt(barcodeNewMedForm.minLevel);
         }
 
-        const unitName = getUnitName(barcodeNewMedForm.type);
-        const newMed = {
-          id: Math.max(...medications.map(m => m.id), 0) + 1,
-          name: `${barcodeNewMedForm.name} ${barcodeNewMedForm.strength}`,
-          minLevel,
-          unit: unitName,
-          type: barcodeNewMedForm.type,
-          location: barcodeNewMedForm.location,
-          barcode: barcodeNewMedForm.barcode,
-          standardItemsPerBox: itemsPerBox || null,
-          batches: [{ id: 1, quantity: totalQuantity, expiryDate, itemsPerBox: itemsPerBox || null, brand: barcodeNewMedForm.brand, batchNumber: barcodeNewMedForm.batchNumber || null }]
-        };
+        try {
+          const currentUser = getCurrentUserInfo();
+          if (!currentUser || !currentUser.id) {
+            setBarcodeNewMedForm(prev => ({ ...prev, error: 'User not logged in' }));
+            return;
+          }
 
-        setMedications([...medications, newMed]);
-        const newTransaction = createTransaction({
-          medId: newMed.id, 
-          medName: newMed.name, 
-          type: 'in', 
-          amount: totalQuantity, 
-          user: getCurrentUserInfo()?.fullName || auth.currentUser, 
-          location: 'Barcode Scan - New Medication',
-          note: `New medication added via barcode scan - Barcode: ${barcodeNewMedForm.barcode} - Brand: ${barcodeNewMedForm.brand} - ${barcodeNewMedForm.quantityType === 'boxes' ? `${barcodeNewMedForm.boxQuantity} boxes (${itemsPerBox} per box)` : `${barcodeNewMedForm.individualQuantity} items`}`
-        }, transactions.length + 1);
-        setTransactions([newTransaction, ...transactions]);
+          const medicationId = String(Math.max(...medications.map(m => parseInt(m.id) || 0), 0) + 1);
 
-        // Reset form and close modal
-        setBarcodeNewMedForm({
-          barcode: '',
-          name: '',
-          strength: '',
-          type: 'tablet',
-          expiryMonth: '',
-          expiryYear: '',
-          quantityType: 'boxes',
-          boxQuantity: '',
-          itemsPerBox: '',
-          individualQuantity: '',
-          minLevelType: 'boxes',
-          minLevel: '',
-          minLevelBoxes: '',
-          brand: '',
-          batchNumber: '',
-          location: '',
-          error: ''
-        });
-        setModals(prev => ({ ...prev, showBarcodeNewMedication: false }));
+          // Create medication
+          await window.api.addMedication({
+            id: medicationId,
+            name: barcodeNewMedForm.name,
+            strength: barcodeNewMedForm.strength,
+            type: barcodeNewMedForm.type,
+            barcode: barcodeNewMedForm.barcode,
+            minLevel,
+            standardItemsPerBox: itemsPerBox || null
+          });
+
+          // Add batch/stock
+          const note = `New medication added via barcode scan - Barcode: ${barcodeNewMedForm.barcode} - Brand: ${barcodeNewMedForm.brand} - ${barcodeNewMedForm.quantityType === 'boxes' ? `${barcodeNewMedForm.boxQuantity} boxes (${itemsPerBox} per box)` : `${barcodeNewMedForm.individualQuantity} items`}`;
+
+          await window.api.addBatch({
+            medicationId,
+            batchNumber: barcodeNewMedForm.batchNumber || `BATCH-${Date.now()}`,
+            expiryMonth: parseInt(barcodeNewMedForm.expiryMonth),
+            expiryYear: parseInt(barcodeNewMedForm.expiryYear),
+            brand: barcodeNewMedForm.brand,
+            itemsPerBox: itemsPerBox || null,
+            quantityBoxes: barcodeNewMedForm.quantityType === 'boxes' ? parseInt(barcodeNewMedForm.boxQuantity) : 0,
+            quantityIndividuals: barcodeNewMedForm.quantityType === 'individuals' ? parseInt(barcodeNewMedForm.individualQuantity) : 0,
+            locationId: barcodeNewMedForm.location,
+            userId: currentUser.id,
+            note
+          });
+
+          // Refresh data from backend
+          const data = await window.api.fetchAllData();
+          setMedications(data.medications || []);
+          setTransactions(data.transactions || []);
+
+          // Reset form and close modal
+          setBarcodeNewMedForm({
+            barcode: '',
+            name: '',
+            strength: '',
+            type: 'tablet',
+            expiryMonth: '',
+            expiryYear: '',
+            quantityType: 'boxes',
+            boxQuantity: '',
+            itemsPerBox: '',
+            individualQuantity: '',
+            minLevelType: 'boxes',
+            minLevel: '',
+            minLevelBoxes: '',
+            brand: '',
+            batchNumber: '',
+            location: '',
+            error: ''
+          });
+          setModals(prev => ({ ...prev, showBarcodeNewMedication: false }));
+        } catch (err) {
+          console.error('Failed to add medication/batch via barcode:', err);
+          setBarcodeNewMedForm(prev => ({ ...prev, error: err.message || 'Failed to add medication' }));
+        }
       };
 
       const handleStockAdjustment = (type) => {
@@ -1740,12 +1697,12 @@ Medicana Stock Management System`;
         setFefoOverride({ pending: null, password: '', reason: '', error: '' });
       };
 
-      const processAdjustment = (overrideReason) => {
+      const processAdjustment = async (overrideReason) => {
         const type = adjustmentForm.action;
           if (type === 'in' && ((adjustmentForm.stockInSource === 'delivery' && adjustmentForm.deliveryBatchOption === 'new') || (adjustmentForm.stockInSource === 'transfer' && adjustmentForm.transferBatchOption === 'new'))) {
             if (!deliveryForm.brand.trim() || !deliveryForm.expiryMonth || !deliveryForm.expiryYear) { setAdjustmentForm(prev => ({ ...prev, error: 'Please enter brand name and expiry date' })); return; }
             if (adjustmentForm.stockInSource === 'transfer' && !adjustmentForm.sourceDepartment) { setAdjustmentForm(prev => ({ ...prev, error: 'Please select source department' })); return; }
-          const expiryDate = `${deliveryForm.expiryYear}-${deliveryForm.expiryMonth.padStart(2, '0')}`;
+            
             let totalQuantity = 0; let itemsPerBox = null;
           if (deliveryForm.quantityType === 'boxes') {
               if (!deliveryForm.boxQuantity || !deliveryForm.itemsPerBox || parseInt(deliveryForm.boxQuantity) <= 0 || parseInt(deliveryForm.itemsPerBox) <= 0) { setAdjustmentForm(prev => ({ ...prev, error: 'Please enter valid box quantity and items per box' })); return; }
@@ -1755,102 +1712,51 @@ Medicana Stock Management System`;
               if (!deliveryForm.individualQuantity || parseInt(deliveryForm.individualQuantity) <= 0) { setAdjustmentForm(prev => ({ ...prev, error: 'Please enter valid quantity' })); return; }
             totalQuantity = parseInt(deliveryForm.individualQuantity);
           }
-          const updatedMed = { ...ui.selectedMed };
-          // Set standardItemsPerBox if this is the first time we're seeing a box size for this medication
-          if (itemsPerBox && !updatedMed.standardItemsPerBox) {
-            updatedMed.standardItemsPerBox = itemsPerBox;
-          }
-            const matchingBatch = updatedMed.batches.find(batch => batch.expiryDate === expiryDate && batch.brand === deliveryForm.brand && batch.itemsPerBox === itemsPerBox && batch.batchNumber === deliveryForm.batchNumber);
-          if (matchingBatch) {
-              updatedMed.batches = updatedMed.batches.map(batch => batch.id === matchingBatch.id ? { ...batch, quantity: batch.quantity + totalQuantity } : batch);
-          } else {
-            const newBatchId = Math.max(...updatedMed.batches.map(b => b.id), 0) + 1;
-              updatedMed.batches.push({ id: newBatchId, quantity: totalQuantity, expiryDate, itemsPerBox, brand: deliveryForm.brand, batchNumber: deliveryForm.batchNumber || null });
+
+          try {
+            const currentUser = getCurrentUserInfo();
+            if (!currentUser || !currentUser.id) {
+              setAdjustmentForm(prev => ({ ...prev, error: 'User not logged in' }));
+              return;
             }
-          // Handle cupboard distribution for Medication Stock L1
-        if (ui.selectedMed.location === 'Medication Stock L1') {
-          const targetCupboard = getCupboardForMedication(ui.selectedMed.name);
-          
-          // Check if medication already exists in the target cupboard
-          const existingCupboardMed = medications.find(m => m.name === ui.selectedMed.name && m.location === targetCupboard);
-          
-          if (existingCupboardMed) {
-            // Add to existing cupboard medication
-            const updatedCupboardMed = { ...existingCupboardMed };
-            // Set standardItemsPerBox if this is the first time we're seeing a box size for this medication
-            if (itemsPerBox && !updatedCupboardMed.standardItemsPerBox) {
-              updatedCupboardMed.standardItemsPerBox = itemsPerBox;
-            }
-            const existingBatch = updatedCupboardMed.batches.find(b => 
-              b.expiryDate === expiryDate && 
-              b.brand === deliveryForm.brand && 
-              b.itemsPerBox === itemsPerBox
-            );
-            
-            if (existingBatch) {
-              existingBatch.quantity += totalQuantity;
-            } else {
-              updatedCupboardMed.batches.push({
-                id: Math.max(...updatedCupboardMed.batches.map(b => b.id), 0) + 1,
-                quantity: totalQuantity,
-                expiryDate,
-                itemsPerBox,
-                brand: deliveryForm.brand,
-                batchNumber: deliveryForm.batchNumber || null
-              });
-            }
-            
-            setMedications(medications.map(med => 
-              med.id === existingCupboardMed.id ? updatedCupboardMed : med
-            ));
-          } else {
-            // Create new medication in target cupboard
-            const newCupboardMed = {
-              id: Math.max(...medications.map(m => m.id), 0) + 1,
-              name: ui.selectedMed.name,
-              minLevel: ui.selectedMed.minLevel,
-              unit: ui.selectedMed.unit,
-              type: ui.selectedMed.type,
-              location: targetCupboard,
-              standardItemsPerBox: itemsPerBox || null,
-              batches: [{
-                id: 1,
-                quantity: totalQuantity,
-                expiryDate,
-                itemsPerBox,
-                brand: deliveryForm.brand,
-                batchNumber: deliveryForm.batchNumber || null
-              }]
-            };
-            
-            setMedications([...medications, newCupboardMed]);
-          }
-        } else {
-          // Regular stock addition for other locations
-          setMedications(medications.map(med => med.id === ui.selectedMed.id ? updatedMed : med));
-        }
-        
+
             const displayAmount = formatQuantityDisplay(totalQuantity, itemsPerBox, ui.selectedMed.unit, deliveryForm.quantityType, deliveryForm.quantityType === 'boxes' ? deliveryForm.boxQuantity : null);
-          const sourceLocation = adjustmentForm.stockInSource === 'delivery' ? 'Delivery' : adjustmentForm.sourceDepartment;
-          const notePrefix = adjustmentForm.stockInSource === 'delivery' ? 'Delivery received' : `Stock received from ${adjustmentForm.sourceDepartment}`;
-          const deliveryNote = `${notePrefix} - Brand: ${deliveryForm.brand}, Expiry: ${formatExpiry(expiryDate)} - ${displayAmount}`;
-            const newTransaction = createTransaction({ medId: ui.selectedMed.id, medName: ui.selectedMed.name, type: 'in', amount: totalQuantity, user: getCurrentUserInfo()?.fullName || auth.currentUser, location: sourceLocation, note: deliveryNote }, transactions.length + 1);
-          
-          // Check if this delivery fulfills a pending order
-          if (adjustmentForm.stockInSource === 'delivery' && hasPendingOrder(ui.selectedMed.id)) {
-              const fulfillmentTransaction = createTransaction({ medId: ui.selectedMed.id, medName: ui.selectedMed.name, type: 'order_fulfilled', amount: totalQuantity, user: getCurrentUserInfo()?.fullName || auth.currentUser, location: 'Delivery', note: `Order fulfilled - ${displayAmount} received` }, transactions.length + 2);
-            setTransactions([fulfillmentTransaction, newTransaction, ...transactions]);
-          } else {
-            setTransactions([newTransaction, ...transactions]);
+            const sourceLocation = adjustmentForm.stockInSource === 'delivery' ? 'Delivery' : adjustmentForm.sourceDepartment;
+            const notePrefix = adjustmentForm.stockInSource === 'delivery' ? 'Delivery received' : `Stock received from ${adjustmentForm.sourceDepartment}`;
+            const deliveryNote = `${notePrefix} - Brand: ${deliveryForm.brand} - ${displayAmount}`;
+
+            await window.api.addBatch({
+              medicationId: ui.selectedMed.id,
+              batchNumber: deliveryForm.batchNumber || `BATCH-${Date.now()}`,
+              expiryMonth: parseInt(deliveryForm.expiryMonth),
+              expiryYear: parseInt(deliveryForm.expiryYear),
+              brand: deliveryForm.brand,
+              itemsPerBox: itemsPerBox || null,
+              quantityBoxes: deliveryForm.quantityType === 'boxes' ? parseInt(deliveryForm.boxQuantity) : 0,
+              quantityIndividuals: deliveryForm.quantityType === 'individuals' ? parseInt(deliveryForm.individualQuantity) : 0,
+              locationId: ui.selectedMed.location,
+              userId: currentUser.id,
+              note: deliveryNote
+            });
+
+            // Refresh data from backend
+            const data = await window.api.fetchAllData();
+            setMedications(data.medications || []);
+            setTransactions(data.transactions || []);
+
+            resetAdjustmentForms();
+            return;
+          } catch (err) {
+            console.error('Failed to add delivery:', err);
+            setAdjustmentForm(prev => ({ ...prev, error: err.message || 'Failed to add delivery' }));
+            return;
           }
-          resetAdjustmentForms();
-          return;
         }
         const selectedBatch = ui.selectedMed.batches.find(b => b.id === parseInt(adjustmentForm.batchId));
         let amount = parseInt(adjustmentForm.amount);
           if (adjustmentForm.type === 'boxes' && selectedBatch.itemsPerBox) { amount = amount * selectedBatch.itemsPerBox; }
         const updatedMed = { ...ui.selectedMed };
-          if (type === 'out') { processStockOut(updatedMed, selectedBatch, amount, overrideReason); } else { processStockIn(updatedMed, selectedBatch, amount, overrideReason); }
+          if (type === 'out') { await processStockOut(updatedMed, selectedBatch, amount, overrideReason); } else { await processStockIn(updatedMed, selectedBatch, amount, overrideReason); }
         resetAdjustmentForms();
       };
 
@@ -1861,82 +1767,121 @@ Medicana Stock Management System`;
           setDeliveryForm({ brand: '', expiryMonth: '', expiryYear: '', quantityType: 'boxes', boxQuantity: '', itemsPerBox: '', individualQuantity: '', batchNumber: '' });
       };
 
-      const processStockOut = (updatedMed, selectedBatch, amount, overrideReason) => {
+      const processStockOut = async (updatedMed, selectedBatch, amount, overrideReason) => {
           if (selectedBatch.quantity < amount) { setAdjustmentForm(prev => ({ ...prev, error: `Cannot remove ${amount} ${ui.selectedMed.unit}. Only ${selectedBatch.quantity} ${ui.selectedMed.unit} available in this batch.` })); return; }
-          updatedMed.batches = updatedMed.batches.map(batch => { if (batch.id === parseInt(adjustmentForm.batchId)) { const newQuantity = batch.quantity - amount; return newQuantity > 0 ? { ...batch, quantity: newQuantity } : null; } return batch; }).filter(batch => batch !== null);
-        
-        // Handle cupboard stock removal - if removing from a cupboard, also remove from Medication Stock L1
-        if (['Cupboard 1', 'Cupboard 2', 'Cupboard 3'].includes(ui.selectedMed.location)) {
-          const mainStockMed = medications.find(m => m.name === ui.selectedMed.name && m.location === 'Medication Stock L1');
-          if (mainStockMed) {
-            const mainStockBatch = mainStockMed.batches.find(b => 
-              b.expiryDate === selectedBatch.expiryDate && 
-              b.brand === selectedBatch.brand && 
-              b.itemsPerBox === selectedBatch.itemsPerBox
-            );
-            
-            if (mainStockBatch && mainStockBatch.quantity >= amount) {
-              const updatedMainStockMed = { ...mainStockMed };
-              updatedMainStockMed.batches = updatedMainStockMed.batches.map(batch => {
-                if (batch.id === mainStockBatch.id) {
-                  const newQuantity = batch.quantity - amount;
-                  return newQuantity > 0 ? { ...batch, quantity: newQuantity } : null;
-                }
-                return batch;
-              }).filter(batch => batch !== null);
-              
-              setMedications(medications.map(med => 
-                med.id === mainStockMed.id ? updatedMainStockMed : 
-                med.id === ui.selectedMed.id ? updatedMed : med
-              ));
+          
+          try {
+            const currentUser = getCurrentUserInfo();
+            if (!currentUser || !currentUser.id) {
+              setAdjustmentForm(prev => ({ ...prev, error: 'User not logged in' }));
+              return;
             }
+
+            // Call API to adjust stock (negative delta for stock out)
+            const isInternalTransfer = LOCATIONS.includes(adjustmentForm.location);
+            const displayAmount = formatQuantityDisplay(amount, selectedBatch.itemsPerBox, ui.selectedMed.unit, adjustmentForm.type, adjustmentForm.type === 'boxes' ? adjustmentForm.amount : null);
+            let transactionNote = adjustmentForm.note || (isInternalTransfer ? `Transfer to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}` : `Dispensed to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}`);
+            if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
+
+            await window.api.adjustStock({
+              userId: currentUser.id,
+              medicationId: ui.selectedMed.id,
+              locationId: ui.selectedMed.location,
+              batchId: selectedBatch.id,
+              delta: -amount,
+              reason: transactionNote
+            });
+
+            // Handle cupboard stock removal - if removing from a cupboard, also remove from Medication Stock L1
+            if (['Cupboard 1', 'Cupboard 2', 'Cupboard 3'].includes(ui.selectedMed.location)) {
+              const mainStockMed = medications.find(m => m.name === ui.selectedMed.name && m.location === 'Medication Stock L1');
+              if (mainStockMed) {
+                const mainStockBatch = mainStockMed.batches.find(b => 
+                  b.expiryDate === selectedBatch.expiryDate && 
+                  b.brand === selectedBatch.brand && 
+                  b.itemsPerBox === selectedBatch.itemsPerBox
+                );
+                
+                if (mainStockBatch && mainStockBatch.quantity >= amount) {
+                  await window.api.adjustStock({
+                    userId: currentUser.id,
+                    medicationId: mainStockMed.id,
+                    locationId: 'Medication Stock L1',
+                    batchId: mainStockBatch.id,
+                    delta: -amount,
+                    reason: `Auto-adjustment: ${transactionNote}`
+                  });
+                }
+              }
+            }
+
+            // If internal transfer, add stock to destination
+            if (isInternalTransfer) { 
+              await handleInternalTransfer(updatedMed, selectedBatch, amount, overrideReason, currentUser); 
+            }
+
+            // Refresh data from backend
+            const data = await window.api.fetchAllData();
+            setMedications(data.medications || []);
+            setTransactions(data.transactions || []);
+
+            checkLowStockAlert(ui.selectedMed, amount);
+          } catch (err) {
+            console.error('Failed to process stock out:', err);
+            setAdjustmentForm(prev => ({ ...prev, error: err.message || 'Failed to process stock out' }));
           }
-        } else {
-          // Regular stock removal for other locations
-          setMedications(medications.map(med => med.id === ui.selectedMed.id ? updatedMed : med));
-        }
-        
-        const isInternalTransfer = LOCATIONS.includes(adjustmentForm.location);
-          if (isInternalTransfer) { handleInternalTransfer(updatedMed, selectedBatch, amount, overrideReason); } else { handleExternalDispensing(updatedMed, selectedBatch, amount, overrideReason); }
       };
 
-      const handleInternalTransfer = (updatedMed, selectedBatch, amount, overrideReason) => {
+      const handleInternalTransfer = async (updatedMed, selectedBatch, amount, overrideReason, currentUser) => {
           const destinationMed = medications.find(med => med.name === ui.selectedMed.name && med.location === adjustmentForm.location);
-        let destinationMedId = destinationMed ? destinationMed.id : Math.max(...medications.map(m => m.id), 0) + 1;
-        setMedications(prevMedications => {
-            let updatedMedications = prevMedications.map(med => med.id === ui.selectedMed.id ? updatedMed : med);
-            const destMed = prevMedications.find(med => med.name === ui.selectedMed.name && med.location === adjustmentForm.location);
-          if (destMed) {
-              const destBatch = destMed.batches.find(b => b.expiryDate === selectedBatch.expiryDate && b.brand === selectedBatch.brand && b.itemsPerBox === selectedBatch.itemsPerBox && b.batchNumber === selectedBatch.batchNumber);
-            if (destBatch) {
-              updatedMedications = updatedMedications.map(med => {
-                if (med.id === destMed.id) {
-                    return { ...med, batches: med.batches.map(batch => batch.id === destBatch.id ? { ...batch, quantity: batch.quantity + amount } : batch) };
-                }
-                return med;
-              });
-            } else {
-              const newBatchId = Math.max(...destMed.batches.map(b => b.id), 0) + 1;
-              updatedMedications = updatedMedications.map(med => {
-                if (med.id === destMed.id) {
-                    return { ...med, batches: [ ...med.batches, { id: newBatchId, quantity: amount, expiryDate: selectedBatch.expiryDate, itemsPerBox: selectedBatch.itemsPerBox, brand: selectedBatch.brand, batchNumber: selectedBatch.batchNumber } ] };
-                }
-                return med;
-              });
-            }
-          } else {
-              const newMed = { id: destinationMedId, name: ui.selectedMed.name, minLevel: 0, unit: ui.selectedMed.unit, type: ui.selectedMed.type, location: adjustmentForm.location, batches: [{ id: 1, quantity: amount, expiryDate: selectedBatch.expiryDate, itemsPerBox: selectedBatch.itemsPerBox, brand: selectedBatch.brand, batchNumber: selectedBatch.batchNumber }] };
-            updatedMedications = [...updatedMedications, newMed];
+        
+        // Need to find or create the destination batch
+        // If destination med exists, find matching batch or use an existing batch
+        let destBatchId = null;
+        if (destinationMed) {
+          const destBatch = destinationMed.batches.find(b => 
+            b.expiryDate === selectedBatch.expiryDate && 
+            b.brand === selectedBatch.brand && 
+            b.itemsPerBox === selectedBatch.itemsPerBox && 
+            b.batchNumber === selectedBatch.batchNumber
+          );
+          if (destBatch) {
+            destBatchId = destBatch.id;
+          } else if (destinationMed.batches.length > 0) {
+            // Use first batch as fallback
+            destBatchId = destinationMed.batches[0].id;
           }
-          return updatedMedications;
-        });
-          const destinationTransaction = createTransaction({ medId: destinationMedId, medName: ui.selectedMed.name, type: 'in', amount, user: getCurrentUserInfo()?.fullName || auth.currentUser, location: ui.selectedMed.location, note: `Transfer received from ${ui.selectedMed.location} - Brand: ${selectedBatch.brand}, Expiry: ${formatExpiry(selectedBatch.expiryDate)}` }, transactions.length + 1);
-          const displayAmount = formatQuantityDisplay(amount, selectedBatch.itemsPerBox, ui.selectedMed.unit, adjustmentForm.type, adjustmentForm.type === 'boxes' ? adjustmentForm.amount : null);
-        let transactionNote = adjustmentForm.note || `Transfer to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}`;
-        if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
-          const sourceTransaction = createTransaction({ medId: ui.selectedMed.id, medName: ui.selectedMed.name, type: 'out', amount, user: getCurrentUserInfo()?.fullName || auth.currentUser, location: adjustmentForm.location, note: transactionNote }, transactions.length + 2);
-        setTransactions([sourceTransaction, destinationTransaction, ...transactions]);
-        checkLowStockAlert(ui.selectedMed, amount);
+        }
+
+        // If we don't have a destination batch, we need to add the batch to destination location
+        // This is complex - for now, we'll use addBatch to create the stock at destination
+        if (!destBatchId) {
+          const note = `Transfer received from ${ui.selectedMed.location} - Brand: ${selectedBatch.brand}, Expiry: ${formatExpiry(selectedBatch.expiryDate)}`;
+          await window.api.addBatch({
+            medicationId: ui.selectedMed.id,
+            batchNumber: selectedBatch.batchNumber || `BATCH-${Date.now()}`,
+            expiryMonth: selectedBatch.expiryDate ? parseInt(selectedBatch.expiryDate.split('-')[1]) : new Date().getMonth() + 1,
+            expiryYear: selectedBatch.expiryDate ? parseInt(selectedBatch.expiryDate.split('-')[0]) : new Date().getFullYear(),
+            brand: selectedBatch.brand,
+            itemsPerBox: selectedBatch.itemsPerBox,
+            quantityBoxes: 0,
+            quantityIndividuals: amount,
+            locationId: adjustmentForm.location,
+            userId: currentUser.id,
+            note
+          });
+        } else {
+          // Add to existing batch at destination
+          const note = `Transfer received from ${ui.selectedMed.location}`;
+          await window.api.adjustStock({
+            userId: currentUser.id,
+            medicationId: destinationMed.id,
+            locationId: adjustmentForm.location,
+            batchId: destBatchId,
+            delta: amount,
+            reason: note
+          });
+        }
       };
 
       const handleExternalDispensing = (updatedMed, selectedBatch, amount, overrideReason) => {
@@ -1970,50 +1915,84 @@ Medicana Stock Management System`;
         return `Cupboard ${cupboardNumber}`;
       };
 
-      const processStockIn = (updatedMed, selectedBatch, amount, overrideReason) => {
-        if (adjustmentForm.stockInSource === 'transfer' && adjustmentForm.sourceDepartment) {
+      const processStockIn = async (updatedMed, selectedBatch, amount, overrideReason) => {
+        try {
+          const currentUser = getCurrentUserInfo();
+          if (!currentUser || !currentUser.id) {
+            setAdjustmentForm(prev => ({ ...prev, error: 'User not logged in' }));
+            return;
+          }
+
+          if (adjustmentForm.stockInSource === 'transfer' && adjustmentForm.sourceDepartment) {
             const sourceMed = medications.find(m => m.name === ui.selectedMed.name && m.location === adjustmentForm.sourceDepartment);
             if (!sourceMed) { setAdjustmentForm(prev => ({ ...prev, error: `${ui.selectedMed.name} does not exist in ${adjustmentForm.sourceDepartment}` })); return; }
-          const sourceBatch = sourceMed.batches.find(b => b.id === parseInt(adjustmentForm.batchId));
+            const sourceBatch = sourceMed.batches.find(b => b.id === parseInt(adjustmentForm.batchId));
             if (!sourceBatch) { setAdjustmentForm(prev => ({ ...prev, error: 'Selected batch not found in source department' })); return; }
             if (sourceBatch.quantity < amount) { setAdjustmentForm(prev => ({ ...prev, error: `Cannot transfer ${amount} ${ui.selectedMed.unit}. Only ${sourceBatch.quantity} ${ui.selectedMed.unit} available in source batch.` })); return; }
-          const updatedSourceMed = { ...sourceMed };
-            updatedSourceMed.batches = updatedSourceMed.batches.map(batch => { if (batch.id === parseInt(adjustmentForm.batchId)) { const newQuantity = batch.quantity - amount; return newQuantity > 0 ? { ...batch, quantity: newQuantity } : null; } return batch; }).filter(batch => batch !== null);
-            let updatedMedications = medications.map(med => { if (med.id === sourceMed.id) { return updatedSourceMed.batches.length > 0 ? updatedSourceMed : null; } return med; }).filter(med => med !== null);
-            const destBatch = ui.selectedMed.batches.find(b => b.expiryDate === sourceBatch.expiryDate && b.brand === sourceBatch.brand && b.itemsPerBox === sourceBatch.itemsPerBox && b.batchNumber === sourceBatch.batchNumber);
-          const updatedDestMed = { ...ui.selectedMed };
-          // Set standardItemsPerBox if this is the first time we're seeing a box size for this medication
-          if (sourceBatch.itemsPerBox && !updatedDestMed.standardItemsPerBox) {
-            updatedDestMed.standardItemsPerBox = sourceBatch.itemsPerBox;
-          }
-          if (destBatch) {
-              updatedDestMed.batches = updatedDestMed.batches.map(batch => batch.id === destBatch.id ? { ...batch, quantity: batch.quantity + amount } : batch);
-          } else {
-            const newBatchId = Math.max(...updatedDestMed.batches.map(b => b.id), 0) + 1;
-              updatedDestMed.batches.push({ id: newBatchId, quantity: amount, expiryDate: sourceBatch.expiryDate, itemsPerBox: sourceBatch.itemsPerBox, brand: sourceBatch.brand, batchNumber: sourceBatch.batchNumber });
-            }
-            updatedMedications = updatedMedications.map(med => med.id === ui.selectedMed.id ? updatedDestMed : med);
-          setMedications(updatedMedications);
+            
             const displayAmount = formatQuantityDisplay(amount, sourceBatch.itemsPerBox, ui.selectedMed.unit, adjustmentForm.type, adjustmentForm.type === 'boxes' ? adjustmentForm.amount : null);
-          let transactionNote = adjustmentForm.note || `Stock received from ${adjustmentForm.sourceDepartment} - Brand: ${sourceBatch.brand}, Expiry: ${formatExpiry(sourceBatch.expiryDate)}`;
-          if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
-            const newTransaction = createTransaction({ medId: ui.selectedMed.id, medName: ui.selectedMed.name, type: 'in', amount, user: getCurrentUserInfo()?.fullName || auth.currentUser, location: adjustmentForm.sourceDepartment, note: transactionNote }, transactions.length + 1);
-          setTransactions([newTransaction, ...transactions]);
-        } else {
-            updatedMed.batches = updatedMed.batches.map(batch => batch.id === parseInt(adjustmentForm.batchId) ? { ...batch, quantity: batch.quantity + amount } : batch);
-          setMedications(medications.map(med => med.id === ui.selectedMed.id ? updatedMed : med));
-            const displayAmount = formatQuantityDisplay(amount, selectedBatch.itemsPerBox, ui.selectedMed.unit, adjustmentForm.type, adjustmentForm.type === 'boxes' ? adjustmentForm.amount : null);
-          let transactionNote = adjustmentForm.note || `Stock received from ${adjustmentForm.stockInSource === 'delivery' ? 'Delivery' : adjustmentForm.sourceDepartment} - Brand: ${selectedBatch.brand}, Expiry: ${formatExpiry(selectedBatch.expiryDate)}`;
-          if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
-            const newTransaction = createTransaction({ medId: ui.selectedMed.id, medName: ui.selectedMed.name, type: 'in', amount, user: getCurrentUserInfo()?.fullName || auth.currentUser, location: adjustmentForm.stockInSource === 'delivery' ? 'Delivery' : adjustmentForm.sourceDepartment, note: transactionNote }, transactions.length + 1);
-          
-          // Check if this delivery fulfills a pending order
-          if (adjustmentForm.stockInSource === 'delivery' && hasPendingOrder(ui.selectedMed.id)) {
-              const fulfillmentTransaction = createTransaction({ medId: ui.selectedMed.id, medName: ui.selectedMed.name, type: 'order_fulfilled', amount, user: getCurrentUserInfo()?.fullName || auth.currentUser, location: 'Delivery', note: `Order fulfilled - ${displayAmount} received` }, transactions.length + 2);
-            setTransactions([fulfillmentTransaction, newTransaction, ...transactions]);
+            let transactionNote = adjustmentForm.note || `Stock received from ${adjustmentForm.sourceDepartment} - Brand: ${sourceBatch.brand}, Expiry: ${formatExpiry(sourceBatch.expiryDate)}`;
+            if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
+
+            // Remove from source
+            await window.api.adjustStock({
+              userId: currentUser.id,
+              medicationId: sourceMed.id,
+              locationId: adjustmentForm.sourceDepartment,
+              batchId: sourceBatch.id,
+              delta: -amount,
+              reason: `Transfer to ${ui.selectedMed.location}`
+            });
+
+            // Add to destination
+            const destBatch = ui.selectedMed.batches.find(b => b.expiryDate === sourceBatch.expiryDate && b.brand === sourceBatch.brand && b.itemsPerBox === sourceBatch.itemsPerBox && b.batchNumber === sourceBatch.batchNumber);
+            if (destBatch) {
+              await window.api.adjustStock({
+                userId: currentUser.id,
+                medicationId: ui.selectedMed.id,
+                locationId: ui.selectedMed.location,
+                batchId: destBatch.id,
+                delta: amount,
+                reason: transactionNote
+              });
+            } else {
+              // Need to create new batch at destination
+              await window.api.addBatch({
+                medicationId: ui.selectedMed.id,
+                batchNumber: sourceBatch.batchNumber || `BATCH-${Date.now()}`,
+                expiryMonth: sourceBatch.expiryDate ? parseInt(sourceBatch.expiryDate.split('-')[1]) : new Date().getMonth() + 1,
+                expiryYear: sourceBatch.expiryDate ? parseInt(sourceBatch.expiryDate.split('-')[0]) : new Date().getFullYear(),
+                brand: sourceBatch.brand,
+                itemsPerBox: sourceBatch.itemsPerBox,
+                quantityBoxes: 0,
+                quantityIndividuals: amount,
+                locationId: ui.selectedMed.location,
+                userId: currentUser.id,
+                note: transactionNote
+              });
+            }
           } else {
-            setTransactions([newTransaction, ...transactions]);
+            // Stock in from delivery (already handled by processAdjustment delivery flow)
+            let transactionNote = adjustmentForm.note || `Stock received from ${adjustmentForm.stockInSource === 'delivery' ? 'Delivery' : adjustmentForm.sourceDepartment} - Brand: ${selectedBatch.brand}, Expiry: ${formatExpiry(selectedBatch.expiryDate)}`;
+            if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
+
+            await window.api.adjustStock({
+              userId: currentUser.id,
+              medicationId: ui.selectedMed.id,
+              locationId: ui.selectedMed.location,
+              batchId: selectedBatch.id,
+              delta: amount,
+              reason: transactionNote
+            });
           }
+
+          // Refresh data from backend
+          const data = await window.api.fetchAllData();
+          setMedications(data.medications || []);
+          setTransactions(data.transactions || []);
+        } catch (err) {
+          console.error('Failed to process stock in:', err);
+          setAdjustmentForm(prev => ({ ...prev, error: err.message || 'Failed to process stock in' }));
         }
       };
 
@@ -5334,5 +5313,6 @@ Medicana Stock Management System`;
       const root = ReactDOM.createRoot(document.getElementById('root'));
       root.render(<MedicationStockApp />);
   </script>
+  <script src="api.js"></script>
 </body>
 </html>
