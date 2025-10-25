@@ -27,17 +27,19 @@ exports.handler = async (event) => {
         statusCode: 400,
         body: JSON.stringify({ 
           success: false, 
-          message: 'Missing required fields: userId, medicationId, batchId, sourceLocationId, targetLocationId, quantity' 
+          message: 'Missing or invalid fields',
+          debug: { userId, medicationId, batchId, sourceLocationId, targetLocationId, quantity }
         })
       };
     }
 
-    if (quantity <= 0) {
+    if (typeof quantity !== 'number' || quantity <= 0 || !Number.isInteger(quantity)) {
       return {
         statusCode: 400,
         body: JSON.stringify({ 
           success: false, 
-          message: 'Quantity must be greater than zero' 
+          message: 'Quantity must be a positive integer',
+          debug: { quantity, type: typeof quantity }
         })
       };
     }
@@ -58,7 +60,8 @@ exports.handler = async (event) => {
           statusCode: 400,
           body: JSON.stringify({ 
             success: false, 
-            message: 'Source location does not have this batch in inventory' 
+            message: 'Source location does not have this batch in inventory',
+            debug: { sourceLocationId, batchId }
           })
         };
       }
@@ -70,25 +73,17 @@ exports.handler = async (event) => {
           statusCode: 400,
           body: JSON.stringify({ 
             success: false, 
-            message: `Insufficient stock at source. Available: ${sourceStock}, requested: ${quantity}` 
+            message: 'Not enough stock at source',
+            debug: { available: sourceStock, requested: quantity }
           })
         };
       }
 
       // Step 2: Decrease stock at source
-      const newSourceStock = sourceStock - quantity;
-      if (newSourceStock > 0) {
-        await db.query(
-          'UPDATE inventory SET on_hand = $1 WHERE location_id = $2 AND batch_id = $3',
-          [newSourceStock, sourceLocationId, batchId]
-        );
-      } else {
-        // Remove row if stock reaches zero
-        await db.query(
-          'DELETE FROM inventory WHERE location_id = $1 AND batch_id = $2',
-          [sourceLocationId, batchId]
-        );
-      }
+      await db.query(
+        'UPDATE inventory SET on_hand = on_hand - $1 WHERE location_id = $2 AND batch_id = $3',
+        [quantity, sourceLocationId, batchId]
+      );
 
       // Step 3: Insert transaction for source (negative delta)
       await db.query(
@@ -99,24 +94,17 @@ exports.handler = async (event) => {
       );
 
       // Step 4: Ensure target inventory row exists, then increase stock
-      const checkTarget = await db.query(
-        'SELECT on_hand FROM inventory WHERE location_id = $1 AND batch_id = $2',
+      await db.query(
+        `INSERT INTO inventory (location_id, batch_id, on_hand)
+         VALUES ($1, $2, 0)
+         ON CONFLICT (location_id, batch_id) DO NOTHING`,
         [targetLocationId, batchId]
       );
 
-      if (checkTarget.rows.length === 0) {
-        // Insert new inventory row at target
-        await db.query(
-          'INSERT INTO inventory (location_id, batch_id, on_hand) VALUES ($1, $2, $3)',
-          [targetLocationId, batchId, quantity]
-        );
-      } else {
-        // Update existing inventory at target
-        await db.query(
-          'UPDATE inventory SET on_hand = on_hand + $1 WHERE location_id = $2 AND batch_id = $3',
-          [quantity, targetLocationId, batchId]
-        );
-      }
+      await db.query(
+        'UPDATE inventory SET on_hand = on_hand + $1 WHERE location_id = $2 AND batch_id = $3',
+        [quantity, targetLocationId, batchId]
+      );
 
       // Step 5: Insert transaction for target (positive delta)
       await db.query(

@@ -443,6 +443,8 @@
 
         const [transactions, setTransactions] = useState([]);
 
+        const [locations, setLocations] = useState([]);
+
         // Load saved state from localStorage on first mount
       useEffect(() => {
           const savedAuth = storage.load('medicana_auth');
@@ -1047,6 +1049,13 @@
           }
         }, [ui.searchTerm, displayMedications.length, searchBarcodeDetection.inputSpeed, medications.length, ui.currentLocation]);
 
+      // Helper function to get internal location ID from display name
+      const getLocationId = (displayName) => {
+        if (!displayName) return null;
+        const location = locations.find(loc => loc.displayName === displayName);
+        return location ? location.id : displayName; // fallback to displayName if not found
+      };
+
       const handleLogin = async () => {
         if (!auth.currentUser.trim() || !auth.password.trim()) {
           setAuth(prev => ({ ...prev, error: 'Please enter both username and password' }));
@@ -1070,12 +1079,13 @@
           // Store user info in sessionStorage
           sessionStorage.setItem('currentUser', JSON.stringify(data.user));
           
-          // Load medications and transactions from backend BEFORE setting isLoggedIn
+          // Load medications, transactions, and locations from backend BEFORE setting isLoggedIn
           // This prevents the flash of empty/old data
           try {
             const backendData = await window.api.fetchAllData();
             setMedications(backendData.medications || []);
             setTransactions(backendData.transactions || []);
+            setLocations(backendData.locations || []);
             
             // NOW set logged in - UI will render with real Neon data already loaded
             setAuth(prev => ({ ...prev, isLoggedIn: true, error: '' }));
@@ -1092,9 +1102,10 @@
             
             // Start polling to keep data in sync
             window.api.startPolling({
-              onData: ({ medications: meds, transactions: txs }) => {
+              onData: ({ medications: meds, transactions: txs, locations: locs }) => {
                 setMedications(meds || []);
                 setTransactions(txs || []);
+                setLocations(locs || []);
               },
               intervalMs: 20000
             });
@@ -1405,7 +1416,7 @@ Medicana Stock Management System`;
             itemsPerBox: itemsPerBox || null,
             quantityBoxes: addMedForm.quantityType === 'boxes' ? parseInt(addMedForm.boxQuantity) : 0,
             quantityIndividuals: addMedForm.quantityType === 'individuals' ? parseInt(addMedForm.individualQuantity) : 0,
-            locationId: ui.currentLocation,
+            locationId: getLocationId(ui.currentLocation) || ui.currentLocation,
             userId: currentUser.id,
             note
           });
@@ -1414,6 +1425,7 @@ Medicana Stock Management System`;
           const data = await window.api.fetchAllData();
           setMedications(data.medications || []);
           setTransactions(data.transactions || []);
+          setLocations(data.locations || []);
 
           setAddMedForm({
             mode: 'existing', selectedExistingMedId: '', searchTerm: '', name: '', strength: '', type: 'tablet', expiryMonth: '', expiryYear: '',
@@ -1507,7 +1519,7 @@ Medicana Stock Management System`;
             itemsPerBox: itemsPerBox || null,
             quantityBoxes: barcodeNewMedForm.quantityType === 'boxes' ? parseInt(barcodeNewMedForm.boxQuantity) : 0,
             quantityIndividuals: barcodeNewMedForm.quantityType === 'individuals' ? parseInt(barcodeNewMedForm.individualQuantity) : 0,
-            locationId: barcodeNewMedForm.location,
+            locationId: getLocationId(barcodeNewMedForm.location) || barcodeNewMedForm.location,
             userId: currentUser.id,
             note
           });
@@ -1516,6 +1528,7 @@ Medicana Stock Management System`;
           const data = await window.api.fetchAllData();
           setMedications(data.medications || []);
           setTransactions(data.transactions || []);
+          setLocations(data.locations || []);
 
           // Reset form and close modal
           setBarcodeNewMedForm({
@@ -1648,7 +1661,7 @@ Medicana Stock Management System`;
               itemsPerBox: itemsPerBox || null,
               quantityBoxes: deliveryForm.quantityType === 'boxes' ? parseInt(deliveryForm.boxQuantity) : 0,
               quantityIndividuals: deliveryForm.quantityType === 'individuals' ? parseInt(deliveryForm.individualQuantity) : 0,
-              locationId: ui.selectedMed.location,
+              locationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
               userId: currentUser.id,
               note: deliveryNote
             });
@@ -1692,7 +1705,8 @@ Medicana Stock Management System`;
             }
 
             // Determine if this is an internal transfer or external dispensing
-            const isInternalTransfer = LOCATIONS.includes(adjustmentForm.location);
+            const targetLocationId = getLocationId(adjustmentForm.location);
+            const isInternalTransfer = locations.some(loc => loc.displayName === adjustmentForm.location);
             const displayAmount = formatQuantityDisplay(amount, selectedBatch.itemsPerBox, ui.selectedMed.unit, adjustmentForm.type, adjustmentForm.type === 'boxes' ? adjustmentForm.amount : null);
             let transactionNote = adjustmentForm.note || (isInternalTransfer ? `Transfer to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}` : `Dispensed to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}`);
             if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
@@ -1703,8 +1717,8 @@ Medicana Stock Management System`;
                 userId: currentUser.id,
                 medicationId: ui.selectedMed.id,
                 batchId: selectedBatch.id,
-                sourceLocationId: ui.selectedMed.location,
-                targetLocationId: adjustmentForm.location,
+                sourceLocationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
+                targetLocationId: targetLocationId,
                 quantity: amount,
                 reason: transactionNote
               });
@@ -1713,7 +1727,7 @@ Medicana Stock Management System`;
               await window.api.adjustStock({
                 userId: currentUser.id,
                 medicationId: ui.selectedMed.id,
-                locationId: ui.selectedMed.location,
+                locationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
                 batchId: selectedBatch.id,
                 delta: -amount,
                 reason: transactionNote
@@ -1730,14 +1744,18 @@ Medicana Stock Management System`;
                   );
                   
                   if (mainStockBatch && mainStockBatch.quantity >= amount) {
-                    await window.api.adjustStock({
-                      userId: currentUser.id,
-                      medicationId: mainStockMed.id,
-                      locationId: 'Medication Stock L1',
-                      batchId: mainStockBatch.id,
-                      delta: -amount,
-                      reason: `Auto-adjustment: ${transactionNote}`
-                    });
+                    const medStockL1LocationId = getLocationId('Medication Stock L1') || 
+                                                  locations.find(loc => loc.groupName === 'Medication Stock L1')?.id;
+                    if (medStockL1LocationId) {
+                      await window.api.adjustStock({
+                        userId: currentUser.id,
+                        medicationId: mainStockMed.id,
+                        locationId: medStockL1LocationId,
+                        batchId: mainStockBatch.id,
+                        delta: -amount,
+                        reason: `Auto-adjustment: ${transactionNote}`
+                      });
+                    }
                   }
                 }
               }
@@ -1811,8 +1829,8 @@ Medicana Stock Management System`;
               userId: currentUser.id,
               medicationId: sourceMed.id,
               batchId: sourceBatch.id,
-              sourceLocationId: adjustmentForm.sourceDepartment,
-              targetLocationId: ui.selectedMed.location,
+              sourceLocationId: sourceMed.locationId || getLocationId(adjustmentForm.sourceDepartment),
+              targetLocationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
               quantity: amount,
               reason: transactionNote
             });
@@ -1824,7 +1842,7 @@ Medicana Stock Management System`;
             await window.api.adjustStock({
               userId: currentUser.id,
               medicationId: ui.selectedMed.id,
-              locationId: ui.selectedMed.location,
+              locationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
               batchId: selectedBatch.id,
               delta: amount,
               reason: transactionNote
@@ -1835,6 +1853,7 @@ Medicana Stock Management System`;
           const data = await window.api.fetchAllData();
           setMedications(data.medications || []);
           setTransactions(data.transactions || []);
+          setLocations(data.locations || []);
         } catch (err) {
           console.error('Failed to process stock in:', err);
           setAdjustmentForm(prev => ({ ...prev, error: err.message || 'Failed to process stock in' }));
@@ -2133,21 +2152,41 @@ Medicana Stock Management System`;
                 <label className="text-sm font-semibold text-gray-700">Current Location:</label>
                   <select value={ui.currentLocation} onChange={(e) => setUi(prev => ({ ...prev, currentLocation: e.target.value }))} className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent bg-white font-medium text-gray-900">
                   <option value="All">All Locations</option>
-                    {LOCATIONS.map(location => {
-                      if (location === 'Medication Stock L1') {
-                        return (
-                          <optgroup key={location} label="Medication Stock L1">
-                            <option value="Medication Stock L1">Medication Stock L1 (All)</option>
-                            <option value="Cupboard 1">Cupboard 1</option>
-                            <option value="Cupboard 2">Cupboard 2</option>
-                            <option value="Cupboard 3">Cupboard 3</option>
-                          </optgroup>
-                        );
-                      } else if (!['Cupboard 1', 'Cupboard 2', 'Cupboard 3'].includes(location)) {
-                        return <option key={location} value={location}>{location}</option>;
+                    {(() => {
+                      // Group locations by groupName
+                      const grouped = {};
+                      locations.forEach(loc => {
+                        if (loc.groupName) {
+                          if (!grouped[loc.groupName]) grouped[loc.groupName] = [];
+                          grouped[loc.groupName].push(loc);
+                        } else {
+                          if (!grouped['_ungrouped']) grouped['_ungrouped'] = [];
+                          grouped['_ungrouped'].push(loc);
+                        }
+                      });
+
+                      const elements = [];
+                      // Render grouped locations
+                      Object.keys(grouped).forEach(groupName => {
+                        if (groupName !== '_ungrouped') {
+                          elements.push(
+                            <optgroup key={groupName} label={groupName}>
+                              <option value={groupName}>{groupName} (All)</option>
+                              {grouped[groupName].map(loc => (
+                                <option key={loc.id} value={loc.displayName}>{loc.displayName}</option>
+                              ))}
+                            </optgroup>
+                          );
+                        }
+                      });
+                      // Render ungrouped locations
+                      if (grouped['_ungrouped']) {
+                        grouped['_ungrouped'].forEach(loc => {
+                          elements.push(<option key={loc.id} value={loc.displayName}>{loc.displayName}</option>);
+                        });
                       }
-                      return null;
-                    })}
+                      return elements;
+                    })()}
                 </select>
                   <p className="text-sm text-gray-600">
                     {ui.currentLocation === 'All' ? 'Viewing stock across all locations' : 
@@ -3005,12 +3044,12 @@ Medicana Stock Management System`;
                             <label className="block text-sm font-medium text-gray-700 mb-2">Department (Stock Coming From) <span className="text-red-600">*</span></label>
                             <select value={adjustmentForm.sourceDepartment} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, sourceDepartment: e.target.value, batchId: '' })); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
                           <option value="">Select department...</option>
-                          {LOCATIONS.map(location => {
-                                const medInLocation = medications.find(m => m.name === ui.selectedMed.name && m.location === location);
-                                const hasBatches = medInLocation && medInLocation.batches.length > 0 && location !== ui.selectedMed.location;
+                          {locations.map(location => {
+                                const medInLocation = medications.find(m => m.name === ui.selectedMed.name && m.location === location.displayName);
+                                const hasBatches = medInLocation && medInLocation.batches.length > 0 && location.displayName !== ui.selectedMed.location;
                             return (
-                                  <option key={location} value={location} style={hasBatches ? { color: '#059669', fontWeight: '600' } : {}}>
-                                {location}{hasBatches ? ' ✓' : ''}
+                                  <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#059669', fontWeight: '600' } : {}}>
+                                {location.displayName}{hasBatches ? ' ✓' : ''}
                               </option>
                             );
                           })}
@@ -3393,13 +3432,13 @@ Medicana Stock Management System`;
                         <label className="block text-sm font-medium text-gray-700 mb-2">Location <span className="text-red-600">*</span></label>
                         <select value={adjustmentForm.location} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, location: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
                       <option value="">Select location...</option>
-                      {LOCATIONS.map(location => {
-                        const isInternalLocation = LOCATIONS.includes(location);
-                            const medInLocation = medications.find(m => m.name === ui.selectedMed.name && m.location === location);
+                      {locations.map(location => {
+                        const isInternalLocation = true; // All locations from backend are internal
+                            const medInLocation = medications.find(m => m.name === ui.selectedMed.name && m.location === location.displayName);
                         const hasStock = isInternalLocation && medInLocation && medInLocation.batches.length > 0;
                         return (
-                              <option key={location} value={location} style={hasStock ? { color: '#059669', fontWeight: '600' } : {}}>
-                            {location}{hasStock ? ' ✓' : ''}
+                              <option key={location.id} value={location.displayName} style={hasStock ? { color: '#059669', fontWeight: '600' } : {}}>
+                            {location.displayName}{hasStock ? ' ✓' : ''}
                           </option>
                         );
                       })}
@@ -3586,12 +3625,12 @@ Medicana Stock Management System`;
                             <label className="block text-sm font-medium text-gray-700 mb-2">Department (Stock Coming From) <span className="text-red-600">*</span></label>
                             <select value={adjustmentForm.sourceDepartment} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, sourceDepartment: e.target.value, batchId: '' })); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
                           <option value="">Select department...</option>
-                          {LOCATIONS.map(location => {
-                                const medInLocation = medications.find(m => m.name === ui.selectedMed.name && m.location === location);
-                                const hasBatches = medInLocation && medInLocation.batches.length > 0 && location !== ui.selectedMed.location;
+                          {locations.map(location => {
+                                const medInLocation = medications.find(m => m.name === ui.selectedMed.name && m.location === location.displayName);
+                                const hasBatches = medInLocation && medInLocation.batches.length > 0 && location.displayName !== ui.selectedMed.location;
                             return (
-                                  <option key={location} value={location} style={hasBatches ? { color: '#059669', fontWeight: '600' } : {}}>
-                                {location}{hasBatches ? ' ✓' : ''}
+                                  <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#059669', fontWeight: '600' } : {}}>
+                                {location.displayName}{hasBatches ? ' ✓' : ''}
                               </option>
                             );
                           })}
@@ -3686,7 +3725,7 @@ Medicana Stock Management System`;
                         <label className="block text-sm font-medium text-gray-700 mb-2">Destination Location <span className="text-red-600">*</span></label>
                         <select value={adjustmentForm.location} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, location: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
                       <option value="">Select destination...</option>
-                          {LOCATIONS.filter(loc => loc !== ui.selectedMed.location).map(location => (<option key={location} value={location}>{location}</option>))}
+                          {locations.filter(loc => loc.displayName !== ui.selectedMed.location).map(location => (<option key={location.id} value={location.displayName}>{location.displayName}</option>))}
                     </select>
                   </div>
                 )}
@@ -4142,13 +4181,11 @@ Medicana Stock Management System`;
                               <option value="Cupboard 2">Cupboard 2</option>
                               <option value="Cupboard 3">Cupboard 3</option>
                             </optgroup>
-                            {LOCATIONS.map(location => {
-                              if (location === 'Medication Stock L1') {
-                                return null; // Already handled above
-                              } else if (!['Cupboard 1', 'Cupboard 2', 'Cupboard 3'].includes(location)) {
-                                return <option key={location} value={location}>{location}</option>;
+                            {locations.map(location => {
+                              if (location.groupName === 'Medication Stock L1') {
+                                return null; // Already handled above (cupboards)
                               }
-                              return null;
+                              return <option key={location.id} value={location.displayName}>{location.displayName}</option>;
                             })}
                           </select>
                         </div>
