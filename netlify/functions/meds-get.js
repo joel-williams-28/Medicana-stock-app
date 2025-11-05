@@ -44,7 +44,7 @@ exports.handler = async () => {
       if (!medsByKey[key]) {
         medsByKey[key] = {
           id: medId,
-          name: row.strength
+          name: (row.strength && row.strength !== 'N/A')
             ? `${row.name} ${row.strength}`
             : row.name,
           minLevel: row.min_level || 0,
@@ -82,7 +82,10 @@ exports.handler = async () => {
       SELECT
         t.id,
         t.medication_id,
-        (m.name || ' ' || COALESCE(m.strength,'')) AS med_name,
+        CASE 
+          WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
+          ELSE m.name || ' ' || m.strength
+        END AS med_name,
         t.delta,
         t.reason,
         t.location_id,
