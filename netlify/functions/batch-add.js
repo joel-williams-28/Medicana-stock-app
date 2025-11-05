@@ -63,27 +63,39 @@ exports.handler = async (event) => {
     await db.query('BEGIN');
 
     try {
-      // Ensure batch exists (or create it)
+      // Batch integrity safeguard — do not remove.
+      // batch_code is the unique key for batch metadata globally (not per medication)
+      // If a batch_code exists, we MUST use its canonical values and ignore user input
       let batchIdResult;
-      if (batchNumber) {
-        const checkBatch = await db.query(
-          'SELECT id FROM batches WHERE medication_id = $1 AND batch_code = $2',
-          [medicationId, batchNumber]
+      if (batchNumber && batchNumber.trim()) {
+        const existingBatch = await db.query(
+          `SELECT id, medication_id, expiry_date, brand, items_per_box
+           FROM batches
+           WHERE batch_code = $1`,
+          [batchNumber.trim()]
         );
 
-        if (checkBatch.rows.length > 0) {
-          batchIdResult = checkBatch.rows[0].id;
+        if (existingBatch.rows.length > 0) {
+          // Batch code exists - use existing values and ignore user input for batch metadata
+          const existing = existingBatch.rows[0];
+          batchIdResult = existing.id;
+          
+          // Note: We use the existing batch's medication_id, expiry_date, brand, items_per_box
+          // User-provided values for these fields are ignored to maintain batch integrity
+          // The medicationId parameter may differ, but we use the batch's linked medication_id
+          // This ensures batch_code is the authoritative source for batch metadata
         } else {
+          // Batch code doesn't exist - create new batch with provided values
           const insertBatch = await db.query(
             `INSERT INTO batches (medication_id, batch_code, expiry_date, brand, items_per_box)
              VALUES ($1, $2, $3, $4, $5)
              RETURNING id`,
-            [medicationId, batchNumber, expiryDate, brand || '', itemsPerBox || null]
+            [medicationId, batchNumber.trim(), expiryDate, brand || '', itemsPerBox || null]
           );
           batchIdResult = insertBatch.rows[0].id;
         }
       } else {
-        // No batch number provided, create a generic batch
+        // No batch number provided, create a generic batch with unique timestamp
         const insertBatch = await db.query(
           `INSERT INTO batches (medication_id, batch_code, expiry_date, brand, items_per_box)
            VALUES ($1, $2, $3, $4, $5)

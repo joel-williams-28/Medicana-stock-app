@@ -4,34 +4,53 @@ const db = require('./_db');
 
 exports.handler = async () => {
   try {
-    // Query medication/stock snapshot
+    // Query medication/stock snapshot from inventory_full view
     // Group by medication + location to match the UI's expectation of one medication per location
     const medsQuery = `
       SELECT
-        m.id AS medication_id,
-        m.name,
-        m.strength,
-        m.form,
-        m.fefo,
-        m.min_level,
-        m.standard_items_per_box,
-        m.barcode,
-        l.id AS location_id,
-        l.display_name AS location_name,
-        b.id AS batch_id,
-        b.batch_code,
-        b.expiry_date,
-        b.brand,
-        b.items_per_box,
-        inv.on_hand
-      FROM medications m
-      CROSS JOIN locations l
-      LEFT JOIN batches b ON b.medication_id = m.id
-      LEFT JOIN inventory inv ON inv.batch_id = b.id AND inv.location_id = l.id
-      WHERE inv.on_hand > 0 OR (b.id IS NULL)
-      ORDER BY m.name, l.display_name, b.expiry_date;
+        location_id,
+        batch_id,
+        on_hand,
+        location_name,
+        location_group,
+        medication_id,
+        medication_name,
+        barcode,
+        batch_code,
+        expiry_date,
+        brand,
+        items_per_box,
+        number_of_boxes
+      FROM inventory_full
+      WHERE on_hand > 0
+      ORDER BY medication_name, location_name, expiry_date;
     `;
     const medsResult = await db.query(medsQuery);
+
+    // Get medication details (strength, form, fefo, min_level, standard_items_per_box) from medications table
+    // We need this because inventory_full only has medication_name, not the full medication details
+    const medicationDetailsQuery = `
+      SELECT 
+        id,
+        name,
+        strength,
+        form,
+        fefo,
+        min_level,
+        standard_items_per_box
+      FROM medications
+    `;
+    const medicationDetailsResult = await db.query(medicationDetailsQuery);
+    const medicationDetailsMap = {};
+    medicationDetailsResult.rows.forEach(med => {
+      medicationDetailsMap[med.id] = {
+        strength: med.strength,
+        form: med.form,
+        fefo: med.fefo,
+        minLevel: med.min_level,
+        standardItemsPerBox: med.standard_items_per_box
+      };
+    });
 
     // Shape into front-end-friendly structure
     // Key = medicationId + locationId to create separate entries per location
@@ -41,35 +60,45 @@ exports.handler = async () => {
       const locationId = row.location_id;
       const key = `${medId}|${locationId}`;
       
+      // Get medication details from the map
+      const medDetails = medicationDetailsMap[medId] || {};
+      const strength = medDetails.strength;
+      
       if (!medsByKey[key]) {
         medsByKey[key] = {
           id: medId,
-          name: (row.strength && row.strength !== 'N/A')
-            ? `${row.name} ${row.strength}`
-            : row.name,
-          minLevel: row.min_level || 0,
-          unit: row.form || 'units',
-          type: row.form || 'stock',
+          name: (strength && strength !== 'N/A')
+            ? `${row.medication_name} ${strength}`
+            : row.medication_name,
+          // Extended fields from inventory_full view for sorting/filtering
+          medicationName: row.medication_name, // Base medication name (without strength)
+          strength: strength || '',
+          minLevel: medDetails.minLevel || 0,
+          unit: medDetails.form || 'units',
+          type: medDetails.form || 'stock',
           location: row.location_name,
-          locationId: locationId,  // Store internal ID but don't display it
-          barcode: row.barcode || '',
-          standardItemsPerBox: row.standard_items_per_box || null,
-          fefo: row.fefo || false,
+          locationId: locationId,
+          locationGroup: row.location_group || null, // Location group from inventory_full
+          barcode: row.barcode || '', // Barcode from inventory_full
+          standardItemsPerBox: medDetails.standardItemsPerBox || null,
+          fefo: medDetails.fefo || false,
           batches: []
         };
       }
 
-      // Only add batches that have stock at this location
+      // Add batch with all fields from inventory_full view
       if (row.batch_id && row.on_hand > 0) {
         medsByKey[key].batches.push({
           id: row.batch_id,
-          quantity: row.on_hand,
+          quantity: row.on_hand, // on_hand from inventory_full
           expiryDate: row.expiry_date
             ? new Date(row.expiry_date).toISOString().slice(0,7)
-            : null,
-          itemsPerBox: row.items_per_box || null,
-          brand: row.brand || '',
-          batchNumber: row.batch_code || ''
+            : null, // YYYY-MM format for display
+          expiryDateFull: row.expiry_date ? new Date(row.expiry_date).toISOString() : null, // Full ISO date for sorting
+          itemsPerBox: row.items_per_box || null, // items_per_box from inventory_full
+          brand: row.brand || '', // brand from inventory_full
+          batchNumber: row.batch_code || '', // batch_code from inventory_full
+          numberOfBoxes: row.number_of_boxes || null // Calculated by view: on_hand / items_per_box
         });
       }
     }

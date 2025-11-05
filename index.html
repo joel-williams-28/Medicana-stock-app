@@ -413,7 +413,9 @@
         boxQuantity: '',
         itemsPerBox: '',
         individualQuantity: '',
-        batchNumber: ''
+        batchNumber: '',
+        batchLocked: false, // Batch integrity safeguard — do not remove. When true, brand/expiry/itemsPerBox are locked
+        batchExists: false // Whether the batch code exists in the system
       });
       const [addMedForm, setAddMedForm] = useState({
         mode: 'existing',
@@ -435,6 +437,8 @@
         minLevelBoxes: '',
         brand: '',
         batchNumber: '',
+        batchLocked: false, // Batch integrity safeguard — do not remove. When true, brand/expiry/itemsPerBox are locked
+        batchExists: false, // Whether the batch code exists in the system
         error: ''
       });
         const [editMinLevel, setEditMinLevel] = useState({ editing: null, newLevel: '', type: 'boxes', boxes: '', error: '' });
@@ -486,6 +490,8 @@
           minLevelBoxes: '',
           brand: '',
           batchNumber: '',
+          batchLocked: false, // Batch integrity safeguard — do not remove. When true, brand/expiry/itemsPerBox are locked
+          batchExists: false, // Whether the batch code exists in the system
           location: '',
           error: '',
           isSubmitting: false
@@ -1146,6 +1152,86 @@
         return location ? location.id : displayName; // fallback to displayName if not found
       };
 
+      // Batch integrity safeguard — do not remove.
+      // Checks if a batch_code exists and auto-fills/locks form fields
+      const checkBatchCode = async (batchCode, formType) => {
+        if (!batchCode || !batchCode.trim()) {
+          // Clear lock state if batch code is empty
+          if (formType === 'addMed') {
+            setAddMedForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
+          } else if (formType === 'delivery') {
+            setDeliveryForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
+          } else if (formType === 'barcode') {
+            setBarcodeNewMedForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
+          }
+          return;
+        }
+
+        try {
+          const result = await window.api.checkBatch(batchCode.trim());
+          
+          if (result.exists && result.batch) {
+            const batch = result.batch;
+            // Parse expiry date
+            const expiryDate = batch.expiryDateFull ? new Date(batch.expiryDateFull) : null;
+            const expiryMonth = expiryDate ? String(expiryDate.getMonth() + 1).padStart(2, '0') : '';
+            const expiryYear = expiryDate ? expiryDate.getFullYear() : '';
+
+            // Auto-fill and lock fields
+            if (formType === 'addMed') {
+              setAddMedForm(prev => ({
+                ...prev,
+                brand: batch.brand || '',
+                expiryMonth: expiryMonth,
+                expiryYear: expiryYear,
+                itemsPerBox: batch.itemsPerBox ? String(batch.itemsPerBox) : '',
+                batchLocked: true,
+                batchExists: true
+              }));
+            } else if (formType === 'delivery') {
+              setDeliveryForm(prev => ({
+                ...prev,
+                brand: batch.brand || '',
+                expiryMonth: expiryMonth,
+                expiryYear: expiryYear,
+                itemsPerBox: batch.itemsPerBox ? String(batch.itemsPerBox) : '',
+                batchLocked: true,
+                batchExists: true
+              }));
+            } else if (formType === 'barcode') {
+              setBarcodeNewMedForm(prev => ({
+                ...prev,
+                brand: batch.brand || '',
+                expiryMonth: expiryMonth,
+                expiryYear: expiryYear,
+                itemsPerBox: batch.itemsPerBox ? String(batch.itemsPerBox) : '',
+                batchLocked: true,
+                batchExists: true
+              }));
+            }
+          } else {
+            // Batch doesn't exist - unlock fields
+            if (formType === 'addMed') {
+              setAddMedForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
+            } else if (formType === 'delivery') {
+              setDeliveryForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
+            } else if (formType === 'barcode') {
+              setBarcodeNewMedForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
+            }
+          }
+        } catch (err) {
+          console.error('Failed to check batch code:', err);
+          // On error, don't lock fields
+          if (formType === 'addMed') {
+            setAddMedForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
+          } else if (formType === 'delivery') {
+            setDeliveryForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
+          } else if (formType === 'barcode') {
+            setBarcodeNewMedForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
+          }
+        }
+      };
+
       const handleLogin = async () => {
         if (!auth.currentUser.trim() || !auth.password.trim()) {
           setAuth(prev => ({ ...prev, error: 'Please enter both username and password' }));
@@ -1574,7 +1660,7 @@ Medicana Stock Management System`;
 
           setAddMedForm({
             mode: 'existing', selectedExistingMedId: '', searchTerm: '', name: '', strength: '', strengthType: 'value', type: 'tablet', expiryMonth: '', expiryYear: '',
-            quantityType: 'boxes', boxQuantity: '', itemsPerBox: '', individualQuantity: '', minLevelType: 'boxes', minLevel: '', minLevelBoxes: '', brand: '', batchNumber: '', error: ''
+            quantityType: 'boxes', boxQuantity: '', itemsPerBox: '', individualQuantity: '', minLevelType: 'boxes', minLevel: '', minLevelBoxes: '', brand: '', batchNumber: '', batchLocked: false, batchExists: false, error: ''
           });
           setModals(prev => ({ ...prev, showAddMedication: false }));
         } catch (err) {
@@ -1705,6 +1791,8 @@ Medicana Stock Management System`;
             minLevelBoxes: '',
             brand: '',
             batchNumber: '',
+            batchLocked: false,
+            batchExists: false,
             location: '',
             error: '',
             isSubmitting: false
@@ -1850,7 +1938,7 @@ Medicana Stock Management System`;
         setUi(prev => ({ ...prev, selectedMed: null }));
         setModals(prev => ({ ...prev, showAdjustStock: false, showBarcodeStockAdjust: false }));
           setAdjustmentForm({ amount: '', note: '', location: '', type: 'boxes', action: 'out', batchId: '', sourceDepartment: '', stockInSource: 'transfer', transferBatchOption: 'existing', deliveryBatchOption: 'new', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' });
-          setDeliveryForm({ brand: '', expiryMonth: '', expiryYear: '', quantityType: 'boxes', boxQuantity: '', itemsPerBox: '', individualQuantity: '', batchNumber: '' });
+          setDeliveryForm({ brand: '', expiryMonth: '', expiryYear: '', quantityType: 'boxes', boxQuantity: '', itemsPerBox: '', individualQuantity: '', batchNumber: '', batchLocked: false, batchExists: false });
       };
 
       const processStockOut = async (updatedMed, selectedBatch, amount, overrideReason) => {
@@ -3454,7 +3542,19 @@ Medicana Stock Management System`;
                         </div>
                         <div>
                               <label className="block text-sm font-medium text-gray-700 mb-2">Items per Box <span className="text-red-600">*</span></label>
-                              <input type="number" value={deliveryForm.itemsPerBox} onChange={(e) => setDeliveryForm(prev => ({ ...prev, itemsPerBox: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. 100" min="1" />
+                              <input 
+                                type="number" 
+                                value={deliveryForm.itemsPerBox} 
+                                onChange={(e) => {
+                                  if (!deliveryForm.batchLocked) {
+                                    setDeliveryForm(prev => ({ ...prev, itemsPerBox: e.target.value }));
+                                  }
+                                }}
+                                readOnly={deliveryForm.batchLocked}
+                                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${deliveryForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                placeholder="e.g. 100" 
+                                min="1" 
+                              />
                         </div>
                         {deliveryForm.boxQuantity && deliveryForm.itemsPerBox && (
                           <div className="col-span-2 p-2 bg-blue-50 border border-blue-200 rounded">
@@ -3949,31 +4049,82 @@ Medicana Stock Management System`;
                     </div>
                     <div className="mb-4">
                           <label className="block text-sm font-medium text-gray-700 mb-2">Brand <span className="text-red-600">*</span></label>
-                          <input type="text" list="barcodeBrandList" value={deliveryForm.brand} onChange={(e) => setDeliveryForm(prev => ({ ...prev, brand: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. Actavis, Accord, Teva" />
+                          <input 
+                            type="text" 
+                            list="barcodeBrandList" 
+                            value={deliveryForm.brand} 
+                            onChange={(e) => {
+                              if (!deliveryForm.batchLocked) {
+                                setDeliveryForm(prev => ({ ...prev, brand: e.target.value }));
+                              }
+                            }}
+                            readOnly={deliveryForm.batchLocked}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${deliveryForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            placeholder="e.g. Actavis, Accord, Teva" 
+                          />
                           <datalist id="barcodeBrandList">
                             {[...new Set(ui.selectedMed.batches.map(b => b.brand))].map(brand => (
                               <option key={brand} value={brand} />
                             ))}
                           </datalist>
-                          <p className="text-xs text-gray-500 mt-1">Select an existing brand or type a new one</p>
+                          {!deliveryForm.batchLocked && (
+                            <p className="text-xs text-gray-500 mt-1">Select an existing brand or type a new one</p>
+                          )}
                     </div>
                     <div className="mb-4">
                           <label className="block text-sm font-medium text-gray-700 mb-2">Batch Number</label>
-                          <input type="text" value={deliveryForm.batchNumber} onChange={(e) => setDeliveryForm(prev => ({ ...prev, batchNumber: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. BN123456" />
+                          <input 
+                            type="text" 
+                            value={deliveryForm.batchNumber} 
+                            onChange={(e) => {
+                              setDeliveryForm(prev => ({ ...prev, batchNumber: e.target.value }));
+                              // Batch integrity safeguard — do not remove.
+                              // Check batch code after user stops typing (debounce)
+                              const code = e.target.value.trim();
+                              if (code) {
+                                setTimeout(() => checkBatchCode(code, 'delivery'), 500);
+                              } else {
+                                setDeliveryForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
+                              }
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" 
+                            placeholder="e.g. BN123456" 
+                          />
+                          {deliveryForm.batchExists && (
+                            <p className="text-xs text-blue-700 mt-1">✓ Batch code already exists — existing details applied.</p>
+                          )}
                     </div>
                     <div className="mb-4">
                           <label className="block text-sm font-medium text-gray-700 mb-2">Expiry Date <span className="text-red-600">*</span></label>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="block text-xs text-gray-600 mb-1">Month</label>
-                              <select value={deliveryForm.expiryMonth} onChange={(e) => setDeliveryForm(prev => ({ ...prev, expiryMonth: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
+                              <select 
+                                value={deliveryForm.expiryMonth} 
+                                onChange={(e) => {
+                                  if (!deliveryForm.batchLocked) {
+                                    setDeliveryForm(prev => ({ ...prev, expiryMonth: e.target.value }));
+                                  }
+                                }}
+                                disabled={deliveryForm.batchLocked}
+                                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${deliveryForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                              >
                             <option value="">Select...</option>
                                 {['January','February','March','April','May','June','July','August','September','October','November','December'].map((month, idx) => (<option key={month} value={String(idx + 1).padStart(2, '0')}>{month}</option>))}
                           </select>
                         </div>
                         <div>
                           <label className="block text-xs text-gray-600 mb-1">Year</label>
-                              <select value={deliveryForm.expiryYear} onChange={(e) => setDeliveryForm(prev => ({ ...prev, expiryYear: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
+                              <select 
+                                value={deliveryForm.expiryYear} 
+                                onChange={(e) => {
+                                  if (!deliveryForm.batchLocked) {
+                                    setDeliveryForm(prev => ({ ...prev, expiryYear: e.target.value }));
+                                  }
+                                }}
+                                disabled={deliveryForm.batchLocked}
+                                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${deliveryForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                              >
                             <option value="">Select...</option>
                                 {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() + i).map(year => (<option key={year} value={year}>{year}</option>))}
                           </select>
@@ -4048,7 +4199,18 @@ Medicana Stock Management System`;
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Items per Box <span className="text-red-600">*</span></label>
-                          <input type="number" value={deliveryForm.itemsPerBox} onChange={(e) => setDeliveryForm(prev => ({ ...prev, itemsPerBox: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. 100" />
+                          <input 
+                            type="number" 
+                            value={deliveryForm.itemsPerBox} 
+                            onChange={(e) => {
+                              if (!deliveryForm.batchLocked) {
+                                setDeliveryForm(prev => ({ ...prev, itemsPerBox: e.target.value }));
+                              }
+                            }}
+                            readOnly={deliveryForm.batchLocked}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${deliveryForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            placeholder="e.g. 100" 
+                          />
                         </div>
                         {deliveryForm.boxQuantity && deliveryForm.itemsPerBox && (
                           <div className="col-span-2 p-2 bg-blue-50 border border-blue-200 rounded">
@@ -4272,25 +4434,77 @@ Medicana Stock Management System`;
 
                     <div className="mb-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Brand <span className="text-red-600">*</span></label>
-                      <input type="text" value={addMedForm.brand} onChange={(e) => setAddMedForm(prev => ({ ...prev, brand: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. Actavis, Accord, Teva" />
+                      <input 
+                        type="text" 
+                        value={addMedForm.brand} 
+                        onChange={(e) => {
+                          if (!addMedForm.batchLocked) {
+                            setAddMedForm(prev => ({ ...prev, brand: e.target.value }));
+                          }
+                        }}
+                        readOnly={addMedForm.batchLocked}
+                        className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        placeholder="e.g. Actavis, Accord, Teva" 
+                      />
                     </div>
                     <div className="mb-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Batch Number</label>
-                      <input type="text" value={addMedForm.batchNumber} onChange={(e) => setAddMedForm(prev => ({ ...prev, batchNumber: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. BN123456" />
+                      <input 
+                        type="text" 
+                        value={addMedForm.batchNumber} 
+                        onChange={(e) => {
+                          setAddMedForm(prev => ({ ...prev, batchNumber: e.target.value }));
+                          // Batch integrity safeguard — do not remove.
+                          // Check batch code after user stops typing (debounce)
+                          const code = e.target.value.trim();
+                          if (code) {
+                            setTimeout(() => checkBatchCode(code, 'addMed'), 500);
+                          } else {
+                            setAddMedForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" 
+                        placeholder="e.g. BN123456" 
+                      />
+                      {addMedForm.batchExists && (
+                        <p className="text-xs text-blue-700 mt-1">✓ Batch code already exists — existing details applied.</p>
+                      )}
                     </div>
                     <div className="mb-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Expiry Date <span className="text-red-600">*</span></label>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="block text-xs text-gray-600 mb-1">Month</label>
-                          <select value={addMedForm.expiryMonth} onChange={(e) => setAddMedForm(prev => ({ ...prev, expiryMonth: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
+                          <select 
+                            value={addMedForm.expiryMonth} 
+                            onChange={(e) => {
+                              if (!addMedForm.batchLocked) {
+                                setAddMedForm(prev => ({ ...prev, expiryMonth: e.target.value }));
+                              }
+                            }}
+                            disabled={addMedForm.batchLocked}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                          >
                             <option value="">Select...</option>
                             {['January','February','March','April','May','June','July','August','September','October','November','December'].map((month, idx) => (<option key={month} value={String(idx + 1).padStart(2, '0')}>{month}</option>))}
                           </select>
                         </div>
                         <div>
                           <label className="block text-xs text-gray-600 mb-1">Year</label>
-                          <input type="number" value={addMedForm.expiryYear} onChange={(e) => setAddMedForm(prev => ({ ...prev, expiryYear: e.target.value }))} placeholder={String(new Date().getFullYear())} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" min="2024" max="2099" />
+                          <input 
+                            type="number" 
+                            value={addMedForm.expiryYear} 
+                            onChange={(e) => {
+                              if (!addMedForm.batchLocked) {
+                                setAddMedForm(prev => ({ ...prev, expiryYear: e.target.value }));
+                              }
+                            }}
+                            disabled={addMedForm.batchLocked}
+                            placeholder={String(new Date().getFullYear())} 
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            min="2024" 
+                            max="2099" 
+                          />
                         </div>
                       </div>
                     </div>
@@ -4333,7 +4547,19 @@ Medicana Stock Management System`;
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Items per Box <span className="text-red-600">*</span></label>
-                          <input type="number" value={addMedForm.itemsPerBox} onChange={(e) => setAddMedForm(prev => ({ ...prev, itemsPerBox: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. 100" min="1" />
+                          <input 
+                            type="number" 
+                            value={addMedForm.itemsPerBox} 
+                            onChange={(e) => {
+                              if (!addMedForm.batchLocked) {
+                                setAddMedForm(prev => ({ ...prev, itemsPerBox: e.target.value }));
+                              }
+                            }}
+                            readOnly={addMedForm.batchLocked}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            placeholder="e.g. 100" 
+                            min="1" 
+                          />
                         </div>
                       </div>
                     ) : (
@@ -4391,7 +4617,7 @@ Medicana Stock Management System`;
                   <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 flex-shrink-0">
                     <div className="flex flex-col sm:flex-row gap-2">
                       <button onClick={handleAddNewMedication} className="flex-1 bg-cyan-500 text-white py-2 rounded-lg hover:bg-cyan-600 transition-colors font-medium text-sm">Add Stock</button>
-                      <button onClick={() => { setModals(prev => ({ ...prev, showAddMedication: false })); setAddMedForm({ mode: 'existing', selectedExistingMedId: '', searchTerm: '', name: '', strength: '', type: 'tablet', expiryMonth: '', expiryYear: '', quantityType: 'boxes', boxQuantity: '', itemsPerBox: '', individualQuantity: '', minLevelType: 'boxes', minLevel: '', minLevelBoxes: '', brand: '', batchNumber: '', error: '' }); }} className="sm:px-6 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors font-medium text-sm">Cancel</button>
+                      <button onClick={() => { setModals(prev => ({ ...prev, showAddMedication: false })); setAddMedForm({ mode: 'existing', selectedExistingMedId: '', searchTerm: '', name: '', strength: '', type: 'tablet', expiryMonth: '', expiryYear: '', quantityType: 'boxes', boxQuantity: '', itemsPerBox: '', individualQuantity: '', minLevelType: 'boxes', minLevel: '', minLevelBoxes: '', brand: '', batchNumber: '', batchLocked: false, batchExists: false, error: '' }); }} className="sm:px-6 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors font-medium text-sm">Cancel</button>
                     </div>
                   </div>
                 </div>
@@ -4486,8 +4712,13 @@ Medicana Stock Management System`;
                           <input
                             type="text"
                             value={barcodeNewMedForm.brand}
-                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, brand: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            onChange={(e) => {
+                              if (!barcodeNewMedForm.batchLocked) {
+                                setBarcodeNewMedForm(prev => ({ ...prev, brand: e.target.value, error: '' }));
+                              }
+                            }}
+                            readOnly={barcodeNewMedForm.batchLocked}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             placeholder="e.g., Pfizer"
                           />
                         </div>
@@ -4525,8 +4756,13 @@ Medicana Stock Management System`;
                           <div className="grid grid-cols-2 gap-2">
                             <select
                               value={barcodeNewMedForm.expiryMonth}
-                              onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, expiryMonth: e.target.value, error: '' }))}
-                              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              onChange={(e) => {
+                                if (!barcodeNewMedForm.batchLocked) {
+                                  setBarcodeNewMedForm(prev => ({ ...prev, expiryMonth: e.target.value, error: '' }));
+                                }
+                              }}
+                              disabled={barcodeNewMedForm.batchLocked}
+                              className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             >
                               <option value="">Select Month</option>
                               <option value="01">January</option>
@@ -4545,8 +4781,13 @@ Medicana Stock Management System`;
                             <input
                               type="number"
                               value={barcodeNewMedForm.expiryYear}
-                              onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, expiryYear: e.target.value, error: '' }))}
-                              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              onChange={(e) => {
+                                if (!barcodeNewMedForm.batchLocked) {
+                                  setBarcodeNewMedForm(prev => ({ ...prev, expiryYear: e.target.value, error: '' }));
+                                }
+                              }}
+                              disabled={barcodeNewMedForm.batchLocked}
+                              className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                               placeholder="YYYY"
                               min={new Date().getFullYear()}
                               max={new Date().getFullYear() + 20}
@@ -4559,10 +4800,23 @@ Medicana Stock Management System`;
                           <input
                             type="text"
                             value={barcodeNewMedForm.batchNumber}
-                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, batchNumber: e.target.value, error: '' }))}
+                            onChange={(e) => {
+                              setBarcodeNewMedForm(prev => ({ ...prev, batchNumber: e.target.value, error: '' }));
+                              // Batch integrity safeguard — do not remove.
+                              // Check batch code after user stops typing (debounce)
+                              const code = e.target.value.trim();
+                              if (code) {
+                                setTimeout(() => checkBatchCode(code, 'barcode'), 500);
+                              } else {
+                                setBarcodeNewMedForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
+                              }
+                            }}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
                             placeholder="e.g., BN123456"
                           />
+                          {barcodeNewMedForm.batchExists && (
+                            <p className="text-xs text-blue-700 mt-1">✓ Batch code already exists — existing details applied.</p>
+                          )}
                         </div>
 
                         <div>
@@ -4616,8 +4870,13 @@ Medicana Stock Management System`;
                               <input
                                 type="number"
                                 value={barcodeNewMedForm.itemsPerBox}
-                                onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, itemsPerBox: e.target.value, error: '' }))}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                onChange={(e) => {
+                                  if (!barcodeNewMedForm.batchLocked) {
+                                    setBarcodeNewMedForm(prev => ({ ...prev, itemsPerBox: e.target.value, error: '' }));
+                                  }
+                                }}
+                                readOnly={barcodeNewMedForm.batchLocked}
+                                className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                                 min="1"
                               />
                             </div>
@@ -4723,11 +4982,13 @@ Medicana Stock Management System`;
                             minLevelBoxes: '',
                             brand: '',
                             batchNumber: '',
+                            batchLocked: false,
+                            batchExists: false,
                             location: '',
                             error: '',
                             isSubmitting: false
-                          }); 
-                        }} 
+                          });
+                        }}
                         className="px-6 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors font-medium"
                       >
                         Cancel

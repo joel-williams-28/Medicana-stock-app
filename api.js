@@ -58,6 +58,17 @@ window.api = (function () {
     return out;
   }
 
+  async function checkBatch(batchCode) {
+    const res = await fetch('/.netlify/functions/batch-check', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ batchCode })
+    });
+    const out = await res.json();
+    if (!res.ok || !out.success) throw new Error(out.message || 'Batch check failed');
+    return out;
+  }
+
   async function loginUser(username, password) {
     const res = await fetch(LOGIN_ENDPOINT, {
       method: 'POST',
@@ -95,6 +106,7 @@ window.api = (function () {
     addMedication,
     addBatch,
     transferStock,
+    checkBatch,
     loginUser,
     startPolling,
     stopPolling
