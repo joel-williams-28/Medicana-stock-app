@@ -19,10 +19,24 @@ exports.handler = async (event) => {
     }
 
     // Query user from database
-    const result = await db.query(
-      'SELECT id, username, password_hash, email, first_name, full_name, role, active, primary_location FROM users WHERE username = $1',
-      [username]
-    );
+    // Try to include location, but handle gracefully if column doesn't exist
+    let result;
+    try {
+      result = await db.query(
+        'SELECT id, username, password_hash, email, first_name, full_name, role, active, location FROM users WHERE username = $1',
+        [username]
+      );
+    } catch (err) {
+      // If location column doesn't exist, query without it
+      if (err.message && err.message.includes('location')) {
+        result = await db.query(
+          'SELECT id, username, password_hash, email, first_name, full_name, role, active FROM users WHERE username = $1',
+          [username]
+        );
+      } else {
+        throw err; // Re-throw if it's a different error
+      }
+    }
 
     if (result.rows.length === 0) {
       return { 
@@ -59,7 +73,7 @@ exports.handler = async (event) => {
       firstName: user.first_name,
       fullName: user.full_name,
       role: user.role,
-      primaryLocation: user.primary_location || null
+      primaryLocation: user.location || null
     };
 
     return {
@@ -68,9 +82,14 @@ exports.handler = async (event) => {
     };
   } catch (err) {
     console.error('Login error:', err);
+    console.error('Login error details:', {
+      message: err.message,
+      stack: err.stack,
+      name: err.name
+    });
     return { 
       statusCode: 500, 
-      body: JSON.stringify({ success: false, message: 'Server error.' }) 
+      body: JSON.stringify({ success: false, message: 'Server error.', error: process.env.NODE_ENV === 'development' ? err.message : undefined }) 
     };
   }
 };
