@@ -487,7 +487,8 @@
           brand: '',
           batchNumber: '',
           location: '',
-          error: ''
+          error: '',
+          isSubmitting: false
         });
 
         // Low Stock Intelligence System - Track stock events and usage patterns
@@ -1101,11 +1102,29 @@
             // Set a timeout to open the modal (small delay to ensure user sees "no results")
             const timeoutId = setTimeout(() => {
               console.log('Barcode scanned in search with no results, opening add medication modal');
+              const currentUser = getCurrentUserInfo();
+              let defaultLocation = 'Cupboard 1';
+              
+              // Use user's primary location if available
+              if (currentUser && currentUser.primaryLocation) {
+                const userLocation = locations.find(loc => 
+                  loc.displayName === currentUser.primaryLocation || loc.id === currentUser.primaryLocation
+                );
+                if (userLocation) {
+                  defaultLocation = userLocation.displayName;
+                } else if (ui.currentLocation !== 'All' && ui.currentLocation !== 'Medication Stock L1') {
+                  defaultLocation = ui.currentLocation;
+                }
+              } else if (ui.currentLocation !== 'All' && ui.currentLocation !== 'Medication Stock L1') {
+                defaultLocation = ui.currentLocation;
+              }
+              
               setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
               setBarcodeNewMedForm(prev => ({ 
                 ...prev, 
                 barcode: ui.searchTerm,
-                location: (ui.currentLocation !== 'All' && ui.currentLocation !== 'Medication Stock L1') ? ui.currentLocation : 'Cupboard 1'
+                location: defaultLocation,
+                strengthType: 'value' // Always default to 'value' for new barcode scans
               }));
               // Clear search term after opening modal
               setUi(prev => ({ ...prev, searchTerm: '' }));
@@ -1565,6 +1584,11 @@ Medicana Stock Management System`;
       };
 
       const handleBarcodeNewMedication = async () => {
+        // Prevent multiple submissions
+        if (barcodeNewMedForm.isSubmitting) {
+          return;
+        }
+
         // Validate required fields
         if (!barcodeNewMedForm.name.trim()) {
           setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter medication name' }));
@@ -1582,6 +1606,9 @@ Medicana Stock Management System`;
           setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please select a location' }));
           return;
         }
+
+        // Set submitting state
+        setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
 
         let totalQuantity = 0;
         let itemsPerBox = 0;
@@ -1679,12 +1706,13 @@ Medicana Stock Management System`;
             brand: '',
             batchNumber: '',
             location: '',
-            error: ''
+            error: '',
+            isSubmitting: false
           });
           setModals(prev => ({ ...prev, showBarcodeNewMedication: false }));
         } catch (err) {
           console.error('Failed to add medication/batch via barcode:', err);
-          setBarcodeNewMedForm(prev => ({ ...prev, error: err.message || 'Failed to add medication' }));
+          setBarcodeNewMedForm(prev => ({ ...prev, error: err.message || 'Failed to add medication', isSubmitting: false }));
         }
       };
 
@@ -2974,7 +3002,7 @@ Medicana Stock Management System`;
 
                         <div className="mb-4">
                           <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Strength <span className="text-red-600">*</span>
+                            Strength/Concentration <span className="text-red-600">*</span>
                           </label>
                           <input
                             type="text"
@@ -4152,7 +4180,7 @@ Medicana Stock Management System`;
                         {!addMedForm.selectedExistingMedId && !addMedForm.searchTerm && (
                           <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded">
                             <p className="text-sm text-blue-800 font-semibold mb-1">Stock will be added to: {ui.currentLocation}</p>
-                            <p className="text-sm text-blue-800">Search for any medication across all hospital locations. The search helps you find the correct medication details (name, type, strength). Your new stock will be added to {ui.currentLocation}.</p>
+                            <p className="text-sm text-blue-800">Search for any medication across all hospital locations. The search helps you find the correct medication details (name, type, strength/concentration). Your new stock will be added to {ui.currentLocation}.</p>
               </div>
                         )}
                         {addMedForm.selectedExistingMedId && (
@@ -4169,7 +4197,7 @@ Medicana Stock Management System`;
                             <input type="text" value={addMedForm.name} onChange={(e) => setAddMedForm(prev => ({ ...prev, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. Paracetamol" />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Strength <span className="text-red-600">*</span></label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Strength/Concentration <span className="text-red-600">*</span></label>
                             <div className="mb-2">
                               <div className="flex gap-4">
                                 <label className="flex items-center cursor-pointer">
@@ -4375,7 +4403,7 @@ Medicana Stock Management System`;
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Strength *</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Strength/Concentration *</label>
                           <div className="mb-2">
                             <div className="flex gap-4">
                               <label className="flex items-center cursor-pointer">
@@ -4433,7 +4461,7 @@ Medicana Stock Management System`;
                             value={barcodeNewMedForm.brand}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, brand: e.target.value, error: '' }))}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                            placeholder="e.g., Generic"
+                            placeholder="e.g., Pfizer"
                           />
                         </div>
 
@@ -4639,9 +4667,14 @@ Medicana Stock Management System`;
                     <div className="flex gap-2">
                       <button 
                         onClick={handleBarcodeNewMedication} 
-                        className="flex-1 bg-cyan-500 text-white py-2 rounded-lg hover:bg-cyan-600 transition-colors font-medium"
+                        disabled={barcodeNewMedForm.isSubmitting}
+                        className={`flex-1 py-2 rounded-lg transition-colors font-medium ${
+                          barcodeNewMedForm.isSubmitting 
+                            ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
+                            : 'bg-cyan-500 text-white hover:bg-cyan-600'
+                        }`}
                       >
-                        Add New Medication
+                        {barcodeNewMedForm.isSubmitting ? 'Adding Medication...' : 'Add New Medication'}
                       </button>
                       <button 
                         onClick={() => { 
@@ -4650,6 +4683,7 @@ Medicana Stock Management System`;
                             barcode: '',
                             name: '',
                             strength: '',
+                            strengthType: 'value',
                             type: 'tablet',
                             expiryMonth: '',
                             expiryYear: '',
@@ -4661,8 +4695,10 @@ Medicana Stock Management System`;
                             minLevel: '',
                             minLevelBoxes: '',
                             brand: '',
+                            batchNumber: '',
                             location: '',
-                            error: ''
+                            error: '',
+                            isSubmitting: false
                           }); 
                         }} 
                         className="px-6 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors font-medium"
