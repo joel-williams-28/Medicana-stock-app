@@ -94,7 +94,7 @@
       );
 
     const MEDICATION_TYPES = [
-      'Ampule', 'Capsule', 'Cream', 'Fluid bag', 'Inhaler', 'Liquid', 
+      'Ampule', 'Box Kit', 'Capsule', 'Cream', 'Fluid bag', 'Inhaler', 'Liquid', 
       'Ointment', 'Patch', 'Pre Filled Syringe', 'Suppository', 'Tablet', 'Vial'
     ];
 
@@ -260,6 +260,67 @@
       } catch (e) {
         return null;
       }
+    };
+
+    // Helper functions for role-based access control
+    const getUserRole = () => {
+      const user = getCurrentUserInfo();
+      return user?.role || null;
+    };
+
+    const hasAccessTo = (feature) => {
+      const role = getUserRole();
+      if (!role) return false;
+
+      // Administrator and Pharmacist have full access
+      if (role === 'Administrator' || role === 'Pharmacist') {
+        return true;
+      }
+
+      // Stock Manager: Access to everything except Intelligence Report
+      if (role === 'Stock Manager') {
+        return feature !== 'intelligenceReport';
+      }
+
+      // Stock User: Access to everything except Activity Log, Intelligence Report, and Export Simple Report
+      if (role === 'Stock User') {
+        return !['activityLog', 'intelligenceReport', 'exportSimpleReport'].includes(feature);
+      }
+
+      // Basic User: Only access to transfer stock functionality
+      if (role === 'Basic User') {
+        return feature === 'transferStock';
+      }
+
+      // Default: no access
+      return false;
+    };
+
+    const canAccessTab = (tabName) => {
+      const role = getUserRole();
+      if (!role) return false;
+
+      // Administrator and Pharmacist have access to all tabs
+      if (role === 'Administrator' || role === 'Pharmacist') {
+        return true;
+      }
+
+      // Stock Manager: Access to all tabs
+      if (role === 'Stock Manager') {
+        return true;
+      }
+
+      // Stock User: Access to all tabs except Activity Log
+      if (role === 'Stock User') {
+        return tabName !== 'transactions'; // transactions tab is the Activity Log
+      }
+
+      // Basic User: Only access to medications tab (for transferring stock)
+      if (role === 'Basic User') {
+        return tabName === 'medications';
+      }
+
+      return false;
     };
 
     const findEarliestBatch = (batches) => {
@@ -1097,14 +1158,49 @@
             setTransactions(backendData.transactions || []);
             setLocations(backendData.locations || []);
             
+            // Determine default location based on user role and primary location
+            let defaultLocation = 'All';
+            const userRole = data.user.role;
+            const userPrimaryLocation = data.user.primaryLocation;
+            
+            // Management and Pharmacist roles default to "All Locations"
+            // All other roles default to their primary location if available
+            if (userRole !== 'Management' && userRole !== 'Pharmacist' && userPrimaryLocation) {
+              // Check if the primary location exists in the locations list
+              const locationExists = backendData.locations.some(loc => 
+                loc.displayName === userPrimaryLocation || loc.id === userPrimaryLocation
+              );
+              if (locationExists) {
+                defaultLocation = userPrimaryLocation;
+              }
+            }
+            
+            // Determine default tab based on user role
+            // Helper function to check tab access (defined inline for this scope)
+            const canAccessTabLocal = (tabName) => {
+              if (userRole === 'Administrator' || userRole === 'Pharmacist') return true;
+              if (userRole === 'Stock Manager') return true;
+              if (userRole === 'Stock User') return tabName !== 'transactions';
+              if (userRole === 'Basic User') return tabName === 'medications';
+              return false;
+            };
+            
+            let defaultTab = 'medications';
+            if (!canAccessTabLocal(defaultTab)) {
+              // Find first accessible tab
+              const allTabs = ['medications', 'transactions', 'lowstock', 'newmedication'];
+              const accessibleTab = allTabs.find(tab => canAccessTabLocal(tab));
+              if (accessibleTab) defaultTab = accessibleTab;
+            }
+            
             // NOW set logged in - UI will render with real Neon data already loaded
             setAuth(prev => ({ ...prev, isLoggedIn: true, error: '' }));
             
             // Reset UI to default state on login
             setUi(prev => ({
               ...prev,
-              activeTab: 'medications',
-              currentLocation: 'All',
+              activeTab: defaultTab,
+              currentLocation: defaultLocation,
               searchTerm: '',
               selectedMed: null,
               expandedMedId: null
@@ -2238,15 +2334,23 @@ Medicana Stock Management System`;
               {/* Tabs */}
               <div className="border-b border-gray-200 shadow-lg">
                 <nav className="flex -mb-px overflow-x-auto scrollbar-hide">
-                    <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'medications' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${ui.activeTab === 'medications' ? 'border-cyan-500 text-cyan-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Medications List</button>
-                    <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'transactions' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${ui.activeTab === 'transactions' ? 'border-cyan-500 text-cyan-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Activity Log</button>
-                    <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'lowstock' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors relative whitespace-nowrap ${ui.activeTab === 'lowstock' ? 'border-cyan-500 text-cyan-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
-                    Low Stock
-                      {lowStockMedications.length > 0 && (<span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">{lowStockMedications.length}</span>)}
-                  </button>
-                    <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'newmedication' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${ui.activeTab === 'newmedication' ? 'border-cyan-500 text-cyan-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
-                    New Medication Order
-                  </button>
+                    {canAccessTab('medications') && (
+                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'medications' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${ui.activeTab === 'medications' ? 'border-cyan-500 text-cyan-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Medications List</button>
+                    )}
+                    {canAccessTab('transactions') && (
+                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'transactions' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${ui.activeTab === 'transactions' ? 'border-cyan-500 text-cyan-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Activity Log</button>
+                    )}
+                    {canAccessTab('lowstock') && (
+                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'lowstock' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors relative whitespace-nowrap ${ui.activeTab === 'lowstock' ? 'border-cyan-500 text-cyan-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
+                      Low Stock
+                        {lowStockMedications.length > 0 && (<span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">{lowStockMedications.length}</span>)}
+                    </button>
+                    )}
+                    {canAccessTab('newmedication') && (
+                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'newmedication' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${ui.activeTab === 'newmedication' ? 'border-cyan-500 text-cyan-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
+                      New Medication Order
+                    </button>
+                    )}
                 </nav>
               </div>
 
@@ -2302,11 +2406,13 @@ Medicana Stock Management System`;
                           <span className="hidden sm:inline">Global Scan</span>
                           <span className="sm:hidden">Scan</span>
                         </button>
-                          <button onClick={() => { if (ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') { alert('Please select a specific location (Cupboard 1, 2, or 3) from the dropdown above before adding stock.'); } else { setModals(prev => ({ ...prev, showAddMedication: true })); } }} className="bg-cyan-500 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-cyan-600 transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2">
-                            <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
-                            <span className="hidden sm:inline">Add New Stock</span>
-                            <span className="sm:hidden">Add</span>
-                          </button>
+                          {getUserRole() !== 'Basic User' && (
+                            <button onClick={() => { if (ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') { alert('Please select a specific location (Cupboard 1, 2, or 3) from the dropdown above before adding stock.'); } else { setModals(prev => ({ ...prev, showAddMedication: true })); } }} className="bg-cyan-500 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-cyan-600 transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2">
+                              <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+                              <span className="hidden sm:inline">Add New Stock</span>
+                              <span className="sm:hidden">Add</span>
+                            </button>
+                          )}
                       </div>
                     </div>
 
@@ -2731,14 +2837,18 @@ Medicana Stock Management System`;
                           <h3 className="font-semibold text-amber-800">{lowStockMedications.length} Medication{lowStockMedications.length !== 1 ? 's' : ''} Below Minimum Level</h3>
                           <p className="text-sm text-amber-700">These medications require immediate ordering attention.</p>
                       </div>
-                        <button onClick={() => setModals(prev => ({ ...prev, showIntelligenceReport: true }))} className="flex items-center bg-cyan-600 text-white px-4 py-2 rounded hover:bg-cyan-700 transition-colors text-sm mr-2">
-                        <TrendingUp className="w-4 h-4 mr-2" />
-                        Intelligence Report
-                      </button>
-                        <button onClick={exportLowStockReport} className="flex items-center bg-slate-800 text-white px-4 py-2 rounded hover:bg-slate-700 transition-colors text-sm">
-                        <Download className="w-4 h-4 mr-2" />
-                        Export Simple Report
-                      </button>
+                        {hasAccessTo('intelligenceReport') && (
+                          <button onClick={() => setModals(prev => ({ ...prev, showIntelligenceReport: true }))} className="flex items-center bg-cyan-600 text-white px-4 py-2 rounded hover:bg-cyan-700 transition-colors text-sm mr-2">
+                            <TrendingUp className="w-4 h-4 mr-2" />
+                            Intelligence Report
+                          </button>
+                        )}
+                        {hasAccessTo('exportSimpleReport') && (
+                          <button onClick={exportLowStockReport} className="flex items-center bg-slate-800 text-white px-4 py-2 rounded hover:bg-slate-700 transition-colors text-sm">
+                            <Download className="w-4 h-4 mr-2" />
+                            Export Simple Report
+                          </button>
+                        )}
                     </div>
                   </div>
                   
@@ -2982,19 +3092,36 @@ Medicana Stock Management System`;
                       />
                       Transfer Location
                     </label>
-                    <label className="flex items-center cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="adjustmentAction" 
-                        value="in" 
-                        checked={adjustmentForm.action === 'in'} 
-                        onClick={(e) => { 
-                          setAdjustmentForm(prev => ({ ...prev, action: 'in', stockInSource: 'delivery', deliveryBatchOption: 'new', error: '' })); 
-                        }} 
-                        className="mr-2" 
-                      />
-                      Stock In (Add)
-                    </label>
+                    {getUserRole() !== 'Basic User' && (
+                      <label className="flex items-center cursor-pointer">
+                        <input 
+                          type="radio" 
+                          name="adjustmentAction" 
+                          value="in" 
+                          checked={adjustmentForm.action === 'in'} 
+                          onClick={(e) => { 
+                            setAdjustmentForm(prev => ({ ...prev, action: 'in', stockInSource: 'delivery', deliveryBatchOption: 'new', error: '' })); 
+                          }} 
+                          className="mr-2" 
+                        />
+                        Stock In (Add)
+                      </label>
+                    )}
+                    {getUserRole() === 'Basic User' && (
+                      <label className="flex items-center cursor-pointer">
+                        <input 
+                          type="radio" 
+                          name="adjustmentAction" 
+                          value="in" 
+                          checked={adjustmentForm.action === 'in'} 
+                          onClick={(e) => { 
+                            setAdjustmentForm(prev => ({ ...prev, action: 'in', stockInSource: 'transfer', transferBatchOption: 'existing', error: '' })); 
+                          }} 
+                          className="mr-2" 
+                        />
+                        Receive Transfer
+                      </label>
+                    )}
                   </div>
                 </div>
 
@@ -3037,19 +3164,21 @@ Medicana Stock Management System`;
                     <div className="mb-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Stock Source</label>
                       <div className="flex gap-4 mb-3">
-                        <label className="flex items-center cursor-pointer">
-                          <input 
-                            type="radio" 
-                            name="stockInSource" 
-                            value="delivery" 
-                            checked={adjustmentForm.stockInSource === 'delivery'} 
-                            onClick={(e) => { 
-                              setAdjustmentForm(prev => ({ ...prev, stockInSource: 'delivery', batchId: '', sourceDepartment: '', error: '' }));
-                            }} 
-                            className="mr-2" 
-                          />
-                          New Delivery
-                        </label>
+                        {getUserRole() !== 'Basic User' && (
+                          <label className="flex items-center cursor-pointer">
+                            <input 
+                              type="radio" 
+                              name="stockInSource" 
+                              value="delivery" 
+                              checked={adjustmentForm.stockInSource === 'delivery'} 
+                              onClick={(e) => { 
+                                setAdjustmentForm(prev => ({ ...prev, stockInSource: 'delivery', batchId: '', sourceDepartment: '', error: '' }));
+                              }} 
+                              className="mr-2" 
+                            />
+                            New Delivery
+                          </label>
+                        )}
                         <label className="flex items-center cursor-pointer">
                           <input 
                             type="radio" 
@@ -4049,7 +4178,7 @@ Medicana Stock Management System`;
                                     name="strengthType" 
                                     value="value" 
                                     checked={addMedForm.strengthType === 'value'} 
-                                    onChange={(e) => setAddMedForm(prev => ({ ...prev, strengthType: 'value', error: '' }))} 
+                                    onClick={(e) => setAddMedForm(prev => ({ ...prev, strengthType: 'value', error: '' }))} 
                                     className="mr-2"
                                   />
                                   <span className="text-sm text-gray-700">Value</span>
@@ -4060,7 +4189,7 @@ Medicana Stock Management System`;
                                     name="strengthType" 
                                     value="na" 
                                     checked={addMedForm.strengthType === 'na'} 
-                                    onChange={(e) => setAddMedForm(prev => ({ ...prev, strengthType: 'na', strength: '', error: '' }))} 
+                                    onClick={(e) => setAddMedForm(prev => ({ ...prev, strengthType: 'na', strength: '', error: '' }))} 
                                     className="mr-2"
                                   />
                                   <span className="text-sm text-gray-700">N/A</span>
@@ -4255,7 +4384,7 @@ Medicana Stock Management System`;
                                   name="barcodeStrengthType" 
                                   value="value" 
                                   checked={barcodeNewMedForm.strengthType === 'value'} 
-                                  onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, strengthType: 'value', error: '' }))} 
+                                  onClick={(e) => setBarcodeNewMedForm(prev => ({ ...prev, strengthType: 'value', error: '' }))} 
                                   className="mr-2"
                                 />
                                 <span className="text-sm text-gray-700">Value</span>
@@ -4266,7 +4395,7 @@ Medicana Stock Management System`;
                                   name="barcodeStrengthType" 
                                   value="na" 
                                   checked={barcodeNewMedForm.strengthType === 'na'} 
-                                  onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, strengthType: 'na', strength: '', error: '' }))} 
+                                  onClick={(e) => setBarcodeNewMedForm(prev => ({ ...prev, strengthType: 'na', strength: '', error: '' }))} 
                                   className="mr-2"
                                 />
                                 <span className="text-sm text-gray-700">N/A</span>

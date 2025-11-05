@@ -20,7 +20,7 @@ exports.handler = async (event) => {
 
     // Query user from database
     const result = await db.query(
-      'SELECT id, username, password_hash, email, first_name, full_name, role, active FROM users WHERE username = $1',
+      'SELECT id, username, password_hash, email, first_name, full_name, role, active, primary_location FROM users WHERE username = $1',
       [username]
     );
 
@@ -58,7 +58,8 @@ exports.handler = async (event) => {
       email: user.email,
       firstName: user.first_name,
       fullName: user.full_name,
-      role: user.role
+      role: user.role,
+      primaryLocation: user.primary_location || null
     };
 
     return {
