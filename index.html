@@ -6,6 +6,15 @@
     <title>Medicana - Medication Stock Management (Demo)</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%230c2753'/%3E%3Ctext x='50' y='72' font-size='70' font-weight='bold' text-anchor='middle' fill='%2306B6D4' font-family='Arial, sans-serif'%3E%5C%5C%3C/text%3E%3C/svg%3E">
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+      }
+    </style>
   </head>
   <body class="min-h-screen">
   <div id="root"></div>
@@ -2080,28 +2089,28 @@ Medicana Stock Management System`;
 
       if (!auth.isLoggedIn) {
         return (
-          <div className="min-h-screen bg-gradient-to-br from-slate-50 to-cyan-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full">
-              <div className="flex flex-col items-center justify-center mb-6">
-                  <div className="mb-4">
+          <div className="min-h-screen bg-gradient-to-br from-slate-50 to-cyan-50 flex items-center justify-center p-3 sm:p-4">
+            <div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 max-w-md w-full mx-2 sm:mx-0">
+              <div className="flex flex-col items-center justify-center mb-4 sm:mb-6">
+                  <div className="mb-3 sm:mb-4">
                     <div className="flex items-center justify-center gap-2">
-                      <h1 className="text-3xl font-bold tracking-tight" style={{color: '#0c2753'}}>MEDICANA</h1>
-                      <span className="text-3xl font-bold text-cyan-500">\\</span>
+                      <h1 className="text-2xl sm:text-3xl font-bold tracking-tight" style={{color: '#0c2753'}}>MEDICANA</h1>
+                      <span className="text-2xl sm:text-3xl font-bold text-cyan-500">\\</span>
                     </div>
                   <div className="flex justify-between items-center mt-1 w-full">
-                    <h2 className="text-xl font-bold text-cyan-500 tracking-widest">HEALTH GROUP</h2>
+                    <h2 className="text-lg sm:text-xl font-bold text-cyan-500 tracking-widest">HEALTH GROUP</h2>
                   </div>
                 </div>
-                <h3 className="text-xl font-semibold text-gray-700">Winchester</h3>
-                <p className="text-sm text-gray-500 mt-2">Medication Stock Management</p>
+                <h3 className="text-lg sm:text-xl font-semibold text-gray-700">Winchester</h3>
+                <p className="text-xs sm:text-sm text-gray-500 mt-2">Medication Stock Management</p>
               </div>
-                {auth.error && (<div className="mb-4 p-3 bg-red-50 border border-red-300 rounded text-sm text-red-700">{auth.error}</div>)}
+                {auth.error && (<div className="mb-4 p-3 bg-red-50 border border-red-300 rounded text-xs sm:text-sm text-red-700">{auth.error}</div>)}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
-                  <input type="text" value={auth.currentUser} onChange={(e) => setAuth(prev => ({ ...prev, currentUser: e.target.value }))} onKeyPress={handleKeyPress} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent mb-4" placeholder="Enter username" />
-                <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-                  <input type="password" value={auth.password} onChange={(e) => setAuth(prev => ({ ...prev, password: e.target.value }))} onKeyPress={handleKeyPress} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent mb-4" placeholder="Enter password" />
-                  <button onClick={handleLogin} className="w-full bg-slate-800 text-white py-2 rounded-lg hover:bg-slate-700 transition-colors font-medium">Log In</button>
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Username</label>
+                  <input type="text" value={auth.currentUser} onChange={(e) => setAuth(prev => ({ ...prev, currentUser: e.target.value }))} onKeyPress={handleKeyPress} className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent mb-4 text-sm" placeholder="Enter username" />
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Password</label>
+                  <input type="password" value={auth.password} onChange={(e) => setAuth(prev => ({ ...prev, password: e.target.value }))} onKeyPress={handleKeyPress} className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent mb-4 text-sm" placeholder="Enter password" />
+                  <button onClick={handleLogin} className="w-full bg-slate-800 text-white py-2 rounded-lg hover:bg-slate-700 transition-colors font-medium text-sm sm:text-base">Log In</button>
               </div>
             </div>
           </div>
@@ -2111,25 +2120,25 @@ Medicana Stock Management System`;
       return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-cyan-50">
           {/* Header */}
-          <div className="bg-white text-gray-900 p-4 shadow-lg border-b-2 border-gray-200 relative">
+          <div className="bg-white text-gray-900 p-3 sm:p-4 shadow-lg border-b-2 border-gray-200 relative">
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <span className="text-6xl font-black text-slate-500 opacity-50">DEMO</span>
+              <span className="text-3xl sm:text-4xl md:text-6xl font-black text-slate-500 opacity-50">DEMO</span>
             </div>
-            <div className="max-w-7xl mx-auto flex justify-between items-center relative z-10">
-              <div className="flex items-center">
-                <div className="mr-4">
+            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-0 relative z-10">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-0">
+                <div className="mr-0 sm:mr-4">
                   <div className="flex items-center gap-2">
-                    <h1 className="text-xl font-bold tracking-tight" style={{color: '#0c2753'}}>MEDICANA</h1>
-                    <span className="text-xl font-bold text-cyan-500">\\</span>
+                    <h1 className="text-lg sm:text-xl font-bold tracking-tight" style={{color: '#0c2753'}}>MEDICANA</h1>
+                    <span className="text-lg sm:text-xl font-bold text-cyan-500">\\</span>
                   </div>
                   <div className="flex justify-between w-full">
-                    <p className="text-base text-cyan-500 font-bold tracking-widest">HEALTH GROUP</p>
+                    <p className="text-sm sm:text-base text-cyan-500 font-bold tracking-widest">HEALTH GROUP</p>
                   </div>
                   <p className="text-xs text-slate-600 font-semibold tracking-wide">WINCHESTER</p>
                 </div>
-                <div className="border-l border-gray-300 pl-4">
-                  <p className="text-sm font-medium text-gray-900">Medication Stock Management</p>
-                  <div className="flex items-center gap-2">
+                <div className="border-l-0 sm:border-l border-t sm:border-t-0 border-gray-300 pl-0 sm:pl-4 pt-3 sm:pt-0">
+                  <p className="text-xs sm:text-sm font-medium text-gray-900">Medication Stock Management</p>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                     <p className="text-xs text-gray-600">Logged in as: {getCurrentUserInfo()?.fullName || auth.currentUser}</p>
                     <button onClick={() => setModals(prev => ({ ...prev, showChangePassword: true }))} className="text-xs text-cyan-600 hover:text-cyan-700 underline">Change Password</button>
                   </div>
@@ -2141,16 +2150,16 @@ Medicana Stock Management System`;
                   )}
                 </div>
                 </div>
-                <button onClick={handleLogout} className="bg-cyan-500 px-4 py-2 rounded hover:bg-cyan-600 transition-colors text-sm font-medium text-white">Log Out</button>
+                <button onClick={handleLogout} className="bg-cyan-500 px-4 py-2 rounded hover:bg-cyan-600 transition-colors text-sm font-medium text-white w-full sm:w-auto">Log Out</button>
             </div>
           </div>
 
           {/* Location Selector */}
           <div className="bg-slate-50 border-b border-gray-200 shadow-sm">
-            <div className="max-w-7xl mx-auto px-6 py-4">
-              <div className="flex items-center gap-4">
-                <label className="text-sm font-semibold text-gray-700">Current Location:</label>
-                  <select value={ui.currentLocation} onChange={(e) => setUi(prev => ({ ...prev, currentLocation: e.target.value }))} className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent bg-white font-medium text-gray-900">
+            <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 sm:py-4">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                <label className="text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">Current Location:</label>
+                  <select value={ui.currentLocation} onChange={(e) => setUi(prev => ({ ...prev, currentLocation: e.target.value }))} className="w-full sm:w-auto px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent bg-white font-medium text-gray-900 text-sm">
                   <option value="All">All Locations</option>
                     {(() => {
                       // Group locations by groupName
@@ -2188,7 +2197,7 @@ Medicana Stock Management System`;
                       return elements;
                     })()}
                 </select>
-                  <p className="text-sm text-gray-600">
+                  <p className="text-xs sm:text-sm text-gray-600">
                     {ui.currentLocation === 'All' ? 'Viewing stock across all locations' : 
                      ui.currentLocation === 'Medication Stock L1' ? 'Viewing stock across Cupboard 1, 2, and 3' : 
                      `Viewing stock for ${ui.currentLocation}`}
@@ -2198,18 +2207,18 @@ Medicana Stock Management System`;
           </div>
 
           {/* Main Content */}
-          <div className="max-w-7xl mx-auto p-6">
+          <div className="max-w-7xl mx-auto p-3 sm:p-4 md:p-6">
             <div className="bg-white rounded-lg shadow">
               {/* Tabs */}
               <div className="border-b border-gray-200 shadow-lg">
-                <nav className="flex -mb-px">
-                    <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'medications' }))} className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${ui.activeTab === 'medications' ? 'border-cyan-500 text-cyan-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Medications List</button>
-                    <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'transactions' }))} className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${ui.activeTab === 'transactions' ? 'border-cyan-500 text-cyan-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Activity Log</button>
-                    <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'lowstock' }))} className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors relative ${ui.activeTab === 'lowstock' ? 'border-cyan-500 text-cyan-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
+                <nav className="flex -mb-px overflow-x-auto scrollbar-hide">
+                    <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'medications' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${ui.activeTab === 'medications' ? 'border-cyan-500 text-cyan-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Medications List</button>
+                    <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'transactions' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${ui.activeTab === 'transactions' ? 'border-cyan-500 text-cyan-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Activity Log</button>
+                    <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'lowstock' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors relative whitespace-nowrap ${ui.activeTab === 'lowstock' ? 'border-cyan-500 text-cyan-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
                     Low Stock
                       {lowStockMedications.length > 0 && (<span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">{lowStockMedications.length}</span>)}
                   </button>
-                    <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'newmedication' }))} className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${ui.activeTab === 'newmedication' ? 'border-cyan-500 text-cyan-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
+                    <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'newmedication' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${ui.activeTab === 'newmedication' ? 'border-cyan-500 text-cyan-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
                     New Medication Order
                   </button>
                 </nav>
@@ -2218,10 +2227,10 @@ Medicana Stock Management System`;
                 {/* Medications Tab */}
               {ui.activeTab === 'medications' && (
                 <>
-                  <div className="p-4 border-b">
-                    <div className="flex gap-3 items-center mb-3">
-                      <div className="relative flex-1">
-                        <Search className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                  <div className="p-3 sm:p-4 border-b">
+                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 items-stretch sm:items-center mb-3">
+                      <div className="relative flex-1 min-w-0">
+                        <Search className="absolute left-3 top-3 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
                           <input 
                             type="text" 
                             id="medication-search-input" 
@@ -2238,7 +2247,7 @@ Medicana Stock Management System`;
                                 inputSpeed: timeSinceLastKey
                               }));
                             }}
-                            className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" 
+                            className="w-full pl-9 sm:pl-10 pr-9 sm:pr-10 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" 
                           />
                           {ui.searchTerm && (
                             <button
@@ -2246,29 +2255,33 @@ Medicana Stock Management System`;
                               className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 focus:outline-none"
                               aria-label="Clear search"
                             >
-                              <X className="w-5 h-5" />
+                              <X className="w-4 h-4 sm:w-5 sm:h-5" />
                             </button>
                           )}
                       </div>
-                      <button 
-                        onClick={(e) => {
-                          setGlobalBarcodeScanner(prev => ({ ...prev, isActive: !prev.isActive }));
-                          e.currentTarget.blur(); // Remove focus from button to prevent barcode scanner from triggering it
-                        }}
-                        className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium whitespace-nowrap flex items-center gap-2 ${
-                          globalBarcodeScanner.isActive 
-                            ? 'bg-blue-500 text-white hover:bg-blue-600' 
-                            : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
-                        }`}
-                        title={globalBarcodeScanner.isActive ? "Global scanner is ON - scan barcodes from anywhere" : "Global scanner is OFF - click to enable"}
-                      >
-                        <div className={`w-3 h-3 rounded-full ${globalBarcodeScanner.isActive ? 'bg-green-400' : 'bg-gray-400'}`}></div>
-                        Global Scan
-                      </button>
-                        <button onClick={() => { if (ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') { alert('Please select a specific location (Cupboard 1, 2, or 3) from the dropdown above before adding stock.'); } else { setModals(prev => ({ ...prev, showAddMedication: true })); } }} className="bg-cyan-500 text-white px-4 py-2 rounded-lg hover:bg-cyan-600 transition-colors text-sm font-medium whitespace-nowrap flex items-center gap-2">
-                        <Plus className="w-4 h-4" />
-                        Add New Stock
-                      </button>
+                      <div className="flex gap-2 sm:gap-3 flex-shrink-0">
+                        <button 
+                          onClick={(e) => {
+                            setGlobalBarcodeScanner(prev => ({ ...prev, isActive: !prev.isActive }));
+                            e.currentTarget.blur(); // Remove focus from button to prevent barcode scanner from triggering it
+                          }}
+                          className={`px-3 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2 ${
+                            globalBarcodeScanner.isActive 
+                              ? 'bg-blue-500 text-white hover:bg-blue-600' 
+                              : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
+                          }`}
+                          title={globalBarcodeScanner.isActive ? "Global scanner is ON - scan barcodes from anywhere" : "Global scanner is OFF - click to enable"}
+                        >
+                          <div className={`w-2 h-2 sm:w-3 sm:h-3 rounded-full ${globalBarcodeScanner.isActive ? 'bg-green-400' : 'bg-gray-400'}`}></div>
+                          <span className="hidden sm:inline">Global Scan</span>
+                          <span className="sm:hidden">Scan</span>
+                        </button>
+                          <button onClick={() => { if (ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') { alert('Please select a specific location (Cupboard 1, 2, or 3) from the dropdown above before adding stock.'); } else { setModals(prev => ({ ...prev, showAddMedication: true })); } }} className="bg-cyan-500 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-cyan-600 transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2">
+                            <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+                            <span className="hidden sm:inline">Add New Stock</span>
+                            <span className="sm:hidden">Add</span>
+                          </button>
+                      </div>
                     </div>
 
                     {/* Filters */}
@@ -2371,31 +2384,31 @@ Medicana Stock Management System`;
                     </div>
                   </div>
                   
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
+                  <div className="overflow-x-auto -mx-3 sm:mx-0">
+                    <table className="w-full min-w-[640px]">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Medication</th>
-                            {(ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') && (<th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Location</th>)}
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Type</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Current Stock</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Min Level</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Status</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Action</th>
+                          <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-semibold text-gray-600 uppercase">Medication</th>
+                            {(ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') && (<th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-semibold text-gray-600 uppercase">Location</th>)}
+                          <th className="px-2 sm:px-4 py-2 sm:py-3 text-center text-xs font-semibold text-gray-600 uppercase">Type</th>
+                          <th className="px-2 sm:px-4 py-2 sm:py-3 text-center text-xs font-semibold text-gray-600 uppercase">Current Stock</th>
+                          <th className="px-2 sm:px-4 py-2 sm:py-3 text-center text-xs font-semibold text-gray-600 uppercase">Min Level</th>
+                          <th className="px-2 sm:px-4 py-2 sm:py-3 text-center text-xs font-semibold text-gray-600 uppercase">Status</th>
+                          <th className="px-2 sm:px-4 py-2 sm:py-3 text-center text-xs font-semibold text-gray-600 uppercase">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
                         {displayMedications.map(med => (
                             <React.Fragment key={med.id}>
                             <tr className="hover:bg-gray-50" data-med-id={med.id}>
-                              <td className="px-4 py-3 text-sm text-gray-900">
-                                  <button onClick={() => setUi(prev => ({ ...prev, expandedMedId: prev.expandedMedId === med.id ? null : med.id }))} className="flex items-center gap-2 hover:text-cyan-600 text-left w-full">
+                              <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-900">
+                                  <button onClick={() => setUi(prev => ({ ...prev, expandedMedId: prev.expandedMedId === med.id ? null : med.id }))} className="flex items-center gap-1 sm:gap-2 hover:text-cyan-600 text-left w-full">
                                   <span className="flex-shrink-0" style={{color: '#0c2753'}}>{ui.expandedMedId === med.id ? '▼' : '▶'}</span>
                                   <span className="break-words">{med.name}</span>
                                 </button>
                               </td>
                                 {(ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') && (
-                                  <td className="px-4 py-3 text-sm text-gray-700">
+                                  <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">
                                     {ui.currentLocation === 'All' && med.locations && med.locations.length > 1 ? (
                                       <div className="flex flex-wrap gap-1">
                                         {med.locations.sort().map((loc, idx) => (
@@ -2407,27 +2420,27 @@ Medicana Stock Management System`;
                                     )}
                                   </td>
                                 )}
-                              <td className="px-4 py-3 text-sm text-gray-600 text-center capitalize">{med.type}</td>
-                                <td className="px-4 py-3 text-sm text-center"><span className={`font-semibold ${getTotalQuantity(med) < med.minLevel ? 'text-red-600' : 'text-gray-900'}`}>{formatStockDisplay(med)}</span></td>
-                              <td className="px-4 py-3 text-sm text-gray-600 text-center">
-                                <div className="flex items-center justify-center gap-2">
+                              <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-600 text-center capitalize">{med.type}</td>
+                                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-center"><span className={`font-semibold ${getTotalQuantity(med) < med.minLevel ? 'text-red-600' : 'text-gray-900'}`}>{formatStockDisplay(med)}</span></td>
+                              <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-600 text-center">
+                                <div className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
                                   <span>{formatMinLevelDisplay(med)}</span>
                                     <button onClick={() => setEditMinLevel({ editing: med, newLevel: med.minLevel.toString(), type: 'boxes', boxes: '', error: '' })} className="text-cyan-600 hover:text-cyan-700 text-xs underline">Edit</button>
                                 </div>
                               </td>
-                              <td className="px-4 py-3 text-center">
+                              <td className="px-2 sm:px-4 py-2 sm:py-3 text-center">
                                 <div className="flex flex-col gap-1 items-center">
                                   {getTotalQuantity(med) < med.minLevel ? (
-                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800"><AlertTriangle className="w-3 h-3 mr-1" />Low</span>
+                                      <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-red-100 text-red-800"><AlertTriangle className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />Low</span>
                                   ) : (
-                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">OK</span>
+                                      <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">OK</span>
                                   )}
                                   {hasPendingOrder(med.id) && (
-                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"><Download className="w-3 h-3 mr-1" />Ordered</span>
+                                      <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"><Download className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />Ordered</span>
                                   )}
                                 </div>
                               </td>
-                              <td className="px-4 py-3 text-center">
+                              <td className="px-2 sm:px-4 py-2 sm:py-3 text-center">
                                   <button onClick={() => { 
                                     // Check if this is a grouped medication (multiple locations)
                                     if (ui.currentLocation === 'All' && med.locations && med.locations.length > 1) {
@@ -2439,12 +2452,12 @@ Medicana Stock Management System`;
                                     setModals(prev => ({ ...prev, showAdjustStock: true })); 
                                     setAdjustmentForm({ amount: '', note: '', location: '', type: defaultQuantityType, action: 'out', batchId: '', sourceDepartment: '', stockInSource: 'transfer', transferBatchOption: 'existing', deliveryBatchOption: 'new', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' }); 
                                     setDeliveryForm({ brand: '', expiryMonth: '', expiryYear: '', quantityType: defaultQuantityType, boxQuantity: '', itemsPerBox: '', individualQuantity: '', batchNumber: '' }); 
-                                  }} className="text-cyan-600 hover:text-cyan-700 font-medium text-sm">Adjust</button>
+                                  }} className="text-cyan-600 hover:text-cyan-700 font-medium text-xs sm:text-sm">Adjust</button>
                               </td>
                             </tr>
                             {ui.expandedMedId === med.id && (
                               <tr className="bg-gray-50">
-                                <td colSpan={(ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') ? "7" : "6"} className="px-4 py-3">
+                                <td colSpan={(ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') ? "7" : "6"} className="px-2 sm:px-4 py-2 sm:py-3">
                                   <div className="ml-8">
                                     {med.barcode && (
                                       <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded">
@@ -2858,13 +2871,13 @@ Medicana Stock Management System`;
 
             {/* Adjust Stock Modal */}
           {modals.showAdjustStock && ui.selectedMed && !modals.showFefoOverride && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4" style={{zIndex: 9999}} onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showAdjustStock: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
-              <div className="bg-white rounded-lg shadow-xl max-w-xl w-full flex flex-col" style={{maxHeight: '75vh'}}>
-                <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0">
-                  <h2 className="text-lg font-bold text-gray-800">Adjust Stock</h2>
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4" style={{zIndex: 9999}} onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showAdjustStock: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
+              <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-xl w-full flex flex-col m-2 sm:m-4" style={{maxHeight: '90vh'}}>
+                <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex-shrink-0">
+                  <h2 className="text-base sm:text-lg font-bold text-gray-800">Adjust Stock</h2>
                   <p className="text-xs text-gray-600 mt-1">Location: {ui.selectedMed.location}</p>
                 </div>
-                <div className="overflow-y-auto px-6 py-4 flex-1">
+                <div className="overflow-y-auto px-4 sm:px-6 py-3 sm:py-4 flex-1">
                     {adjustmentForm.error && (<div className="mb-4 p-3 bg-red-50 border border-red-300 rounded text-sm text-red-700">{adjustmentForm.error}</div>)}
                 <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded">
                   <p className="text-sm font-medium text-gray-900 mb-1">{ui.selectedMed.name}</p>
@@ -3454,9 +3467,9 @@ Medicana Stock Management System`;
                   </div>
                 )}
                 </div>
-                <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0">
-                  <div className="flex gap-2">
-                      {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'transfer' && (<button onClick={() => handleStockAdjustment('out')} className="flex-1 bg-cyan-500 text-white py-2 rounded-lg hover:bg-cyan-600 transition-colors font-medium flex items-center justify-center"><Minus className="w-4 h-4 mr-1" />Remove Stock</button>)}
+                <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 flex-shrink-0">
+                  <div className="flex flex-col sm:flex-row gap-2">
+                      {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'transfer' && (<button onClick={() => handleStockAdjustment('out')} className="flex-1 bg-cyan-500 text-white py-2 rounded-lg hover:bg-cyan-600 transition-colors font-medium flex items-center justify-center text-sm"><Minus className="w-4 h-4 mr-1" />Remove Stock</button>)}
                       {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'patient' && (<button onClick={() => handleStockAdjustment('out')} className="flex-1 bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 transition-colors font-medium flex items-center justify-center"><Minus className="w-4 h-4 mr-1" />Record Patient Use</button>)}
                   {adjustmentForm.action === 'in' && (
                         <button onClick={() => handleStockAdjustment('in')} className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center justify-center">
@@ -3473,13 +3486,13 @@ Medicana Stock Management System`;
 
             {/* Barcode Stock Adjustment Modal */}
             {modals.showBarcodeStockAdjust && ui.selectedMed && !modals.showFefoOverride && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4" style={{zIndex: 9999}} onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showBarcodeStockAdjust: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
-              <div className="bg-white rounded-lg shadow-xl max-w-xl w-full flex flex-col" style={{maxHeight: '75vh'}}>
-                <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0">
-                  <h2 className="text-lg font-bold text-gray-800">Quick Stock Adjustment</h2>
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4" style={{zIndex: 9999}} onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showBarcodeStockAdjust: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
+              <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-xl w-full flex flex-col m-2 sm:m-4" style={{maxHeight: '90vh'}}>
+                <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex-shrink-0">
+                  <h2 className="text-base sm:text-lg font-bold text-gray-800">Quick Stock Adjustment</h2>
                   <p className="text-xs text-gray-600 mt-1">Scanned: {ui.selectedMed.name} - Location: {ui.selectedMed.location}</p>
                 </div>
-                <div className="overflow-y-auto px-6 py-4 flex-1">
+                <div className="overflow-y-auto px-4 sm:px-6 py-3 sm:py-4 flex-1">
                     {adjustmentForm.error && (<div className="mb-4 p-3 bg-red-50 border border-red-300 rounded text-sm text-red-700">{adjustmentForm.error}</div>)}
                 <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded">
                   <p className="text-sm font-medium text-gray-900 mb-1">{ui.selectedMed.name}</p>
@@ -3808,8 +3821,8 @@ Medicana Stock Management System`;
                       <input type="text" value={adjustmentForm.note} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, note: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. Emergency surgery" />
                 </div>
                 </div>
-                <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0">
-                  <div className="flex gap-2">
+                <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 flex-shrink-0">
+                  <div className="flex flex-col sm:flex-row gap-2">
                   {adjustmentForm.action === 'in' && (
                         <button onClick={() => handleStockAdjustment('in')} className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center justify-center">
                       <Plus className="w-4 h-4 mr-1" />
@@ -3826,13 +3839,13 @@ Medicana Stock Management System`;
 
             {/* Add Medication Modal */}
             {modals.showAddMedication && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4" style={{zIndex: 9999}} onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showAddMedication: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
-                <div className="bg-white rounded-lg shadow-xl max-w-xl w-full flex flex-col" style={{maxHeight: '80vh'}}>
-                  <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0">
-                    <h2 className="text-lg font-bold text-gray-800">Add New Stock</h2>
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4" style={{zIndex: 9999}} onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showAddMedication: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
+                <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-xl w-full flex flex-col m-2 sm:m-4" style={{maxHeight: '90vh'}}>
+                  <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex-shrink-0">
+                    <h2 className="text-base sm:text-lg font-bold text-gray-800">Add New Stock</h2>
                     <p className="text-xs text-gray-600 mt-1">Location: {ui.currentLocation}</p>
                   </div>
-                  <div className="overflow-y-auto px-6 py-4 flex-1">
+                  <div className="overflow-y-auto px-4 sm:px-6 py-3 sm:py-4 flex-1">
                     {addMedForm.error && (<div className="mb-4 p-3 bg-red-50 border border-red-300 rounded text-sm text-red-700">{addMedForm.error}</div>)}
                     <div className="mb-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Mode</label>
@@ -4081,10 +4094,10 @@ Medicana Stock Management System`;
                       </div>
                     )}
                   </div>
-                  <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0">
-                    <div className="flex gap-2">
-                      <button onClick={handleAddNewMedication} className="flex-1 bg-cyan-500 text-white py-2 rounded-lg hover:bg-cyan-600 transition-colors font-medium">Add Stock</button>
-                      <button onClick={() => { setModals(prev => ({ ...prev, showAddMedication: false })); setAddMedForm({ mode: 'existing', selectedExistingMedId: '', searchTerm: '', name: '', strength: '', type: 'tablet', expiryMonth: '', expiryYear: '', quantityType: 'boxes', boxQuantity: '', itemsPerBox: '', individualQuantity: '', minLevelType: 'boxes', minLevel: '', minLevelBoxes: '', brand: '', batchNumber: '', error: '' }); }} className="px-6 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors font-medium">Cancel</button>
+                  <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 flex-shrink-0">
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <button onClick={handleAddNewMedication} className="flex-1 bg-cyan-500 text-white py-2 rounded-lg hover:bg-cyan-600 transition-colors font-medium text-sm">Add Stock</button>
+                      <button onClick={() => { setModals(prev => ({ ...prev, showAddMedication: false })); setAddMedForm({ mode: 'existing', selectedExistingMedId: '', searchTerm: '', name: '', strength: '', type: 'tablet', expiryMonth: '', expiryYear: '', quantityType: 'boxes', boxQuantity: '', itemsPerBox: '', individualQuantity: '', minLevelType: 'boxes', minLevel: '', minLevelBoxes: '', brand: '', batchNumber: '', error: '' }); }} className="sm:px-6 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors font-medium text-sm">Cancel</button>
                     </div>
                   </div>
                 </div>
@@ -4093,13 +4106,13 @@ Medicana Stock Management System`;
 
             {/* Barcode New Medication Modal */}
             {modals.showBarcodeNewMedication && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4" style={{zIndex: 9999}} onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showBarcodeNewMedication: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
-                <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full flex flex-col" style={{maxHeight: '90vh'}}>
-                  <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0">
-                    <h2 className="text-lg font-bold text-gray-800">New Medication from Barcode</h2>
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4" style={{zIndex: 9999}} onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showBarcodeNewMedication: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
+                <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-2xl w-full flex flex-col m-2 sm:m-4" style={{maxHeight: '90vh'}}>
+                  <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex-shrink-0">
+                    <h2 className="text-base sm:text-lg font-bold text-gray-800">New Medication from Barcode</h2>
                     <p className="text-xs text-gray-600 mt-1">Barcode: {barcodeNewMedForm.barcode}</p>
                   </div>
-                  <div className="overflow-y-auto px-6 py-4 flex-1">
+                  <div className="overflow-y-auto px-4 sm:px-6 py-3 sm:py-4 flex-1">
                     {barcodeNewMedForm.error && (
                       <div className="mb-4 p-3 bg-red-50 border border-red-300 rounded text-sm text-red-700">
                         {barcodeNewMedForm.error}
@@ -4755,10 +4768,10 @@ Medicana Stock Management System`;
 
             {/* Low Stock Report Modal */}
             {modals.showLowStockReport && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showLowStockReport: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
-                <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full flex flex-col" style={{maxHeight: '80vh'}}>
-                  <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0"><h2 className="text-lg font-bold text-gray-800">Export Low Stock Report</h2></div>
-                  <div className="overflow-y-auto px-6 py-4 flex-1">
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50" onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showLowStockReport: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
+                <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-2xl w-full flex flex-col m-2 sm:m-4" style={{maxHeight: '90vh'}}>
+                  <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex-shrink-0"><h2 className="text-base sm:text-lg font-bold text-gray-800">Export Low Stock Report</h2></div>
+                  <div className="overflow-y-auto px-4 sm:px-6 py-3 sm:py-4 flex-1">
                     <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded"><p className="text-sm text-amber-800">This will generate an email report for {lowStockMedications.length} medication{lowStockMedications.length !== 1 ? 's' : ''} below minimum stock level.</p></div>
                     <div className="mb-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Pharmacist Email <span className="text-red-600">*</span></label>
@@ -5063,13 +5076,13 @@ Medicana Stock Management System`;
               const unitName = getUnitName(newMedicationOrderForm.type);
               
               return (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showNewMedicationOrder: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
-                  <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full flex flex-col" style={{maxHeight: '80vh'}}>
-                    <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0">
-                      <h2 className="text-lg font-bold text-gray-800">New Medication Order Request</h2>
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50" onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showNewMedicationOrder: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
+                  <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-2xl w-full flex flex-col m-2 sm:m-4" style={{maxHeight: '90vh'}}>
+                    <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex-shrink-0">
+                      <h2 className="text-base sm:text-lg font-bold text-gray-800">New Medication Order Request</h2>
                     </div>
                     
-                    <div className="flex-1 overflow-y-auto px-6 py-4">
+                    <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-3 sm:py-4">
                       <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                         <h3 className="font-semibold text-blue-900 mb-2">Order Summary</h3>
                         <div className="space-y-1 text-sm">
@@ -5119,9 +5132,9 @@ Medicana Stock Management System`;
 
             {/* Change Password Modal */}
             {modals.showChangePassword && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showChangePassword: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
-                <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-                  <h2 className="text-xl font-bold text-gray-800 mb-4">Change Password</h2>
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50" onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showChangePassword: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
+                <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-md w-full p-4 sm:p-6 m-2 sm:m-4">
+                  <h2 className="text-lg sm:text-xl font-bold text-gray-800 mb-4">Change Password</h2>
                   {changePasswordForm.error && (<div className="mb-4 p-3 bg-red-50 border border-red-300 rounded text-sm text-red-700">{changePasswordForm.error}</div>)}
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Current Password <span className="text-red-600">*</span></label>
