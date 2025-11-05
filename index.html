@@ -2038,20 +2038,47 @@ Medicana Stock Management System`;
         const finalReason = batchRemoval.reason === 'other' ? batchRemoval.customReason.trim() : batchRemoval.reason;
           if (!finalReason) { setBatchRemoval(prev => ({ ...prev, error: 'Please provide a reason for removing this batch' })); return; }
         const { med, batch } = batchRemoval.batch;
-          const updatedMed = { ...med, batches: med.batches.filter(b => b.id !== batch.id) };
         const userInfo = getCurrentUserInfo();
-        if (updatedMed.batches.length === 0) {
-          setMedications(medications.filter(m => m.id !== med.id));
-            const removalTransaction = createTransaction({ medId: med.id, medName: med.name, type: 'delete', amount: batch.quantity, user: userInfo?.fullName || auth.currentUser, location: 'Batch Removal', note: `Batch removed (last batch - medication removed from system) - Brand: ${batch.brand}, Expiry: ${batch.expiryDate} - Reason: ${finalReason} - Quantity: ${batch.quantity} ${med.unit}` }, transactions.length + 1);
-          setTransactions([removalTransaction, ...transactions]);
-            // Silent: last batch removed, medication removed from system
-        } else {
-          setMedications(medications.map(m => m.id === med.id ? updatedMed : m));
-            const removalTransaction = createTransaction({ medId: med.id, medName: med.name, type: 'out', amount: batch.quantity, user: userInfo?.fullName || auth.currentUser, location: 'Batch Removal', note: `Batch removed - Brand: ${batch.brand}, Expiry: ${batch.expiryDate} - Reason: ${finalReason} - Quantity: ${batch.quantity} ${med.unit}` }, transactions.length + 1);
-          setTransactions([removalTransaction, ...transactions]);
-            // Silent: batch removed recorded
+        
+        if (!userInfo || !userInfo.id) {
+          setBatchRemoval(prev => ({ ...prev, error: 'User not logged in' }));
+          return;
         }
-        setBatchRemoval({ batch: null, password: '', reason: '', customReason: '', error: '' });
+
+        try {
+          // Get location ID from medication
+          const locationId = med.locationId || getLocationId(med.location);
+          
+          if (!locationId) {
+            setBatchRemoval(prev => ({ ...prev, error: 'Could not determine location for batch removal' }));
+            return;
+          }
+
+          // Create removal reason note
+          const removalNote = `Batch removed - Brand: ${batch.brand}, Expiry: ${formatExpiry(batch.expiryDate)} - Reason: ${finalReason} - Quantity: ${batch.quantity} ${med.unit}`;
+
+          // Remove all stock from this batch by calling backend API with negative delta
+          await window.api.adjustStock({
+            userId: userInfo.id,
+            medicationId: med.id,
+            locationId: locationId,
+            batchId: batch.id,
+            delta: -batch.quantity, // Negative delta to remove all stock
+            reason: removalNote
+          });
+
+          // Refresh data from backend to ensure UI is in sync
+          const data = await window.api.fetchAllData();
+          setMedications(data.medications || []);
+          setTransactions(data.transactions || []);
+          setLocations(data.locations || []);
+
+          // Close modal
+          setBatchRemoval({ batch: null, password: '', reason: '', customReason: '', error: '' });
+        } catch (err) {
+          console.error('Failed to remove batch:', err);
+          setBatchRemoval(prev => ({ ...prev, error: err.message || 'Failed to remove batch. Please try again.' }));
+        }
       };
 
       const handleUpdateMinLevel = () => {
