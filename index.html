@@ -1154,6 +1154,22 @@
           }
         }, [ui.searchTerm, displayMedications.length, searchBarcodeDetection.inputSpeed, medications.length, ui.currentLocation]);
 
+        // Auto-trigger barcode lookup when modal opens with a barcode
+        React.useEffect(() => {
+          if (modals.showBarcodeNewMedication && barcodeNewMedForm.barcode && barcodeNewMedForm.barcode.trim()) {
+            const barcode = barcodeNewMedForm.barcode.trim();
+            // Only trigger if medication is not already locked (to avoid re-triggering)
+            if (!barcodeNewMedForm.medicationLocked) {
+              console.log('Modal opened with barcode, triggering lookup:', barcode);
+              // Small delay to ensure modal is fully rendered
+              const timeoutId = setTimeout(() => {
+                handleBarcodeLookup(barcode);
+              }, 200);
+              return () => clearTimeout(timeoutId);
+            }
+          }
+        }, [modals.showBarcodeNewMedication, barcodeNewMedForm.barcode, barcodeNewMedForm.medicationLocked]);
+
       // Helper function to get internal location ID from display name
       const getLocationId = (displayName) => {
         if (!displayName) return null;
@@ -1513,12 +1529,15 @@
             
           } else {
             // Show new medication modal for unrecognized barcode
+            const defaultLocation = (ui.currentLocation !== 'All' && ui.currentLocation !== 'Medication Stock L1') ? ui.currentLocation : 'Cupboard 1';
             setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
             setBarcodeNewMedForm(prev => ({ 
               ...prev, 
               barcode: cleanBarcode,
-              location: (ui.currentLocation !== 'All' && ui.currentLocation !== 'Medication Stock L1') ? ui.currentLocation : 'Cupboard 1'
+              location: defaultLocation,
+              strengthType: 'value' // Always default to 'value' for new barcode scans
             }));
+            // The useEffect hook will automatically trigger the lookup when the modal opens with a barcode
           }
         };
 
