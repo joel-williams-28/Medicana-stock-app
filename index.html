@@ -1945,9 +1945,12 @@ Medicana Stock Management System`;
         setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
 
         // minLevel is now in boxes, pass it directly
-        const minLevel = (barcodeNewMedForm.minLevelBoxes && parseInt(barcodeNewMedForm.minLevelBoxes) > 0) 
-          ? parseInt(barcodeNewMedForm.minLevelBoxes) 
-          : 0;
+        // Ensure it's a numeric value (allow 0 as valid)
+        let minLevel = 0;
+        if (barcodeNewMedForm.minLevelBoxes !== undefined && barcodeNewMedForm.minLevelBoxes !== null && barcodeNewMedForm.minLevelBoxes !== '') {
+          const parsed = parseInt(barcodeNewMedForm.minLevelBoxes);
+          minLevel = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+        }
 
         try {
           const currentUser = getCurrentUserInfo();
@@ -2471,19 +2474,10 @@ Medicana Stock Management System`;
           // Get internal medication ID for backend update
           const internalMedicationId = editMinLevel.editing.internalId || editMinLevel.editing.id;
           
-          // Get medication details for update
-          const med = editMinLevel.editing;
-          const strength = med.strengthRaw === 'N/A' || !med.strengthRaw ? 'N/A' : med.strengthRaw;
-          
-          // Update medication in backend
-          await window.api.addMedication({
-            id: internalMedicationId,
-            name: med.medicationName || med.name,
-            strength: strength,
-            type: med.type || 'stock',
-            barcode: med.barcode || '',
-            minLevel: finalMinLevelBoxes, // Pass boxes directly
-            standardItemsPerBox: med.standardItemsPerBox || null
+          // Update min level using dedicated function
+          await window.api.setMedicationMinLevel({
+            medicationId: internalMedicationId,
+            minLevel: finalMinLevelBoxes
           });
 
           // Create transaction note for Activity Log

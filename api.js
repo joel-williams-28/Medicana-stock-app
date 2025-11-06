@@ -102,6 +102,17 @@ window.api = (function () {
     return out;
   }
 
+  async function setMedicationMinLevel({ medicationId, minLevel }) {
+    const res = await fetch('/.netlify/functions/medication-minlevel-set', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ medicationId, minLevel })
+    });
+    const out = await res.json();
+    if (!res.ok || !out.success) throw new Error(out.message || 'Server error');
+    return out;
+  }
+
   async function loginUser(username, password) {
     const res = await fetch(LOGIN_ENDPOINT, {
       method: 'POST',
@@ -143,6 +154,7 @@ window.api = (function () {
     lookupByBarcode,
     setMedicationActive,
     medicationUpsert,
+    setMedicationMinLevel,
     loginUser,
     startPolling,
     stopPolling

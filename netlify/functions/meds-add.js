@@ -22,7 +22,7 @@ exports.handler = async (event) => {
       standardItemsPerBox 
     } = body;
 
-    console.log('meds-add received:', { id, name, minLevel, standardItemsPerBox });
+    console.log('meds-add received:', { id, name, minLevel, standardItemsPerBox, barcode });
 
     // Convert minLevel to boxes (treating it as boxes already)
     const minBoxes = Number.isFinite(Number(minLevel)) ? Number(minLevel) : 0;
@@ -40,6 +40,49 @@ exports.handler = async (event) => {
       };
     }
 
+    // Check if medication already exists by barcode
+    let medicationId = id;
+    let reused = false;
+    
+    if (barcode && barcode.trim()) {
+      const check = await db.query(
+        'SELECT id FROM medications WHERE barcode = $1 LIMIT 1', 
+        [barcode.trim()]
+      );
+      
+      if (check.rowCount > 0) {
+        medicationId = check.rows[0].id;
+        reused = true;
+        console.log('meds-add: Found existing medication with barcode, reusing ID:', medicationId);
+        
+        // If minLevel is provided, update min_level_boxes
+        if (minLevel !== undefined && minLevel !== null) {
+          const minBoxesValue = Number.isFinite(Number(minLevel)) ? Number(minLevel) : 0;
+          try {
+            await db.query('UPDATE medications SET min_level_boxes = $1 WHERE id = $2', [minBoxesValue, medicationId]);
+            console.log('meds-add: Updated min_level_boxes to', minBoxesValue, 'for medication', medicationId);
+          } catch (updateError) {
+            // If min_level_boxes column doesn't exist, try with min_level (for backward compatibility during migration)
+            if (updateError.message && updateError.message.includes('min_level_boxes')) {
+              console.warn('meds-add: min_level_boxes column not found, trying min_level instead');
+              await db.query('UPDATE medications SET min_level = $1 WHERE id = $2', [minBoxesValue, medicationId]);
+              console.log('meds-add: Updated min_level (fallback) to', minBoxesValue, 'for medication', medicationId);
+            } else {
+              console.error('meds-add: Error updating min level:', updateError);
+              // Don't throw - continue with normal flow
+            }
+          }
+        }
+        
+        // Continue with normal flow - return success with medicationId for batch creation
+        return {
+          statusCode: 200,
+          body: JSON.stringify({ success: true, reused: true, medicationId })
+        };
+      }
+    }
+
+    // No matching barcode found - proceed with normal insert
     // Upsert medication
     // Try min_level_boxes first, fall back to min_level if column doesn't exist yet
     let query = `
@@ -58,7 +101,7 @@ exports.handler = async (event) => {
 
     try {
       await db.query(query, [
-        id,
+        medicationId,
         name,
         strength || '',
         type || 'stock',
@@ -85,7 +128,7 @@ exports.handler = async (event) => {
             standard_items_per_box = EXCLUDED.standard_items_per_box
         `;
         await db.query(query, [
-          id,
+          medicationId,
           name,
           strength || '',
           type || 'stock',
@@ -101,7 +144,7 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ success: true })
+      body: JSON.stringify({ success: true, medicationId })
     };
   } catch (e) {
     console.error('meds-add error:', e);
