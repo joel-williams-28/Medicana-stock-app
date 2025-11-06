@@ -1918,22 +1918,30 @@ Medicana Stock Management System`;
           }
 
           let medicationId = barcodeNewMedForm.medicationId;
+          let internalMedicationId = null;
 
           // If medication doesn't exist (not found via barcode lookup), create it
           if (!medicationId) {
             medicationId = String(Math.max(...medications.map(m => parseInt(m.id) || 0), 0) + 1);
-
-            // Create medication
-            await window.api.addMedication({
-              id: medicationId,
-              name: barcodeNewMedForm.name,
-              strength: barcodeNewMedForm.strengthType === 'na' ? 'N/A' : barcodeNewMedForm.strength,
-              type: barcodeNewMedForm.type,
-              barcode: barcodeNewMedForm.barcode,
-              minLevel,
-              standardItemsPerBox: itemsPerBox || null
-            });
+            internalMedicationId = medicationId;
+          } else {
+            // Medication exists - medicationId from barcode lookup is the internal ID
+            // Try to find the medication in the list by internalId to verify it exists
+            const existingMed = medications.find(m => m.internalId === medicationId || m.id === medicationId);
+            // Use medicationId directly as it's already the internal ID from barcode lookup
+            internalMedicationId = medicationId;
           }
+
+          // Create or update medication (including minLevel)
+          await window.api.addMedication({
+            id: internalMedicationId,
+            name: barcodeNewMedForm.name,
+            strength: barcodeNewMedForm.strengthType === 'na' ? 'N/A' : barcodeNewMedForm.strength,
+            type: barcodeNewMedForm.type,
+            barcode: barcodeNewMedForm.barcode,
+            minLevel,
+            standardItemsPerBox: itemsPerBox || null
+          });
 
           // Prepare batch add payload
           const chosenLocationId = getLocationId(barcodeNewMedForm.location) || barcodeNewMedForm.location;
@@ -2401,7 +2409,7 @@ Medicana Stock Management System`;
         }
       };
 
-      const handleUpdateMinLevel = () => {
+      const handleUpdateMinLevel = async () => {
         if (!editMinLevel.editing) return;
         let finalMinLevel = 0;
         const hasBoxes = editMinLevel.editing.batches.some(b => b.itemsPerBox);
@@ -2413,13 +2421,56 @@ Medicana Stock Management System`;
             if (!editMinLevel.newLevel || parseInt(editMinLevel.newLevel) < 0) { setEditMinLevel(prev => ({ ...prev, error: 'Please enter a valid minimum level (0 or greater)' })); return; }
           finalMinLevel = parseInt(editMinLevel.newLevel);
         }
-        const updatedMed = { ...editMinLevel.editing, minLevel: finalMinLevel };
-        setMedications(medications.map(med => med.id === editMinLevel.editing.id ? updatedMed : med));
+
+        try {
+          const currentUser = getCurrentUserInfo();
+          if (!currentUser || !currentUser.id) {
+            setEditMinLevel(prev => ({ ...prev, error: 'User not logged in' }));
+            return;
+          }
+
+          // Get internal medication ID for backend update
+          const internalMedicationId = editMinLevel.editing.internalId || editMinLevel.editing.id;
+          
+          // Get medication details for update
+          const med = editMinLevel.editing;
+          const strength = med.strengthRaw === 'N/A' || !med.strengthRaw ? 'N/A' : med.strengthRaw;
+          
+          // Update medication in backend
+          await window.api.addMedication({
+            id: internalMedicationId,
+            name: med.medicationName || med.name,
+            strength: strength,
+            type: med.type || 'stock',
+            barcode: med.barcode || '',
+            minLevel: finalMinLevel,
+            standardItemsPerBox: med.standardItemsPerBox || null
+          });
+
+          // Create transaction note for Activity Log
           const displayText = hasBoxes && editMinLevel.type === 'boxes' ? `${editMinLevel.boxes} ${parseInt(editMinLevel.boxes) === 1 ? 'box' : 'boxes'} (${finalMinLevel} ${editMinLevel.editing.unit})` : `${finalMinLevel} ${editMinLevel.editing.unit}`;
-          const changeTransaction = createTransaction({ medId: editMinLevel.editing.id, medName: editMinLevel.editing.name, type: 'in', amount: 0, user: getCurrentUserInfo()?.fullName || auth.currentUser, location: 'System', note: `Minimum level updated from ${formatMinLevelDisplay(editMinLevel.editing)} to ${displayText}` }, transactions.length + 1);
-        setTransactions([changeTransaction, ...transactions]);
-          // Silent: min level updated
-        setEditMinLevel({ editing: null, newLevel: '', type: 'boxes', boxes: '', error: '' });
+          const changeTransaction = createTransaction({ 
+            medId: editMinLevel.editing.id, 
+            medName: editMinLevel.editing.name, 
+            type: 'system', 
+            amount: 0, 
+            user: currentUser.fullName || auth.currentUser, 
+            location: 'System', 
+            note: `Minimum level updated from ${formatMinLevelDisplay(editMinLevel.editing)} to ${displayText}` 
+          }, transactions.length + 1);
+
+          // Refresh data from backend (small delay to ensure DB commit)
+          await new Promise(resolve => setTimeout(resolve, 100));
+          const data = await window.api.fetchAllData();
+          setMedications(data.medications || []);
+          // Merge backend transactions with local min level update transaction (backend doesn't create system transactions for min level updates)
+          setTransactions([changeTransaction, ...(data.transactions || [])]);
+
+          setEditMinLevel({ editing: null, newLevel: '', type: 'boxes', boxes: '', error: '' });
+        } catch (err) {
+          console.error('Failed to update minimum level:', err);
+          setEditMinLevel(prev => ({ ...prev, error: err.message || 'Failed to update minimum level' }));
+        }
       };
 
       const generateEmailContent = () => {
