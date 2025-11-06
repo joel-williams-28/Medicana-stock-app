@@ -1816,7 +1816,8 @@ Medicana Stock Management System`;
             note
           });
 
-          // Refresh data from backend
+          // Refresh data from backend (small delay to ensure DB commit)
+          await new Promise(resolve => setTimeout(resolve, 100));
           const data = await window.api.fetchAllData();
           setMedications(data.medications || []);
           setTransactions(data.transactions || []);
@@ -1857,16 +1858,29 @@ Medicana Stock Management System`;
           return;
         }
 
-        // Validate quantity fields
-        const boxQuantity = parseInt(barcodeNewMedForm.boxQuantity) || 0;
-        const itemsPerBox = parseInt(barcodeNewMedForm.itemsPerBox) || 0;
+        // Validate quantity fields - check for empty strings and parse
+        const boxQuantityStr = String(barcodeNewMedForm.boxQuantity || '').trim();
+        const itemsPerBoxStr = String(barcodeNewMedForm.itemsPerBox || '').trim();
         
-        if (boxQuantity <= 0) {
+        if (!boxQuantityStr || boxQuantityStr === '0' || boxQuantityStr === '') {
           setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter a valid number of boxes (greater than 0)' }));
           return;
         }
         
-        if (itemsPerBox <= 0) {
+        if (!itemsPerBoxStr || itemsPerBoxStr === '0' || itemsPerBoxStr === '') {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter a valid items per box (greater than 0)' }));
+          return;
+        }
+        
+        const boxQuantity = parseInt(boxQuantityStr, 10);
+        const itemsPerBox = parseInt(itemsPerBoxStr, 10);
+        
+        if (isNaN(boxQuantity) || boxQuantity <= 0) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter a valid number of boxes (greater than 0)' }));
+          return;
+        }
+        
+        if (isNaN(itemsPerBox) || itemsPerBox <= 0) {
           setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter a valid items per box (greater than 0)' }));
           return;
         }
@@ -1874,10 +1888,12 @@ Medicana Stock Management System`;
         // Calculate total quantity: boxes * items_per_box
         const totalQuantity = boxQuantity * itemsPerBox;
 
-        if (totalQuantity <= 0) {
+        if (isNaN(totalQuantity) || totalQuantity <= 0) {
           setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter valid box quantity and items per box' }));
           return;
         }
+        
+        console.log('Submitting with:', { boxQuantity, itemsPerBox, totalQuantity });
 
         // Set submitting state
         setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
@@ -1929,6 +1945,7 @@ Medicana Stock Management System`;
               locationId: chosenLocationId,
               medicationId: medicationId,
               existingBatchId: barcodeNewMedForm.existingBatchId,
+              itemsPerBox: itemsPerBox, // Required for backend to calculate total quantity
               quantityBoxes: boxQuantity,
               quantityIndividuals: 0,
               reason: 'Delivery (existing batch)'
@@ -1950,7 +1967,8 @@ Medicana Stock Management System`;
             });
           }
 
-          // Refresh data from backend
+          // Refresh data from backend (small delay to ensure DB commit)
+          await new Promise(resolve => setTimeout(resolve, 100));
           const data = await window.api.fetchAllData();
           setMedications(data.medications || []);
           setTransactions(data.transactions || []);
@@ -2100,7 +2118,8 @@ Medicana Stock Management System`;
               note: deliveryNote
             });
 
-            // Refresh data from backend
+            // Refresh data from backend (small delay to ensure DB commit)
+            await new Promise(resolve => setTimeout(resolve, 100));
             const data = await window.api.fetchAllData();
             setMedications(data.medications || []);
             setTransactions(data.transactions || []);
@@ -2195,7 +2214,8 @@ Medicana Stock Management System`;
               }
             }
 
-            // Refresh data from backend
+            // Refresh data from backend (small delay to ensure DB commit)
+            await new Promise(resolve => setTimeout(resolve, 100));
             const data = await window.api.fetchAllData();
             setMedications(data.medications || []);
             setTransactions(data.transactions || []);
@@ -2283,7 +2303,8 @@ Medicana Stock Management System`;
             });
           }
 
-          // Refresh data from backend
+          // Refresh data from backend (small delay to ensure DB commit)
+          await new Promise(resolve => setTimeout(resolve, 100));
           const data = await window.api.fetchAllData();
           setMedications(data.medications || []);
           setTransactions(data.transactions || []);
@@ -2311,14 +2332,15 @@ Medicana Stock Management System`;
             // Soft-delete: set is_active to false
             await window.api.setMedicationActive(internalId, false);
             
-            // Create transaction record
-            const deletionTransaction = createTransaction({ medId: deletion.med.id, medName: deletion.med.name, type: 'delete', amount: getTotalQuantity(deletion.med), user: userInfo?.fullName || auth.currentUser, location: 'System', note: `Medication deleted from system - Final stock level: ${getTotalQuantity(deletion.med)} ${deletion.med.unit}` }, transactions.length + 1);
-            setTransactions([deletionTransaction, ...transactions]);
-            
             // Refresh data from backend to ensure UI is in sync (inactive meds will be filtered out)
+            // Note: Backend doesn't create a transaction for soft-delete, so we create one locally for Activity Log
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const deletionTransaction = createTransaction({ medId: deletion.med.id, medName: deletion.med.name, type: 'delete', amount: getTotalQuantity(deletion.med), user: userInfo?.fullName || auth.currentUser, location: 'System', note: `Medication deleted from system - Final stock level: ${getTotalQuantity(deletion.med)} ${deletion.med.unit}` }, transactions.length + 1);
+            
             const data = await window.api.fetchAllData();
             setMedications(data.medications || []);
-            setTransactions(data.transactions || []);
+            // Merge backend transactions with local deletion transaction (backend doesn't create delete transactions)
+            setTransactions([deletionTransaction, ...(data.transactions || [])]);
             
             // Close deletion modal
             setDeletion({ med: null, password: '', error: '' });
@@ -2364,7 +2386,8 @@ Medicana Stock Management System`;
             reason: removalNote
           });
 
-          // Refresh data from backend to ensure UI is in sync
+          // Refresh data from backend to ensure UI is in sync (small delay to ensure DB commit)
+          await new Promise(resolve => setTimeout(resolve, 100));
           const data = await window.api.fetchAllData();
           setMedications(data.medications || []);
           setTransactions(data.transactions || []);
