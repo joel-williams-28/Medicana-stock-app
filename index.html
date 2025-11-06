@@ -1243,6 +1243,7 @@
 
       // Barcode lookup handler - called when barcode is entered/scanned
       const handleBarcodeLookup = async (barcode) => {
+        console.log('handleBarcodeLookup called with:', barcode);
         if (!barcode || !barcode.trim()) {
           // Clear medication lock state if barcode is empty
           setBarcodeNewMedForm(prev => ({
@@ -1261,7 +1262,13 @@
         }
 
         try {
+          console.log('Calling window.api.lookupByBarcode with:', barcode.trim());
+          if (!window.api || !window.api.lookupByBarcode) {
+            console.error('window.api.lookupByBarcode is not available');
+            throw new Error('Barcode lookup API is not available');
+          }
           const result = await window.api.lookupByBarcode(barcode.trim());
+          console.log('Barcode lookup result:', result);
           
           if (result.found && result.medication) {
             const med = result.medication;
@@ -4797,6 +4804,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
                           <input
                             type="text"
+                            id="barcodeInput"
                             value={barcodeNewMedForm.barcode}
                             onChange={(e) => {
                               const barcode = e.target.value;
@@ -4804,8 +4812,9 @@ Medicana Stock Management System`;
                               // Clear any existing timeout
                               if (barcodeLookupTimeoutRef.current) {
                                 clearTimeout(barcodeLookupTimeoutRef.current);
+                                barcodeLookupTimeoutRef.current = null;
                               }
-                              // Trigger lookup when barcode changes (debounced)
+                              // Trigger lookup when barcode changes (debounced for typing)
                               if (barcode.trim()) {
                                 barcodeLookupTimeoutRef.current = setTimeout(() => {
                                   handleBarcodeLookup(barcode);
@@ -4813,6 +4822,22 @@ Medicana Stock Management System`;
                                 }, 500);
                               } else {
                                 handleBarcodeLookup('');
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              // Handle Enter key (barcode scanners typically send Enter after scan)
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                // Clear any pending debounced timeout
+                                if (barcodeLookupTimeoutRef.current) {
+                                  clearTimeout(barcodeLookupTimeoutRef.current);
+                                  barcodeLookupTimeoutRef.current = null;
+                                }
+                                // Trigger immediate lookup
+                                const barcode = e.target.value.trim();
+                                if (barcode) {
+                                  handleBarcodeLookup(barcode);
+                                }
                               }
                             }}
                             onBlur={(e) => {
@@ -4829,6 +4854,7 @@ Medicana Stock Management System`;
                             }}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
                             placeholder="Scan or enter barcode"
+                            autoComplete="off"
                           />
                           {barcodeNewMedForm.medicationLocked && (
                             <p className="text-xs text-green-700 mt-1">✓ Medication found — details auto-filled.</p>
