@@ -25,8 +25,12 @@ exports.handler = async (event) => {
       quantityIndividuals,
       locationId,
       userId,
-      note
+      note,
+      reason // Alias for note (for consistency with frontend)
     } = JSON.parse(event.body || '{}');
+    
+    // Use reason if provided, otherwise fall back to note
+    const transactionNote = reason || note;
 
     // Validate required fields
     if (!locationId || !userId) {
@@ -196,12 +200,12 @@ exports.handler = async (event) => {
       }
 
       // Insert transaction record using canonical medication_id derived from batch
-      const reason = note || `Delivery received - ${finalTotal} units`;
+      const finalReason = transactionNote || `Delivery received - ${finalTotal} units`;
       await db.query(
         `INSERT INTO transactions 
          (user_id, medication_id, location_id, batch_id, delta, reason, occurred_at)
          VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-        [userId, canonicalMedicationId, locationId, batchIdResult, finalTotal, reason]
+        [userId, canonicalMedicationId, locationId, batchIdResult, finalTotal, finalReason]
       );
 
       // Commit transaction

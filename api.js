@@ -80,6 +80,17 @@ window.api = (function () {
     return out;
   }
 
+  async function setMedicationActive(medicationId, isActive) {
+    const res = await fetch('/.netlify/functions/medication-set-active', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ medicationId, isActive })
+    });
+    const out = await res.json();
+    if (!res.ok || !out.success) throw new Error(out.message || 'Set medication active failed');
+    return out;
+  }
+
   async function loginUser(username, password) {
     const res = await fetch(LOGIN_ENDPOINT, {
       method: 'POST',
@@ -119,6 +130,7 @@ window.api = (function () {
     transferStock,
     checkBatch,
     lookupByBarcode,
+    setMedicationActive,
     loginUser,
     startPolling,
     stopPolling

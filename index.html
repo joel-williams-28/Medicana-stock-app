@@ -516,6 +516,9 @@
 
         // Use ref to track warning state for event handlers (avoids closure issues)
         const warningShownRef = useRef(false);
+        
+        // Ref for barcode lookup debouncing
+        const barcodeLookupTimeoutRef = useRef(null);
 
         // Session timeout constants
         const INACTIVITY_TIMEOUT = 150000; // 2.5 minutes in milliseconds
@@ -1858,30 +1861,35 @@ Medicana Stock Management System`;
           }
 
           // Prepare batch add payload
-          const batchPayload = {
-            medicationId: medicationId,
-            locationId: getLocationId(barcodeNewMedForm.location) || barcodeNewMedForm.location,
-            userId: currentUser.id,
-            quantityBoxes: parseInt(barcodeNewMedForm.boxQuantity) || 0,
-            quantityIndividuals: individuals
-          };
-
+          const chosenLocationId = getLocationId(barcodeNewMedForm.location) || barcodeNewMedForm.location;
+          
           // If existing batch is selected, use it
           if (barcodeNewMedForm.existingBatchId) {
-            batchPayload.existingBatchId = barcodeNewMedForm.existingBatchId;
-            batchPayload.note = `Delivery (existing batch) - Barcode: ${barcodeNewMedForm.barcode} - Brand: ${barcodeNewMedForm.brand}`;
+            await window.api.addBatch({
+              userId: currentUser.id,
+              locationId: chosenLocationId,
+              medicationId: medicationId,
+              existingBatchId: barcodeNewMedForm.existingBatchId,
+              quantityBoxes: parseInt(barcodeNewMedForm.boxQuantity) || 0,
+              quantityIndividuals: individuals,
+              reason: 'Delivery (existing batch)'
+            });
           } else {
             // Create new batch
-            batchPayload.batchCode = barcodeNewMedForm.batchNumber || `BATCH-${Date.now()}`;
-            batchPayload.expiryMonth = parseInt(barcodeNewMedForm.expiryMonth);
-            batchPayload.expiryYear = parseInt(barcodeNewMedForm.expiryYear);
-            batchPayload.brand = barcodeNewMedForm.brand;
-            batchPayload.itemsPerBox = itemsPerBox || null;
-            batchPayload.note = `Delivery - Barcode: ${barcodeNewMedForm.barcode} - Brand: ${barcodeNewMedForm.brand}`;
+            await window.api.addBatch({
+              userId: currentUser.id,
+              locationId: chosenLocationId,
+              medicationId: medicationId,
+              batchCode: barcodeNewMedForm.batchNumber || `BATCH-${Date.now()}`,
+              expiryMonth: parseInt(barcodeNewMedForm.expiryMonth),
+              expiryYear: parseInt(barcodeNewMedForm.expiryYear),
+              brand: barcodeNewMedForm.brand,
+              itemsPerBox: itemsPerBox || null,
+              quantityBoxes: parseInt(barcodeNewMedForm.boxQuantity) || 0,
+              quantityIndividuals: individuals,
+              reason: 'Delivery'
+            });
           }
-
-          // Add batch/stock
-          await window.api.addBatch(batchPayload);
 
           // Refresh data from backend
           const data = await window.api.fetchAllData();
@@ -2231,12 +2239,34 @@ Medicana Stock Management System`;
         if (!deletion.med) return;
           if (!deletion.password.trim()) { setDeletion(prev => ({ ...prev, error: 'Please enter your password to confirm deletion' })); return; }
           if (!(await validatePassword(auth.currentUser, deletion.password))) { setDeletion(prev => ({ ...prev, error: 'Incorrect password. Please try again.', password: '' })); return; }
+          
           const userInfo = getCurrentUserInfo();
-          const deletionTransaction = createTransaction({ medId: deletion.med.id, medName: deletion.med.name, type: 'delete', amount: getTotalQuantity(deletion.med), user: userInfo?.fullName || auth.currentUser, location: 'System', note: `Medication deleted from system - Final stock level: ${getTotalQuantity(deletion.med)} ${deletion.med.unit}` }, transactions.length + 1);
-        setTransactions([deletionTransaction, ...transactions]);
-        setMedications(medications.filter(med => med.id !== deletion.med.id));
-            // Silent: keep transaction history only
-        setDeletion({ med: null, password: '', error: '' });
+          const internalId = deletion.med.internalId;
+          
+          if (!internalId) {
+            setDeletion(prev => ({ ...prev, error: 'Unable to delete: medication ID not found' }));
+            return;
+          }
+
+          try {
+            // Soft-delete: set is_active to false
+            await window.api.setMedicationActive(internalId, false);
+            
+            // Create transaction record
+            const deletionTransaction = createTransaction({ medId: deletion.med.id, medName: deletion.med.name, type: 'delete', amount: getTotalQuantity(deletion.med), user: userInfo?.fullName || auth.currentUser, location: 'System', note: `Medication deleted from system - Final stock level: ${getTotalQuantity(deletion.med)} ${deletion.med.unit}` }, transactions.length + 1);
+            setTransactions([deletionTransaction, ...transactions]);
+            
+            // Refresh data from backend to ensure UI is in sync (inactive meds will be filtered out)
+            const data = await window.api.fetchAllData();
+            setMedications(data.medications || []);
+            setTransactions(data.transactions || []);
+            
+            // Close deletion modal
+            setDeletion({ med: null, password: '', error: '' });
+          } catch (err) {
+            console.error('Failed to delete medication:', err);
+            setDeletion(prev => ({ ...prev, error: err.message || 'Failed to delete medication' }));
+          }
       };
 
       const handleRemoveBatch = async () => {
@@ -4771,14 +4801,26 @@ Medicana Stock Management System`;
                             onChange={(e) => {
                               const barcode = e.target.value;
                               setBarcodeNewMedForm(prev => ({ ...prev, barcode, error: '' }));
+                              // Clear any existing timeout
+                              if (barcodeLookupTimeoutRef.current) {
+                                clearTimeout(barcodeLookupTimeoutRef.current);
+                              }
                               // Trigger lookup when barcode changes (debounced)
                               if (barcode.trim()) {
-                                setTimeout(() => handleBarcodeLookup(barcode), 500);
+                                barcodeLookupTimeoutRef.current = setTimeout(() => {
+                                  handleBarcodeLookup(barcode);
+                                  barcodeLookupTimeoutRef.current = null;
+                                }, 500);
                               } else {
                                 handleBarcodeLookup('');
                               }
                             }}
                             onBlur={(e) => {
+                              // Clear any pending timeout
+                              if (barcodeLookupTimeoutRef.current) {
+                                clearTimeout(barcodeLookupTimeoutRef.current);
+                                barcodeLookupTimeoutRef.current = null;
+                              }
                               // Also trigger lookup on blur to ensure it runs if user tabs away
                               const barcode = e.target.value.trim();
                               if (barcode) {

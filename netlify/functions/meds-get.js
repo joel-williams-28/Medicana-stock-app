@@ -18,7 +18,7 @@ exports.handler = async () => {
     `;
     const medsResult = await db.query(medsQuery);
 
-    // Get medication details (fefo, min_level) from medications table
+    // Get medication details (fefo, min_level, is_active) from medications table
     // We still need this because inventory_full doesn't have all medication metadata
     // Match by medication_display_id (which is name + strength combination)
     const medicationDetailsQuery = `
@@ -27,8 +27,10 @@ exports.handler = async () => {
         name,
         strength,
         fefo,
-        min_level
+        min_level,
+        is_active
       FROM medications
+      WHERE is_active = true
     `;
     const medicationDetailsResult = await db.query(medicationDetailsQuery);
     
@@ -39,6 +41,7 @@ exports.handler = async () => {
         ? `${med.name} ${med.strength}`
         : med.name;
       medicationDetailsMap[displayId] = {
+        internalId: med.id,
         fefo: med.fefo,
         minLevel: med.min_level
       };
@@ -63,6 +66,7 @@ exports.handler = async () => {
       if (!medsByKey[key]) {
         medsByKey[key] = {
           id: displayId, // Use display_id as the identifier (no internal id exposed)
+          internalId: medDetails.internalId || null, // Internal medication ID for backend operations
           name: displayName, // Display name: "Medication Name + Strength Raw"
           // Extended fields from inventory_full view for sorting/filtering
           medicationName: row.medication_name, // Base medication name (without strength)
