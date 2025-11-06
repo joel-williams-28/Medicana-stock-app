@@ -4778,6 +4778,13 @@ Medicana Stock Management System`;
                                 handleBarcodeLookup('');
                               }
                             }}
+                            onBlur={(e) => {
+                              // Also trigger lookup on blur to ensure it runs if user tabs away
+                              const barcode = e.target.value.trim();
+                              if (barcode) {
+                                handleBarcodeLookup(barcode);
+                              }
+                            }}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
                             placeholder="Scan or enter barcode"
                           />

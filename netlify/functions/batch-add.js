@@ -124,10 +124,14 @@ exports.handler = async (event) => {
               };
             }
 
-            // Build expiry date (first of month)
+            // Build expiry date (last day of month)
             let expiryDate = null;
             if (expiryMonth && expiryYear) {
-              expiryDate = `${expiryYear}-${String(expiryMonth).padStart(2, '0')}-01`;
+              const month = parseInt(expiryMonth);
+              const year = parseInt(expiryYear);
+              // Get the last day of the month
+              const lastDay = new Date(year, month, 0).getDate();
+              expiryDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
             }
 
             const insertBatch = await db.query(
@@ -152,10 +156,14 @@ exports.handler = async (event) => {
             };
           }
 
-          // Build expiry date (first of month)
+          // Build expiry date (last day of month)
           let expiryDate = null;
           if (expiryMonth && expiryYear) {
-            expiryDate = `${expiryYear}-${String(expiryMonth).padStart(2, '0')}-01`;
+            const month = parseInt(expiryMonth);
+            const year = parseInt(expiryYear);
+            // Get the last day of the month
+            const lastDay = new Date(year, month, 0).getDate();
+            expiryDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
           }
 
           const insertBatch = await db.query(
