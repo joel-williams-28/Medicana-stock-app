@@ -91,6 +91,17 @@ window.api = (function () {
     return out;
   }
 
+  async function medicationUpsert(payload) {
+    const res = await fetch('/.netlify/functions/medication-upsert', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const out = await res.json();
+    if (!res.ok || !out.success) throw new Error(out.message || 'Medication upsert failed');
+    return out;
+  }
+
   async function loginUser(username, password) {
     const res = await fetch(LOGIN_ENDPOINT, {
       method: 'POST',
@@ -131,6 +142,7 @@ window.api = (function () {
     checkBatch,
     lookupByBarcode,
     setMedicationActive,
+    medicationUpsert,
     loginUser,
     startPolling,
     stopPolling

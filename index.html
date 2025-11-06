@@ -932,12 +932,39 @@
       const filteredTransactions = transactions.filter(trans => {
         if (trans.medId === 0) return trans.type === 'order' && lowStockMedications.length > 0;
         if (ui.currentLocation === 'All') return true;
+        
+        // Get location names to check (including special case for Medication Stock L1)
+        const locationNamesToCheck = ui.currentLocation === 'Medication Stock L1' 
+          ? ['Medication Stock L1', 'Cupboard 1', 'Cupboard 2', 'Cupboard 3']
+          : [ui.currentLocation];
+        
+        // Check if transaction location matches (transaction happened at this location)
+        const locationMatches = locationNamesToCheck.includes(trans.location);
+        
+        // Check if transaction note contains location references
+        const note = (trans.note || '').toLowerCase();
+        const noteContainsLocation = locationNamesToCheck.some(locName => {
+          const locNameLower = locName.toLowerCase();
+          // Check for various patterns in the note (case-insensitive)
+          return note.includes(`transfer to ${locNameLower}`) ||
+                 note.includes(`transfer from ${locNameLower}`) ||
+                 note.includes(`dispensed to ${locNameLower}`) ||
+                 note.includes(`stock added to ${locNameLower}`) ||
+                 note.includes(`stock received from ${locNameLower}`) ||
+                 note.includes(`received from ${locNameLower}`) ||
+                 (note.includes('delivery received') && locationMatches) ||
+                 (note.includes('auto-adjustment') && locationMatches);
+        });
+        
+        // Check if medication is in the selected location (for backward compatibility)
         const medication = medications.find(m => m.id === trans.medId);
-        if (!medication) return false;
-        if (ui.currentLocation === 'Medication Stock L1') {
-          return ['Cupboard 1', 'Cupboard 2', 'Cupboard 3'].includes(medication.location);
-        }
-        return medication.location === ui.currentLocation;
+        const medicationInLocation = medication && locationNamesToCheck.includes(medication.location);
+        
+        // Show transaction if it's related to the location in any way:
+        // - Transaction happened at this location
+        // - Transaction note mentions this location
+        // - Medication is stored at this location
+        return locationMatches || noteContainsLocation || medicationInLocation;
       });
 
       const hasPendingOrder = (medId) => {
@@ -1917,31 +1944,35 @@ Medicana Stock Management System`;
             return;
           }
 
-          let medicationId = barcodeNewMedForm.medicationId;
-          let internalMedicationId = null;
+          let medicationId = null;
 
-          // If medication doesn't exist (not found via barcode lookup), create it
-          if (!medicationId) {
-            medicationId = String(Math.max(...medications.map(m => parseInt(m.id) || 0), 0) + 1);
-            internalMedicationId = medicationId;
+          // If lookup found a medication, use its medicationId
+          if (barcodeNewMedForm.medicationId) {
+            medicationId = barcodeNewMedForm.medicationId;
           } else {
-            // Medication exists - medicationId from barcode lookup is the internal ID
-            // Try to find the medication in the list by internalId to verify it exists
-            const existingMed = medications.find(m => m.internalId === medicationId || m.id === medicationId);
-            // Use medicationId directly as it's already the internal ID from barcode lookup
-            internalMedicationId = medicationId;
+            // Call medicationUpsert to find or create medication
+            const upsertResult = await window.api.medicationUpsert({
+              name: barcodeNewMedForm.name,
+              strength: barcodeNewMedForm.strengthType === 'na' ? 'N/A' : barcodeNewMedForm.strength,
+              form: barcodeNewMedForm.type,
+              barcode: barcodeNewMedForm.barcode,
+              standardItemsPerBox: itemsPerBox || null
+            });
+            medicationId = upsertResult.medicationId;
           }
 
-          // Create or update medication (including minLevel)
-          await window.api.addMedication({
-            id: internalMedicationId,
-            name: barcodeNewMedForm.name,
-            strength: barcodeNewMedForm.strengthType === 'na' ? 'N/A' : barcodeNewMedForm.strength,
-            type: barcodeNewMedForm.type,
-            barcode: barcodeNewMedForm.barcode,
-            minLevel,
-            standardItemsPerBox: itemsPerBox || null
-          });
+          // Update medication minLevel if provided (using addMedication for update)
+          if (minLevel > 0) {
+            await window.api.addMedication({
+              id: medicationId,
+              name: barcodeNewMedForm.name,
+              strength: barcodeNewMedForm.strengthType === 'na' ? 'N/A' : barcodeNewMedForm.strength,
+              type: barcodeNewMedForm.type,
+              barcode: barcodeNewMedForm.barcode,
+              minLevel,
+              standardItemsPerBox: itemsPerBox || null
+            });
+          }
 
           // Prepare batch add payload
           const chosenLocationId = getLocationId(barcodeNewMedForm.location) || barcodeNewMedForm.location;
@@ -2956,8 +2987,11 @@ Medicana Stock Management System`;
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
-                        {displayMedications.map(med => (
-                            <React.Fragment key={med.id}>
+                        {displayMedications.map(med => {
+                          // Use composite key: medication_name|strength_raw|type|location for stable identity
+                          const stableKey = `${med.medicationName || med.name}|${med.strengthRaw || ''}|${med.type || ''}|${med.location || ''}`;
+                          return (
+                            <React.Fragment key={stableKey}>
                             <tr className="hover:bg-gray-50" data-med-id={med.id}>
                               <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-900">
                                   <button onClick={() => setUi(prev => ({ ...prev, expandedMedId: prev.expandedMedId === med.id ? null : med.id }))} className="flex items-center gap-1 sm:gap-2 hover:text-cyan-600 text-left w-full">
@@ -3031,7 +3065,7 @@ Medicana Stock Management System`;
                                         const batchDetailsForDisplay = batch.totalQuantity ? { ...batch, quantity: batch.totalQuantity } : batch;
                                         const batchDetails = formatBatchDetails(batchDetailsForDisplay, med.unit);
                                         return (
-                                          <div key={`${batch.location || batch.id}-${idx}`} className="bg-white p-3 rounded border border-gray-200">
+                                          <div key={batch.id} className="bg-white p-3 rounded border border-gray-200">
                                             <div className="flex items-center justify-between gap-4 text-sm mb-2">
                                               <div className="flex items-center gap-4 flex-wrap">
                                                 <span className="text-gray-600 font-medium">Batch {idx + 1}:</span>
@@ -3103,7 +3137,8 @@ Medicana Stock Management System`;
                               </tr>
                             )}
                             </React.Fragment>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                     {displayMedications.length === 0 && (
@@ -3291,8 +3326,11 @@ Medicana Stock Management System`;
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
-                        {lowStockMedications.sort((a, b) => a.name.localeCompare(b.name)).map(med => (
-                          <tr key={med.id} className="hover:bg-gray-50">
+                        {lowStockMedications.sort((a, b) => a.name.localeCompare(b.name)).map(med => {
+                          // Use composite key: medication_name|strength_raw|type|location for stable identity
+                          const stableKey = `${med.medicationName || med.name}|${med.strengthRaw || ''}|${med.type || ''}|${med.location || ''}`;
+                          return (
+                            <tr key={stableKey} className="hover:bg-gray-50">
                             <td className="px-4 py-3 text-sm text-gray-900">
                               <div className="flex items-center gap-2">
                                 <span>{med.name}</span>
@@ -3340,7 +3378,8 @@ Medicana Stock Management System`;
                               </button>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                     {lowStockMedications.length === 0 && (
@@ -5737,8 +5776,10 @@ Medicana Stock Management System`;
                           return `${qty} ${med.unit}`;
                         };
                         
+                        // Use composite key: medication_name|strength_raw|type|location for stable identity
+                        const stableKey = `${med.medicationName || med.name}|${med.strengthRaw || ''}|${med.type || ''}|${med.location || ''}`;
                         return (
-                          <div key={med.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                          <div key={stableKey} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
                             <div className="flex items-start justify-between">
                               <div className="flex-1">
                                 <h3 className="font-semibold text-gray-900 text-lg">{med.name}</h3>
@@ -6129,8 +6170,11 @@ Medicana Stock Management System`;
                             </h3>
                           </div>
                           <div className="space-y-3">
-                            {criticalMeds.map(med => (
-                              <div key={med.id} className="bg-white rounded-lg border-2 border-red-200 p-4 shadow-sm">
+                            {criticalMeds.map(med => {
+                              // Use composite key: medication_name|strength_raw|type|location for stable identity
+                              const stableKey = `${med.medicationName || med.name}|${med.strengthRaw || ''}|${med.type || ''}|${med.location || ''}`;
+                              return (
+                                <div key={stableKey} className="bg-white rounded-lg border-2 border-red-200 p-4 shadow-sm">
                                 <div className="flex justify-between items-start mb-3">
                                   <div>
                                     <h4 className="font-bold text-gray-900 text-lg">{med.name}</h4>
@@ -6194,7 +6238,8 @@ Medicana Stock Management System`;
                                   </div>
                                 </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -6209,8 +6254,11 @@ Medicana Stock Management System`;
                             <p className="text-sm text-amber-700">Consider reducing minimum levels to optimize inventory</p>
                           </div>
                           <div className="space-y-3">
-                            {optimizeMeds.map(med => (
-                              <div key={med.id} className="bg-white rounded-lg border-2 border-amber-200 p-4 shadow-sm">
+                            {optimizeMeds.map(med => {
+                              // Use composite key: medication_name|strength_raw|type|location for stable identity
+                              const stableKey = `${med.medicationName || med.name}|${med.strengthRaw || ''}|${med.type || ''}|${med.location || ''}`;
+                              return (
+                                <div key={stableKey} className="bg-white rounded-lg border-2 border-amber-200 p-4 shadow-sm">
                                 <div className="flex justify-between items-start mb-2">
                                   <div>
                                     <h4 className="font-bold text-gray-900">{med.name}</h4>
@@ -6231,7 +6279,8 @@ Medicana Stock Management System`;
                                   </div>
                                 </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -6257,8 +6306,11 @@ Medicana Stock Management System`;
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-gray-200">
-                                {weeklyActiveMeds.map(med => (
-                                  <tr key={med.id} className="hover:bg-gray-50">
+                                {weeklyActiveMeds.map(med => {
+                                  // Use composite key: medication_name|strength_raw|type|location for stable identity
+                                  const stableKey = `${med.medicationName || med.name}|${med.strengthRaw || ''}|${med.type || ''}|${med.location || ''}`;
+                                  return (
+                                  <tr key={stableKey} className="hover:bg-gray-50">
                                     <td className="px-4 py-3 font-medium text-gray-900">{med.name}</td>
                                     <td className="px-4 py-3 text-center text-blue-600 font-semibold">{med.analytics.totalUsed} {med.unit}</td>
                                     <td className="px-4 py-3 text-center">
@@ -6289,7 +6341,8 @@ Medicana Stock Management System`;
                                       </span>
                                     </td>
                                   </tr>
-                                ))}
+                                );
+                                })}
                               </tbody>
                             </table>
                           </div>
