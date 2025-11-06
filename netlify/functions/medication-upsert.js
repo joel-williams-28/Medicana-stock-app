@@ -18,8 +18,11 @@ exports.handler = async (event) => {
       form,       // maps to "form" in DB
       barcode, 
       standardItemsPerBox,
-      minLevel 
+      minLevel  // This should be boxes, not items
     } = JSON.parse(event.body || '{}');
+
+    // Convert minLevel to boxes (treating it as boxes already)
+    const minBoxes = Number.isFinite(Number(minLevel)) ? Number(minLevel) : 0;
 
     // Validate required fields
     if (!name) {
@@ -42,12 +45,12 @@ exports.handler = async (event) => {
       );
 
       if (barcodeResult.rows.length > 0) {
-        // Found existing medication by barcode - update minLevel if provided
+        // Found existing medication by barcode - update min_level_boxes if provided
         medicationId = barcodeResult.rows[0].id;
         if (minLevel !== undefined && minLevel !== null) {
           await db.query(
-            'UPDATE medications SET min_level = $1 WHERE id = $2',
-            [minLevel || 0, medicationId]
+            'UPDATE medications SET min_level_boxes = $1 WHERE id = $2',
+            [minBoxes, medicationId]
           );
         }
       } else {
@@ -57,7 +60,7 @@ exports.handler = async (event) => {
 
         await db.query(
           `INSERT INTO medications 
-           (id, name, strength, form, barcode, min_level, standard_items_per_box, fefo, is_active)
+           (id, name, strength, form, barcode, min_level_boxes, standard_items_per_box, fefo, is_active)
            VALUES ($1, $2, $3, $4, $5, $6, $7, true, true)`,
           [
             medicationId,
@@ -65,7 +68,7 @@ exports.handler = async (event) => {
             strength || '',
             form || 'stock',
             barcode.trim(),
-            minLevel || 0,
+            minBoxes,
             standardItemsPerBox || null
           ]
         );
@@ -85,12 +88,12 @@ exports.handler = async (event) => {
       );
 
       if (slugResult.rows.length > 0) {
-        // Found existing medication by slug - update minLevel if provided
+        // Found existing medication by slug - update min_level_boxes if provided
         medicationId = slugResult.rows[0].id;
         if (minLevel !== undefined && minLevel !== null) {
           await db.query(
-            'UPDATE medications SET min_level = $1 WHERE id = $2',
-            [minLevel || 0, medicationId]
+            'UPDATE medications SET min_level_boxes = $1 WHERE id = $2',
+            [minBoxes, medicationId]
           );
         }
       } else {
@@ -100,7 +103,7 @@ exports.handler = async (event) => {
 
         await db.query(
           `INSERT INTO medications 
-           (id, name, strength, form, barcode, min_level, standard_items_per_box, fefo, is_active)
+           (id, name, strength, form, barcode, min_level_boxes, standard_items_per_box, fefo, is_active)
            VALUES ($1, $2, $3, $4, $5, $6, $7, true, true)`,
           [
             medicationId,
@@ -108,7 +111,7 @@ exports.handler = async (event) => {
             strengthValue || '',
             formValue,
             '', // No barcode
-            minLevel || 0,
+            minBoxes,
             standardItemsPerBox || null
           ]
         );

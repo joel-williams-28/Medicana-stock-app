@@ -18,7 +18,7 @@ exports.handler = async () => {
     `;
     const medsResult = await db.query(medsQuery);
 
-    // Get medication details (fefo, min_level, is_active) from medications table
+    // Get medication details (fefo, min_level_boxes, is_active) from medications table
     // We still need this because inventory_full doesn't have all medication metadata
     // Match by medication_display_id (which is name + strength combination)
     const medicationDetailsQuery = `
@@ -27,7 +27,7 @@ exports.handler = async () => {
         name,
         strength,
         fefo,
-        min_level,
+        min_level_boxes,
         is_active
       FROM medications
       WHERE is_active = true
@@ -43,7 +43,7 @@ exports.handler = async () => {
       medicationDetailsMap[displayId] = {
         internalId: med.id,
         fefo: med.fefo,
-        minLevel: med.min_level
+        minLevelBoxes: med.min_level_boxes !== undefined && med.min_level_boxes !== null ? med.min_level_boxes : 0
       };
     });
 
@@ -73,7 +73,7 @@ exports.handler = async () => {
           strength: row.strength_clean || '', // Clean strength from view
           strengthRaw: row.strength_raw || '', // Raw strength (e.g., "500mg" or "4mg/mL")
           medicationDisplayId: displayId, // Explicit display ID field
-          minLevel: medDetails.minLevel !== undefined && medDetails.minLevel !== null ? medDetails.minLevel : 0,
+          minLevelBoxes: medDetails.minLevelBoxes || 0, // Minimum level in boxes
           unit: row.type || 'units', // type field from view (form)
           type: row.type || 'stock', // type field from view (form)
           location: row.location_name,
@@ -102,6 +102,14 @@ exports.handler = async () => {
         });
       }
     }
+
+    // Calculate total number_of_boxes for each medication and add to response
+    Object.values(medsByKey).forEach(med => {
+      // Sum up number_of_boxes from all batches
+      med.numberOfBoxes = med.batches.reduce((sum, batch) => {
+        return sum + (batch.numberOfBoxes || 0);
+      }, 0);
+    });
 
     // Remove entries with no batches (no actual stock)
     const medications = Object.values(medsByKey).filter(med => med.batches.length > 0);

@@ -136,6 +136,13 @@
     };
 
     const getTotalQuantity = (med) => med.batches.reduce((sum, batch) => sum + batch.quantity, 0);
+    
+    // Get total number of boxes across all batches
+    const getTotalBoxes = (med) => {
+      return med.batches.reduce((sum, batch) => {
+        return sum + (batch.numberOfBoxes || 0);
+      }, 0);
+    };
 
     const formatStockDisplay = (med) => {
       let totalFullBoxes = 0;
@@ -174,18 +181,9 @@
     };
 
     const formatMinLevelDisplay = (med) => {
-      // First check if medication has a standard itemsPerBox
-      if (med.standardItemsPerBox) {
-        const boxes = Math.ceil(med.minLevel / med.standardItemsPerBox);
-        return `${boxes} ${boxes === 1 ? 'box' : 'boxes'}`;
-      }
-      // Otherwise, look for a batch with itemsPerBox
-      const batchWithBoxes = med.batches.find(b => b.itemsPerBox);
-      if (batchWithBoxes) {
-        const boxes = Math.ceil(med.minLevel / batchWithBoxes.itemsPerBox);
-        return `${boxes} ${boxes === 1 ? 'box' : 'boxes'}`;
-      }
-      return `${med.minLevel} ${pluralizeUnit(med.minLevel, med.unit)}`;
+      // minLevelBoxes is already in boxes, so display it directly
+      const boxes = med.minLevelBoxes || 0;
+      return `${boxes} ${boxes === 1 ? 'box' : 'boxes'}`;
     };
 
         const getUnitName = (type) => {
@@ -726,7 +724,7 @@
               }
               return med.location === ui.currentLocation;
             })
-            .filter(med => getTotalQuantity(med) < med.minLevel);
+            .filter(med => getTotalBoxes(med) < med.minLevelBoxes);
           
           // Group by name when viewing "All Locations"
           if (ui.currentLocation === 'All') {
@@ -776,7 +774,7 @@
               medName: med.name,
               timestamp: new Date().toISOString(),
               quantityAtEvent: getTotalQuantity(med),
-              minLevel: med.minLevel,
+              minLevel: med.minLevelBoxes,
               location: med.location,
               resolved: false,
               resolvedTimestamp: null,
@@ -790,7 +788,7 @@
         lowStockEvents.forEach(evt => {
           if (!evt.resolved) {
             const med = medications.find(m => m.id === evt.medId);
-            if (med && getTotalQuantity(med) >= med.minLevel) {
+            if (med && getTotalBoxes(med) >= med.minLevelBoxes) {
               // Stock has been replenished
               setLowStockEvents(prev => prev.map(e => 
                 e.id === evt.id
@@ -871,11 +869,12 @@
           new Date(evt.timestamp) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // Last 30 days
         ).length;
 
+        const currentBoxes = getTotalBoxes(med);
         let recommendation = {
           action: 'maintain',
           reason: 'Stock levels are appropriate for current usage',
-          suggestedMinLevel: med.minLevel,
-          suggestedOrderQty: Math.max(0, med.minLevel - currentQty)
+          suggestedMinLevel: med.minLevelBoxes,
+          suggestedOrderQty: Math.max(0, med.minLevelBoxes - currentBoxes)
         };
 
         // High turnover - frequently goes low
@@ -884,34 +883,35 @@
           recommendation = {
             action: 'increase',
             reason: `Went low ${lowStockFrequency} time${lowStockFrequency > 1 ? 's' : ''} this month. High demand medication.`,
-            suggestedMinLevel: Math.ceil(med.minLevel * (1 + increasePercent / 100)),
-            suggestedOrderQty: Math.ceil((med.minLevel * (1 + increasePercent / 100)) - currentQty),
+            suggestedMinLevel: Math.ceil(med.minLevelBoxes * (1 + increasePercent / 100)),
+            suggestedOrderQty: Math.ceil((med.minLevelBoxes * (1 + increasePercent / 100)) - currentBoxes),
             increasePercent
           };
         }
         // Low usage - never goes low and has high average stock
-        else if (lowStockFrequency === 0 && currentQty > med.minLevel * 1.5 && avgWeeklyUsage < med.minLevel * 0.3) {
+        else if (lowStockFrequency === 0 && currentBoxes > med.minLevelBoxes * 1.5 && avgWeeklyUsage < med.minLevelBoxes * 0.3) {
           const decreasePercent = 25;
           recommendation = {
             action: 'decrease',
             reason: `Low weekly usage (${Math.round(avgWeeklyUsage)} ${med.unit}/week). Current minimum may be too high.`,
-            suggestedMinLevel: Math.max(Math.ceil(avgWeeklyUsage * 2), Math.ceil(med.minLevel * (1 - decreasePercent / 100))),
+            suggestedMinLevel: Math.max(Math.ceil(avgWeeklyUsage * 2), Math.ceil(med.minLevelBoxes * (1 - decreasePercent / 100))),
             suggestedOrderQty: 0,
             decreasePercent
           };
         }
         // Currently low - order needed
-        else if (currentQty < med.minLevel) {
+        else if (getTotalBoxes(med) < med.minLevelBoxes) {
+          const currentBoxes = getTotalBoxes(med);
+          const baseBoxes = med.minLevelBoxes - currentBoxes;
           const batchWithBoxes = med.batches.find(b => b.itemsPerBox);
-          const baseQty = med.minLevel - currentQty;
           const finalQty = batchWithBoxes 
-            ? Math.ceil(baseQty / batchWithBoxes.itemsPerBox) * batchWithBoxes.itemsPerBox 
-            : baseQty;
+            ? Math.ceil(baseBoxes) * batchWithBoxes.itemsPerBox 
+            : baseBoxes;
           
           recommendation = {
             action: 'order',
-            reason: `Currently below minimum level (${currentQty} / ${med.minLevel} ${med.unit})`,
-            suggestedMinLevel: med.minLevel,
+            reason: `Currently below minimum level (${currentBoxes} / ${med.minLevelBoxes} boxes)`,
+            suggestedMinLevel: med.minLevelBoxes,
             suggestedOrderQty: finalQty
           };
         }
@@ -936,7 +936,7 @@
           const currentQty = getTotalQuantity(med);
 
           // Only include medications with activity or issues
-          if (analytics.totalUsed > 0 || analytics.lowStockOccurrences > 0 || currentQty < med.minLevel || recommendation.action !== 'maintain') {
+          if (analytics.totalUsed > 0 || analytics.lowStockOccurrences > 0 || getTotalBoxes(med) < med.minLevelBoxes || recommendation.action !== 'maintain') {
             reportData.medications.push({
               ...med,
               currentQty,
@@ -1021,9 +1021,9 @@
               return med.location === ui.currentLocation;
             })
             .forEach(med => {
-              const totalQty = getTotalQuantity(med);
-              if (totalQty < med.minLevel) statuses.add('Low Stock');
-              if (totalQty >= med.minLevel) statuses.add('OK');
+              const totalBoxes = getTotalBoxes(med);
+              if (totalBoxes < med.minLevelBoxes) statuses.add('Low Stock');
+              if (totalBoxes >= med.minLevelBoxes) statuses.add('OK');
               if (hasPendingOrder(med.id)) statuses.add('Ordered');
             });
           return Array.from(statuses).sort();
@@ -1047,9 +1047,9 @@
           .filter(med => medicationFilters.locations.length === 0 || medicationFilters.locations.includes(med.location))
           .filter(med => {
             if (medicationFilters.statuses.length === 0) return true;
-            const totalQty = getTotalQuantity(med);
-            const isLowStock = totalQty < med.minLevel;
-            const isOK = totalQty >= med.minLevel;
+            const totalBoxes = getTotalBoxes(med);
+            const isLowStock = totalBoxes < med.minLevelBoxes;
+            const isOK = totalBoxes >= med.minLevelBoxes;
             const isOrdered = hasPendingOrder(med.id);
             
             return medicationFilters.statuses.some(status => {
@@ -1533,7 +1533,7 @@
             if (auth.currentUser === 'ABadiani' && data.user.role === 'Pharmacist') {
               // Use setTimeout to ensure the component has rendered and lowStockMedications is calculated
               setTimeout(() => {
-                const currentLowStock = backendData.medications.filter(med => getTotalQuantity(med) < med.minLevel);
+                const currentLowStock = backendData.medications.filter(med => getTotalBoxes(med) < med.minLevelBoxes);
                 if (currentLowStock.length > 0) {
                   setModals(prev => ({ ...prev, showLowStockAlert: true }));
                 }
@@ -1822,16 +1822,10 @@ Medicana Stock Management System`;
             medicationId = String(Math.max(...medications.map(m => parseInt(m.id) || 0), 0) + 1);
             medicationName = addMedForm.strengthType === 'na' ? addMedForm.name : `${addMedForm.name} ${addMedForm.strength}`;
             
-            let minLevel = 0;
-            if (addMedForm.minLevelType === 'boxes' && addMedForm.minLevelBoxes && parseInt(addMedForm.minLevelBoxes) > 0) {
-              if (!itemsPerBox) {
-                setAddMedForm(prev => ({ ...prev, error: 'Items per box must be specified to use box-based minimum level' }));
-                return;
-              }
-              minLevel = parseInt(addMedForm.minLevelBoxes) * itemsPerBox;
-            } else if (addMedForm.minLevel && parseInt(addMedForm.minLevel) > 0) {
-              minLevel = parseInt(addMedForm.minLevel);
-            }
+            // minLevel is now in boxes, pass it directly
+            const minLevel = (addMedForm.minLevelBoxes && parseInt(addMedForm.minLevelBoxes) > 0) 
+              ? parseInt(addMedForm.minLevelBoxes) 
+              : 0;
             
             await window.api.addMedication({
               id: medicationId,
@@ -1945,17 +1939,10 @@ Medicana Stock Management System`;
         // Set submitting state
         setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
 
-        // Calculate minimum level
-        let minLevel = 0;
-        if (barcodeNewMedForm.minLevelType === 'boxes' && barcodeNewMedForm.minLevelBoxes && parseInt(barcodeNewMedForm.minLevelBoxes) > 0) {
-          if (!itemsPerBox) {
-            setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: false, error: 'Items per box must be specified to use box-based minimum level' }));
-            return;
-          }
-          minLevel = parseInt(barcodeNewMedForm.minLevelBoxes) * itemsPerBox;
-        } else if (barcodeNewMedForm.minLevel && parseInt(barcodeNewMedForm.minLevel) > 0) {
-          minLevel = parseInt(barcodeNewMedForm.minLevel);
-        }
+        // minLevel is now in boxes, pass it directly
+        const minLevel = (barcodeNewMedForm.minLevelBoxes && parseInt(barcodeNewMedForm.minLevelBoxes) > 0) 
+          ? parseInt(barcodeNewMedForm.minLevelBoxes) 
+          : 0;
 
         try {
           const currentUser = getCurrentUserInfo();
@@ -2272,7 +2259,8 @@ Medicana Stock Management System`;
             setMedications(data.medications || []);
             setTransactions(data.transactions || []);
 
-            checkLowStockAlert(ui.selectedMed, amount);
+            const selectedBatch = ui.selectedMed.batches.find(b => b.id === parseInt(adjustmentForm.batchId));
+            checkLowStockAlert(ui.selectedMed, amount, selectedBatch?.id);
           } catch (err) {
             console.error('Failed to process stock out:', err);
             setAdjustmentForm(prev => ({ ...prev, error: err.message || 'Failed to process stock out' }));
@@ -2287,14 +2275,19 @@ Medicana Stock Management System`;
         if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
           const newTransaction = createTransaction({ medId: ui.selectedMed.id, medName: ui.selectedMed.name, type: 'out', amount, user: getCurrentUserInfo()?.fullName || auth.currentUser, location: adjustmentForm.location, note: transactionNote }, transactions.length + 1);
         setTransactions([newTransaction, ...transactions]);
-        checkLowStockAlert(ui.selectedMed, amount);
+        checkLowStockAlert(ui.selectedMed, amount, selectedBatch?.id);
       };
 
       const checkLowStockAlert = (med, amountRemoved) => {
         const currentTotalQuantity = getTotalQuantity(med);
         const newTotalQuantity = currentTotalQuantity - amountRemoved;
-        const wasAboveMin = currentTotalQuantity >= med.minLevel;
-        const isNowBelowMin = newTotalQuantity < med.minLevel;
+        const currentBoxes = getTotalBoxes(med);
+        const newBoxes = med.batches.reduce((sum, batch) => {
+          const batchQty = batch.id === batchId ? (batch.quantity - amountRemoved) : batch.quantity;
+          return sum + (batch.numberOfBoxes || (batch.itemsPerBox ? Math.floor(batchQty / batch.itemsPerBox) : 0));
+        }, 0);
+        const wasAboveMin = currentBoxes >= med.minLevelBoxes;
+        const isNowBelowMin = newBoxes < med.minLevelBoxes;
         if (wasAboveMin && isNowBelowMin) {
             // Removed alert for silent demo UX
         }
@@ -2455,16 +2448,13 @@ Medicana Stock Management System`;
 
       const handleUpdateMinLevel = async () => {
         if (!editMinLevel.editing) return;
-        let finalMinLevel = 0;
-        const hasBoxes = editMinLevel.editing.batches.some(b => b.itemsPerBox);
-        if (hasBoxes && editMinLevel.type === 'boxes') {
-            if (!editMinLevel.boxes || parseInt(editMinLevel.boxes) < 0) { setEditMinLevel(prev => ({ ...prev, error: 'Please enter a valid number of boxes (0 or greater)' })); return; }
-          const batchWithBoxes = editMinLevel.editing.batches.find(b => b.itemsPerBox);
-          finalMinLevel = parseInt(editMinLevel.boxes) * batchWithBoxes.itemsPerBox;
-        } else {
-            if (!editMinLevel.newLevel || parseInt(editMinLevel.newLevel) < 0) { setEditMinLevel(prev => ({ ...prev, error: 'Please enter a valid minimum level (0 or greater)' })); return; }
-          finalMinLevel = parseInt(editMinLevel.newLevel);
+        // minLevelBoxes is already in boxes, so use it directly
+        let finalMinLevelBoxes = 0;
+        if (!editMinLevel.boxes || parseInt(editMinLevel.boxes) < 0) { 
+          setEditMinLevel(prev => ({ ...prev, error: 'Please enter a valid number of boxes (0 or greater)' })); 
+          return; 
         }
+        finalMinLevelBoxes = parseInt(editMinLevel.boxes);
 
         try {
           const currentUser = getCurrentUserInfo();
@@ -2487,12 +2477,12 @@ Medicana Stock Management System`;
             strength: strength,
             type: med.type || 'stock',
             barcode: med.barcode || '',
-            minLevel: finalMinLevel,
+            minLevel: finalMinLevelBoxes, // Pass boxes directly
             standardItemsPerBox: med.standardItemsPerBox || null
           });
 
           // Create transaction note for Activity Log
-          const displayText = hasBoxes && editMinLevel.type === 'boxes' ? `${editMinLevel.boxes} ${parseInt(editMinLevel.boxes) === 1 ? 'box' : 'boxes'} (${finalMinLevel} ${editMinLevel.editing.unit})` : `${finalMinLevel} ${editMinLevel.editing.unit}`;
+          const displayText = `${finalMinLevelBoxes} ${finalMinLevelBoxes === 1 ? 'box' : 'boxes'}`;
           const changeTransaction = createTransaction({ 
             medId: editMinLevel.editing.id, 
             medName: editMinLevel.editing.name, 
@@ -2519,18 +2509,11 @@ Medicana Stock Management System`;
 
       const generateEmailContent = () => {
         const currentQty = getTotalQuantity(orderForm.med);
-        const suggestedQty = Math.max(0, orderForm.med.minLevel - currentQty);
-        const formatQuantityInBoxes = (qty) => {
-          const batchWithBoxes = orderForm.med.batches.find(b => b.itemsPerBox);
-          if (batchWithBoxes) {
-            const boxes = Math.ceil(qty / batchWithBoxes.itemsPerBox);
-            return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} of ${batchWithBoxes.itemsPerBox} ${orderForm.med.unit}`;
-          }
-          return `${qty} ${orderForm.med.unit}`;
-        };
-        const currentStock = formatQuantityInBoxes(currentQty);
-        const minLevel = formatQuantityInBoxes(orderForm.med.minLevel);
-        const suggestedOrder = formatQuantityInBoxes(suggestedQty);
+        const currentBoxes = getTotalBoxes(orderForm.med);
+        const suggestedBoxes = Math.max(0, orderForm.med.minLevelBoxes - currentBoxes);
+        const currentStock = `${currentBoxes} ${currentBoxes === 1 ? 'box' : 'boxes'}`;
+        const minLevel = `${orderForm.med.minLevelBoxes} ${orderForm.med.minLevelBoxes === 1 ? 'box' : 'boxes'}`;
+        const suggestedOrder = `${suggestedBoxes} ${suggestedBoxes === 1 ? 'box' : 'boxes'}`;
         const subject = `STOCK ORDER REQUEST: ${orderForm.med.name}`;
           const body = `Dear Ash,\n\nPlease find below the requested stock order for ${orderForm.med.name}.\n\nMEDICATION STOCK ORDER REQUEST\n\nMedication: ${orderForm.med.name}\nCurrent Stock Level: ${currentStock}\nMinimum Stock Level: ${minLevel}\nSuggested Order Quantity: ${suggestedOrder}\n\nREQUESTED ORDER QUANTITY: ${orderForm.quantity} ${orderForm.med.unit}\nURGENCY: ${orderForm.urgency.toUpperCase()}\n\n${orderForm.notes ? `Additional Notes:\n${orderForm.notes}\n\n` : ''}Requested by: ${auth.currentUser}\nDate: ${new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}\n\nPlease process this order at your earliest convenience.`;
         return { subject, body };
@@ -2560,14 +2543,9 @@ Medicana Stock Management System`;
       const generateLowStockEmailContent = () => {
         const reportDate = new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
           const itemsList = lowStockMedications.sort((a, b) => a.name.localeCompare(b.name)).map(med => {
-            const currentQty = getTotalQuantity(med);
-            const suggestedQty = Math.max(0, med.minLevel - currentQty);
-            const formatQuantityInBoxes = (qty) => {
-              const batchWithBoxes = med.batches.find(b => b.itemsPerBox);
-              if (batchWithBoxes) { const boxes = Math.ceil(qty / batchWithBoxes.itemsPerBox); return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} of ${batchWithBoxes.itemsPerBox} ${med.unit}`; }
-              return `${qty} ${med.unit}`;
-            };
-            return `${med.name}\n   Current Stock: ${formatQuantityInBoxes(currentQty)}\n   Minimum Level: ${formatQuantityInBoxes(med.minLevel)}\n   Suggested Order: ${formatQuantityInBoxes(suggestedQty)}`;
+            const currentBoxes = getTotalBoxes(med);
+            const suggestedBoxes = Math.max(0, med.minLevelBoxes - currentBoxes);
+            return `${med.name}\n   Current Stock: ${currentBoxes} ${currentBoxes === 1 ? 'box' : 'boxes'}\n   Minimum Level: ${med.minLevelBoxes} ${med.minLevelBoxes === 1 ? 'box' : 'boxes'}\n   Suggested Order: ${suggestedBoxes} ${suggestedBoxes === 1 ? 'box' : 'boxes'}`;
           }).join('\n\n');
         const subject = `LOW STOCK ALERT - ${lowStockMedications.length} Medication${lowStockMedications.length !== 1 ? 's' : ''} Below Minimum Level`;
           const body = `Dear Ash,\n\nPlease find below the low stock alert report for Medicana Winchester.\n\nMEDICATION LOW STOCK REPORT\n\nGenerated: ${reportDate}\nReported by: ${auth.currentUser}\n\nSUMMARY:\n${lowStockMedications.length} medication${lowStockMedications.length !== 1 ? 's are' : ' is'} currently below minimum stock level and require${lowStockMedications.length === 1 ? 's' : ''} immediate attention.\n\nMEDICATIONS REQUIRING ORDER:\n\n${itemsList}\n\nACTIONS REQUIRED:\nPlease review and process orders for the above medications at your earliest convenience.`;
@@ -3026,16 +3004,16 @@ Medicana Stock Management System`;
                                   </td>
                                 )}
                               <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-600 text-center capitalize">{med.type}</td>
-                                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-center"><span className={`font-semibold ${getTotalQuantity(med) < med.minLevel ? 'text-red-600' : 'text-gray-900'}`}>{formatStockDisplay(med)}</span></td>
+                                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-center"><span className={`font-semibold ${getTotalBoxes(med) < med.minLevelBoxes ? 'text-red-600' : 'text-gray-900'}`}>{formatStockDisplay(med)}</span></td>
                               <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-600 text-center">
                                 <div className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
                                   <span>{formatMinLevelDisplay(med)}</span>
-                                    <button onClick={() => setEditMinLevel({ editing: med, newLevel: med.minLevel.toString(), type: 'boxes', boxes: '', error: '' })} className="text-cyan-600 hover:text-cyan-700 text-xs underline">Edit</button>
+                                    <button onClick={() => setEditMinLevel({ editing: med, newLevel: '', type: 'boxes', boxes: (med.minLevelBoxes || 0).toString(), error: '' })} className="text-cyan-600 hover:text-cyan-700 text-xs underline">Edit</button>
                                 </div>
                               </td>
                               <td className="px-2 sm:px-4 py-2 sm:py-3 text-center">
                                 <div className="flex flex-col gap-1 items-center">
-                                  {getTotalQuantity(med) < med.minLevel ? (
+                                  {getTotalBoxes(med) < med.minLevelBoxes ? (
                                       <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-red-100 text-red-800"><AlertTriangle className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />Low</span>
                                   ) : (
                                       <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">OK</span>
@@ -3368,23 +3346,18 @@ Medicana Stock Management System`;
                             <td className="px-4 py-3 text-sm text-center">
                               <span className="font-semibold text-blue-600">
                                 {(() => {
-                                  const currentQty = getTotalQuantity(med);
-                                  const suggestedQty = Math.max(0, med.minLevel - currentQty);
-                                  const batchWithBoxes = med.batches.find(b => b.itemsPerBox);
-                                  if (batchWithBoxes) {
-                                    const boxes = Math.ceil(suggestedQty / batchWithBoxes.itemsPerBox);
-                                    return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} of ${batchWithBoxes.itemsPerBox}`;
-                                  }
-                                  return `${suggestedQty} ${med.unit}`;
+                                  const currentBoxes = getTotalBoxes(med);
+                                  const suggestedBoxes = Math.max(0, med.minLevelBoxes - currentBoxes);
+                                  return `${suggestedBoxes} ${suggestedBoxes === 1 ? 'box' : 'boxes'}`;
                                 })()}
                               </span>
                             </td>
                             <td className="px-4 py-3 text-center">
                                 <button onClick={() => {
-                                  const currentQty = getTotalQuantity(med);
-                                  const suggestedQty = Math.max(0, med.minLevel - currentQty);
+                                  const currentBoxes = getTotalBoxes(med);
+                                  const suggestedBoxes = Math.max(0, med.minLevelBoxes - currentBoxes);
                                   const batchWithBoxes = med.batches.find(b => b.itemsPerBox);
-                                  const finalQty = batchWithBoxes ? Math.ceil(suggestedQty / batchWithBoxes.itemsPerBox) * batchWithBoxes.itemsPerBox : suggestedQty;
+                                  const finalQty = batchWithBoxes ? suggestedBoxes * batchWithBoxes.itemsPerBox : suggestedBoxes;
                                   setOrderForm({ med, quantity: finalQty.toString(), urgency: 'routine', notes: '', pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk' });
                                 }} className={`${hasPendingOrder(med.id) ? 'bg-blue-500 hover:bg-blue-600' : 'bg-cyan-500 hover:bg-cyan-600'} text-white px-3 py-1 rounded text-sm transition-colors font-medium`}>
                                 {hasPendingOrder(med.id) ? 'Re-order' : 'Order'}
@@ -4945,40 +4918,8 @@ Medicana Stock Management System`;
                     )}
                     {addMedForm.mode === 'new' && (
                       <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Minimum Level Type</label>
-                        <div className="flex gap-4 mb-3">
-                          <label className="flex items-center cursor-pointer">
-                            <input 
-                              type="radio" 
-                              name="addMedMinLevelType" 
-                              value="boxes" 
-                              checked={addMedForm.minLevelType === 'boxes'} 
-                            onClick={(e) => {
-                              setAddMedForm(prev => ({ ...prev, minLevelType: 'boxes' }));
-                            }}
-                              className="mr-2" 
-                            />
-                            Boxes
-                          </label>
-                          <label className="flex items-center cursor-pointer">
-                            <input 
-                              type="radio" 
-                              name="addMedMinLevelType" 
-                              value="individual" 
-                              checked={addMedForm.minLevelType === 'individual'} 
-                            onClick={(e) => {
-                              setAddMedForm(prev => ({ ...prev, minLevelType: 'individual' }));
-                            }}
-                              className="mr-2" 
-                            />
-                            Individual Items
-                          </label>
-                        </div>
-                        {addMedForm.minLevelType === 'boxes' ? (
-                          <input type="number" value={addMedForm.minLevelBoxes} onChange={(e) => setAddMedForm(prev => ({ ...prev, minLevelBoxes: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Enter minimum level in boxes (optional)" min="0" />
-                        ) : (
-                          <input type="number" value={addMedForm.minLevel} onChange={(e) => setAddMedForm(prev => ({ ...prev, minLevel: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Enter minimum level (optional)" min="0" />
-                        )}
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Min stock (boxes)</label>
+                        <input type="number" value={addMedForm.minLevelBoxes} onChange={(e) => setAddMedForm(prev => ({ ...prev, minLevelBoxes: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Enter minimum level in boxes (optional)" min="0" />
                       </div>
                     )}
                   </div>
@@ -5337,56 +5278,15 @@ Medicana Stock Management System`;
 
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Minimum Stock Level</label>
-                          <div className="flex gap-4 mb-2">
-                            <label className="flex items-center cursor-pointer">
-                              <input
-                                type="radio"
-                                name="minLevelType"
-                                value="boxes"
-                                checked={barcodeNewMedForm.minLevelType === 'boxes'}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setBarcodeNewMedForm(prev => ({ ...prev, minLevelType: 'boxes', error: '' }));
-                                }}
-                                className="mr-2"
-                              />
-                              Boxes
-                            </label>
-                            <label className="flex items-center cursor-pointer">
-                              <input
-                                type="radio"
-                                name="minLevelType"
-                                value="individual"
-                                checked={barcodeNewMedForm.minLevelType === 'individual'}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setBarcodeNewMedForm(prev => ({ ...prev, minLevelType: 'individual', error: '' }));
-                                }}
-                                className="mr-2"
-                              />
-                              Individual Items
-                            </label>
-                          </div>
-                          {barcodeNewMedForm.minLevelType === 'boxes' ? (
-                            <input
-                              type="number"
-                              value={barcodeNewMedForm.minLevelBoxes}
-                              onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, minLevelBoxes: e.target.value, error: '' }))}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                              min="0"
-                              placeholder="Minimum boxes"
-                            />
-                          ) : (
-                            <input
-                              type="number"
-                              value={barcodeNewMedForm.minLevel}
-                              onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, minLevel: e.target.value, error: '' }))}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                              min="0"
-                              placeholder="Minimum items"
-                            />
-                          )}
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Min stock (boxes)</label>
+                          <input
+                            type="number"
+                            value={barcodeNewMedForm.minLevelBoxes}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, minLevelBoxes: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            min="0"
+                            placeholder="Enter number of boxes (optional)"
+                          />
                         </div>
                       </div>
                     </div>
@@ -5804,7 +5704,7 @@ Medicana Stock Management System`;
                                   </div>
                                   <div className="bg-blue-50 p-3 rounded border border-blue-200">
                                     <p className="text-xs font-medium text-blue-700 uppercase tracking-wide">Minimum Level</p>
-                                    <p className="text-blue-900 font-bold text-lg">{formatQuantityInBoxes(med.minLevel)}</p>
+                                    <p className="text-blue-900 font-bold text-lg">{med.minLevelBoxes} {med.minLevelBoxes === 1 ? 'box' : 'boxes'}</p>
                                   </div>
                                   <div className="bg-green-50 p-3 rounded border border-green-200">
                                     <p className="text-xs font-medium text-green-700 uppercase tracking-wide">Suggested Order</p>
@@ -5952,63 +5852,10 @@ Medicana Stock Management System`;
                     <p className="text-sm font-medium text-gray-900 mb-1">{editMinLevel.editing.name}</p>
                     <p className="text-xs text-gray-600">Current Minimum Level: {formatMinLevelDisplay(editMinLevel.editing)}</p>
                   </div>
-                  {editMinLevel.editing.batches.some(b => b.itemsPerBox) ? (
-                    <>
-                      <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Minimum Level Type</label>
-                        <div className="flex gap-4">
-                          <label className="flex items-center cursor-pointer">
-                            <input 
-                              type="radio" 
-                              name="editMinLevelType" 
-                              value="boxes" 
-                              checked={editMinLevel.type === 'boxes'} 
-                            onClick={(e) => {
-                              setEditMinLevel(prev => ({ ...prev, type: 'boxes' }));
-                            }}
-                              className="mr-2" 
-                            />
-                            Boxes
-                          </label>
-                          <label className="flex items-center cursor-pointer">
-                            <input 
-                              type="radio" 
-                              name="editMinLevelType" 
-                              value="individual" 
-                              checked={editMinLevel.type === 'individual'} 
-                            onClick={(e) => {
-                              setEditMinLevel(prev => ({ ...prev, type: 'individual' }));
-                            }}
-                              className="mr-2" 
-                            />
-                            Individual {editMinLevel.editing.unit}
-                          </label>
-                        </div>
-                      </div>
-                      {editMinLevel.type === 'individual' ? (
-                        <div className="mb-4">
-                          <label className="block text-sm font-medium text-gray-700 mb-2">New Minimum Level <span className="text-red-600">*</span></label>
-                          <input type="number" value={editMinLevel.newLevel} onChange={(e) => setEditMinLevel(prev => ({ ...prev, newLevel: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder={`Enter minimum level in ${editMinLevel.editing.unit}`} min="0" />
-                        </div>
-                      ) : (
-                        <div className="mb-4">
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Minimum Level (Boxes) <span className="text-red-600">*</span></label>
-                          <input type="number" value={editMinLevel.boxes} onChange={(e) => setEditMinLevel(prev => ({ ...prev, boxes: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Enter number of boxes" min="0" />
-                          {editMinLevel.boxes && editMinLevel.editing.batches.find(b => b.itemsPerBox) && (
-                            <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
-                              <p className="text-sm text-blue-800">= {parseInt(editMinLevel.boxes) * (editMinLevel.editing.batches.find(b => b.itemsPerBox)?.itemsPerBox || 0)} {editMinLevel.editing.unit}</p>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">New Minimum Level <span className="text-red-600">*</span></label>
-                      <input type="number" value={editMinLevel.newLevel} onChange={(e) => setEditMinLevel(prev => ({ ...prev, newLevel: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder={`Enter minimum level in ${editMinLevel.editing.unit}`} min="0" />
-                      <p className="text-xs text-gray-500 mt-1">This medication is tracked in {editMinLevel.editing.unit}, not boxes.</p>
-                    </div>
-                  )}
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Min stock (boxes) <span className="text-red-600">*</span></label>
+                    <input type="number" value={editMinLevel.boxes} onChange={(e) => setEditMinLevel(prev => ({ ...prev, boxes: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Enter number of boxes" min="0" />
+                  </div>
                   <p className="text-xs text-gray-500 mb-4">This will trigger alerts when stock falls below this level.</p>
                   <div className="flex gap-2">
                     <button onClick={handleUpdateMinLevel} className="flex-1 bg-cyan-500 text-white py-2 rounded-lg hover:bg-cyan-600 transition-colors font-medium">Update</button>
@@ -6192,11 +6039,11 @@ Medicana Stock Management System`;
                                   <div>
                                     <h4 className="font-bold text-gray-900 text-lg">{med.name}</h4>
                                     <div className="flex gap-4 mt-2 text-sm">
-                                      <span className={`px-2 py-1 rounded ${med.currentQty < med.minLevel ? 'bg-red-100 text-red-800 font-semibold' : 'bg-green-100 text-green-800'}`}>
-                                        Current: {med.currentQty} {med.unit}
+                                      <span className={`px-2 py-1 rounded ${getTotalBoxes(med) < med.minLevelBoxes ? 'bg-red-100 text-red-800 font-semibold' : 'bg-green-100 text-green-800'}`}>
+                                        Current: {getTotalBoxes(med)} boxes
                                       </span>
                                       <span className="px-2 py-1 rounded bg-gray-100 text-gray-800">
-                                        Min Level: {med.minLevel} {med.unit}
+                                        Min Level: {med.minLevelBoxes} boxes
                                       </span>
                                     </div>
                                   </div>
@@ -6276,8 +6123,8 @@ Medicana Stock Management System`;
                                   <div>
                                     <h4 className="font-bold text-gray-900">{med.name}</h4>
                                     <div className="flex gap-3 mt-1 text-sm">
-                                      <span className="text-gray-600">Current: {med.currentQty} {med.unit}</span>
-                                      <span className="text-gray-600">Min: {med.minLevel} {med.unit}</span>
+                                      <span className="text-gray-600">Current: {getTotalBoxes(med)} boxes</span>
+                                      <span className="text-gray-600">Min: {med.minLevelBoxes} boxes</span>
                                       <span className="text-blue-600 font-semibold">Weekly Usage: {med.analytics.totalUsed} {med.unit}</span>
                                     </div>
                                   </div>
@@ -6328,9 +6175,9 @@ Medicana Stock Management System`;
                                     <td className="px-4 py-3 text-center text-blue-600 font-semibold">{med.analytics.totalUsed} {med.unit}</td>
                                     <td className="px-4 py-3 text-center">
                                       <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                                        med.currentQty < med.minLevel ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                                        getTotalBoxes(med) < med.minLevelBoxes ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
                                       }`}>
-                                        {med.currentQty} {med.unit}
+                                        {getTotalBoxes(med)} boxes
                                       </span>
                                     </td>
                                     <td className="px-4 py-3 text-center">

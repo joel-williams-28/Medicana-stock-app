@@ -17,9 +17,12 @@ exports.handler = async (event) => {
       strength, 
       type,       // maps to "form" in DB
       barcode, 
-      minLevel, 
+      minLevel,  // This should be boxes, not items
       standardItemsPerBox 
     } = JSON.parse(event.body || '{}');
+
+    // Convert minLevel to boxes (treating it as boxes already)
+    const minBoxes = Number.isFinite(Number(minLevel)) ? Number(minLevel) : 0;
 
     // Validate required fields
     if (!id || !name) {
@@ -35,7 +38,7 @@ exports.handler = async (event) => {
     // Upsert medication
     const query = `
       INSERT INTO medications 
-        (id, name, strength, form, barcode, min_level, standard_items_per_box, fefo)
+        (id, name, strength, form, barcode, min_level_boxes, standard_items_per_box, fefo)
       VALUES ($1, $2, $3, $4, $5, $6, $7, true)
       ON CONFLICT (id) 
       DO UPDATE SET
@@ -43,7 +46,7 @@ exports.handler = async (event) => {
         strength = EXCLUDED.strength,
         form = EXCLUDED.form,
         barcode = EXCLUDED.barcode,
-        min_level = EXCLUDED.min_level,
+        min_level_boxes = EXCLUDED.min_level_boxes,
         standard_items_per_box = EXCLUDED.standard_items_per_box
     `;
 
@@ -53,7 +56,7 @@ exports.handler = async (event) => {
       strength || '',
       type || 'stock',
       barcode || '',
-      minLevel || 0,
+      minBoxes,
       standardItemsPerBox || null
     ]);
 
