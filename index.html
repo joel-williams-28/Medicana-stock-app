@@ -1857,25 +1857,30 @@ Medicana Stock Management System`;
           return;
         }
 
-        // Set submitting state
-        setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
-
-        // Calculate total quantity: boxes * items_per_box
-        let totalQuantity = 0;
-        let itemsPerBox = 0;
+        // Validate quantity fields
+        const boxQuantity = parseInt(barcodeNewMedForm.boxQuantity) || 0;
+        const itemsPerBox = parseInt(barcodeNewMedForm.itemsPerBox) || 0;
         
-        if (barcodeNewMedForm.boxQuantity && barcodeNewMedForm.itemsPerBox) {
-          const boxes = parseInt(barcodeNewMedForm.boxQuantity) || 0;
-          itemsPerBox = parseInt(barcodeNewMedForm.itemsPerBox) || 0;
-          if (boxes > 0 && itemsPerBox > 0) {
-            totalQuantity = boxes * itemsPerBox;
-          }
-        }
-
-        if (totalQuantity <= 0) {
-          setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: false, error: 'Please enter valid box quantity and items per box' }));
+        if (boxQuantity <= 0) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter a valid number of boxes (greater than 0)' }));
           return;
         }
+        
+        if (itemsPerBox <= 0) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter a valid items per box (greater than 0)' }));
+          return;
+        }
+
+        // Calculate total quantity: boxes * items_per_box
+        const totalQuantity = boxQuantity * itemsPerBox;
+
+        if (totalQuantity <= 0) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter valid box quantity and items per box' }));
+          return;
+        }
+
+        // Set submitting state
+        setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
 
         // Calculate minimum level
         let minLevel = 0;
@@ -1924,7 +1929,7 @@ Medicana Stock Management System`;
               locationId: chosenLocationId,
               medicationId: medicationId,
               existingBatchId: barcodeNewMedForm.existingBatchId,
-              quantityBoxes: parseInt(barcodeNewMedForm.boxQuantity) || 0,
+              quantityBoxes: boxQuantity,
               quantityIndividuals: 0,
               reason: 'Delivery (existing batch)'
             });
@@ -1938,8 +1943,8 @@ Medicana Stock Management System`;
               expiryMonth: parseInt(barcodeNewMedForm.expiryMonth),
               expiryYear: parseInt(barcodeNewMedForm.expiryYear),
               brand: barcodeNewMedForm.brand,
-              itemsPerBox: itemsPerBox || null,
-              quantityBoxes: parseInt(barcodeNewMedForm.boxQuantity) || 0,
+              itemsPerBox: itemsPerBox,
+              quantityBoxes: boxQuantity,
               quantityIndividuals: 0,
               reason: 'Delivery'
             });
