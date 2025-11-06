@@ -1,5 +1,6 @@
 // netlify/functions/stock-transfer.js
 // Handles transfers of stock between two locations
+// Security: medication_id is derived from batch_id on the server, not trusted from client
 const db = require('./_db');
 
 exports.handler = async (event) => {
@@ -13,7 +14,6 @@ exports.handler = async (event) => {
   try {
     const { 
       userId, 
-      medicationId, 
       batchId, 
       sourceLocationId, 
       targetLocationId, 
@@ -21,14 +21,14 @@ exports.handler = async (event) => {
       reason 
     } = JSON.parse(event.body || '{}');
 
-    // Validate required fields
-    if (!userId || !medicationId || !batchId || !sourceLocationId || !targetLocationId || !quantity) {
+    // Validate required fields (medicationId is no longer required from client)
+    if (!userId || !batchId || !sourceLocationId || !targetLocationId || !quantity) {
       return {
         statusCode: 400,
         body: JSON.stringify({ 
           success: false, 
           message: 'Missing or invalid fields',
-          debug: { userId, medicationId, batchId, sourceLocationId, targetLocationId, quantity }
+          debug: { userId, batchId, sourceLocationId, targetLocationId, quantity }
         })
       };
     }
@@ -48,6 +48,26 @@ exports.handler = async (event) => {
     await db.query('BEGIN');
 
     try {
+      // Security: Derive medication_id from batch_id (do not trust client-provided medicationId)
+      const batchQuery = await db.query(
+        'SELECT medication_id FROM batches WHERE id = $1',
+        [batchId]
+      );
+
+      if (batchQuery.rows.length === 0) {
+        await db.query('ROLLBACK');
+        return {
+          statusCode: 400,
+          body: JSON.stringify({ 
+            success: false, 
+            message: 'Batch not found',
+            debug: { batchId }
+          })
+        };
+      }
+
+      const medicationId = batchQuery.rows[0].medication_id;
+
       // Step 1: Check source has enough stock
       const checkSource = await db.query(
         'SELECT on_hand FROM inventory WHERE location_id = $1 AND batch_id = $2',
@@ -85,7 +105,7 @@ exports.handler = async (event) => {
         [quantity, sourceLocationId, batchId]
       );
 
-      // Step 3: Insert transaction for source (negative delta)
+      // Step 3: Insert transaction for source (negative delta, using server-derived medication_id)
       await db.query(
         `INSERT INTO transactions 
          (user_id, medication_id, location_id, batch_id, delta, reason, occurred_at)
@@ -106,7 +126,7 @@ exports.handler = async (event) => {
         [quantity, targetLocationId, batchId]
       );
 
-      // Step 5: Insert transaction for target (positive delta)
+      // Step 5: Insert transaction for target (positive delta, using server-derived medication_id)
       await db.query(
         `INSERT INTO transactions 
          (user_id, medication_id, location_id, batch_id, delta, reason, occurred_at)
@@ -133,4 +153,3 @@ exports.handler = async (event) => {
     };
   }
 };
-

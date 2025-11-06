@@ -27,10 +27,22 @@ exports.handler = async (event) => {
 
     // Batch integrity safeguard — do not remove.
     // Check if batch_code exists globally (it's the unique key for batch metadata)
+    // Also get medication display ID for frontend matching
     const result = await db.query(
-      `SELECT id, medication_id, expiry_date, brand, items_per_box, batch_code
-       FROM batches
-       WHERE batch_code = $1`,
+      `SELECT 
+         b.id, 
+         b.medication_id, 
+         b.expiry_date, 
+         b.brand, 
+         b.items_per_box, 
+         b.batch_code,
+         CASE 
+           WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
+           ELSE m.name || ' ' || m.strength
+         END AS medication_display_id
+       FROM batches b
+       LEFT JOIN medications m ON m.id = b.medication_id
+       WHERE b.batch_code = $1`,
       [batchCode.trim()]
     );
 
@@ -43,7 +55,8 @@ exports.handler = async (event) => {
           exists: true,
           batch: {
             id: batch.id,
-            medicationId: batch.medication_id,
+            medicationId: batch.medication_id, // Internal ID (for reference)
+            medicationDisplayId: batch.medication_display_id || null, // Display ID for frontend matching
             batchCode: batch.batch_code,
             expiryDate: batch.expiry_date ? new Date(batch.expiry_date).toISOString().slice(0, 7) : null, // YYYY-MM format
             expiryDateFull: batch.expiry_date ? batch.expiry_date.toISOString() : null,
@@ -70,4 +83,5 @@ exports.handler = async (event) => {
     };
   }
 };
+
 

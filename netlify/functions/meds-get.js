@@ -5,7 +5,9 @@ const db = require('./_db');
 exports.handler = async () => {
   try {
     // Query medication/stock snapshot from inventory_full view
-    // Group by medication + location to match the UI's expectation of one medication per location
+    // The view returns: location_id, batch_id, on_hand, location_name, location_group,
+    // medication_name, strength_clean, medication_display_id, barcode,
+    // batch_code, expiry_date, brand, items_per_box, number_of_boxes
     const medsQuery = `
       SELECT
         location_id,
@@ -13,8 +15,9 @@ exports.handler = async () => {
         on_hand,
         location_name,
         location_group,
-        medication_id,
         medication_name,
+        strength_clean,
+        medication_display_id,
         barcode,
         batch_code,
         expiry_date,
@@ -27,8 +30,9 @@ exports.handler = async () => {
     `;
     const medsResult = await db.query(medsQuery);
 
-    // Get medication details (strength, form, fefo, min_level, standard_items_per_box) from medications table
-    // We need this because inventory_full only has medication_name, not the full medication details
+    // Get medication details (form, fefo, min_level, standard_items_per_box) from medications table
+    // We still need this because inventory_full doesn't have all medication metadata
+    // Match by medication_display_id (which is name + strength combination)
     const medicationDetailsQuery = `
       SELECT 
         id,
@@ -41,10 +45,14 @@ exports.handler = async () => {
       FROM medications
     `;
     const medicationDetailsResult = await db.query(medicationDetailsQuery);
+    
+    // Create a map by display_id (name + strength combination)
     const medicationDetailsMap = {};
     medicationDetailsResult.rows.forEach(med => {
-      medicationDetailsMap[med.id] = {
-        strength: med.strength,
+      const displayId = med.strength && med.strength !== 'N/A'
+        ? `${med.name} ${med.strength}`
+        : med.name;
+      medicationDetailsMap[displayId] = {
         form: med.form,
         fefo: med.fefo,
         minLevel: med.min_level,
@@ -53,26 +61,24 @@ exports.handler = async () => {
     });
 
     // Shape into front-end-friendly structure
-    // Key = medicationId + locationId to create separate entries per location
+    // Key = medicationDisplayId + locationId to create separate entries per location
     const medsByKey = {};
     for (const row of medsResult.rows) {
-      const medId = row.medication_id;
+      const displayId = row.medication_display_id;
       const locationId = row.location_id;
-      const key = `${medId}|${locationId}`;
+      const key = `${displayId}|${locationId}`;
       
       // Get medication details from the map
-      const medDetails = medicationDetailsMap[medId] || {};
-      const strength = medDetails.strength;
+      const medDetails = medicationDetailsMap[displayId] || {};
       
       if (!medsByKey[key]) {
         medsByKey[key] = {
-          id: medId,
-          name: (strength && strength !== 'N/A')
-            ? `${row.medication_name} ${strength}`
-            : row.medication_name,
+          id: displayId, // Use display_id as the identifier (no internal id exposed)
+          name: displayId, // Full display name (e.g., "Paracetamol 500mg")
           // Extended fields from inventory_full view for sorting/filtering
           medicationName: row.medication_name, // Base medication name (without strength)
-          strength: strength || '',
+          strength: row.strength_clean || '', // Clean strength from view
+          medicationDisplayId: displayId, // Explicit display ID field
           minLevel: medDetails.minLevel || 0,
           unit: medDetails.form || 'units',
           type: medDetails.form || 'stock',
@@ -107,6 +113,7 @@ exports.handler = async () => {
     const medications = Object.values(medsByKey).filter(med => med.batches.length > 0);
 
     // Query recent transactions for Activity tab
+    // Note: transactions table still has medication_id, so we join to get display info
     const txQuery = `
       SELECT
         t.id,
@@ -185,4 +192,3 @@ exports.handler = async () => {
     };
   }
 };
-

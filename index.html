@@ -1960,9 +1960,9 @@ Medicana Stock Management System`;
 
             if (isInternalTransfer) {
               // Use the dedicated transfer API for internal transfers
+              // Server derives medication_id from batch_id - do not send medicationId
               await window.api.transferStock({
                 userId: currentUser.id,
-                medicationId: ui.selectedMed.id,
                 batchId: selectedBatch.id,
                 sourceLocationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
                 targetLocationId: targetLocationId,
@@ -1971,9 +1971,9 @@ Medicana Stock Management System`;
               });
             } else {
               // External dispensing - just remove stock
+              // Server derives medication_id from batch_id - do not send medicationId
               await window.api.adjustStock({
                 userId: currentUser.id,
-                medicationId: ui.selectedMed.id,
                 locationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
                 batchId: selectedBatch.id,
                 delta: -amount,
@@ -1994,9 +1994,9 @@ Medicana Stock Management System`;
                     const medStockL1LocationId = getLocationId('Medication Stock L1') || 
                                                   locations.find(loc => loc.groupName === 'Medication Stock L1')?.id;
                     if (medStockL1LocationId) {
+                      // Server derives medication_id from batch_id - do not send medicationId
                       await window.api.adjustStock({
                         userId: currentUser.id,
-                        medicationId: mainStockMed.id,
                         locationId: medStockL1LocationId,
                         batchId: mainStockBatch.id,
                         delta: -amount,
@@ -2072,9 +2072,9 @@ Medicana Stock Management System`;
             if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
 
             // Use the dedicated transfer API
+            // Server derives medication_id from batch_id - do not send medicationId
             await window.api.transferStock({
               userId: currentUser.id,
-              medicationId: sourceMed.id,
               batchId: sourceBatch.id,
               sourceLocationId: sourceMed.locationId || getLocationId(adjustmentForm.sourceDepartment),
               targetLocationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
@@ -2086,9 +2086,9 @@ Medicana Stock Management System`;
             let transactionNote = adjustmentForm.note || `Stock received from ${adjustmentForm.stockInSource === 'delivery' ? 'Delivery' : adjustmentForm.sourceDepartment} - Brand: ${selectedBatch.brand}, Expiry: ${formatExpiry(selectedBatch.expiryDate)}`;
             if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
 
+            // Server derives medication_id from batch_id - do not send medicationId
             await window.api.adjustStock({
               userId: currentUser.id,
-              medicationId: ui.selectedMed.id,
               locationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
               batchId: selectedBatch.id,
               delta: amount,
@@ -2146,9 +2146,9 @@ Medicana Stock Management System`;
           const removalNote = `Batch removed - Brand: ${batch.brand}, Expiry: ${formatExpiry(batch.expiryDate)} - Reason: ${finalReason} - Quantity: ${batch.quantity} ${med.unit}`;
 
           // Remove all stock from this batch by calling backend API with negative delta
+          // Server derives medication_id from batch_id - do not send medicationId
           await window.api.adjustStock({
             userId: userInfo.id,
-            medicationId: med.id,
             locationId: locationId,
             batchId: batch.id,
             delta: -batch.quantity, // Negative delta to remove all stock
