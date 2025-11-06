@@ -25,6 +25,7 @@ exports.handler = async (event) => {
     console.log('meds-add received:', { id, name, minLevel, standardItemsPerBox, barcode });
 
     // Convert minLevel to boxes (treating it as boxes already)
+    // Always persist min level, defaulting to 0 if not provided or invalid
     const minBoxes = Number.isFinite(Number(minLevel)) ? Number(minLevel) : 0;
     
     console.log('meds-add parsed minBoxes:', minBoxes);
@@ -55,26 +56,25 @@ exports.handler = async (event) => {
         reused = true;
         console.log('meds-add: Found existing medication with barcode, reusing ID:', medicationId);
         
-        // If minLevel is provided, update min_level_boxes
-        if (minLevel !== undefined && minLevel !== null) {
-          const minBoxesValue = Number.isFinite(Number(minLevel)) ? Number(minLevel) : 0;
-          try {
-            await db.query('UPDATE medications SET min_level_boxes = $1 WHERE id = $2', [minBoxesValue, medicationId]);
-            console.log('meds-add: Updated min_level_boxes to', minBoxesValue, 'for medication', medicationId);
-          } catch (updateError) {
-            // If min_level_boxes column doesn't exist, try with min_level (for backward compatibility during migration)
-            if (updateError.message && updateError.message.includes('min_level_boxes')) {
-              console.warn('meds-add: min_level_boxes column not found, trying min_level instead');
-              await db.query('UPDATE medications SET min_level = $1 WHERE id = $2', [minBoxesValue, medicationId]);
-              console.log('meds-add: Updated min_level (fallback) to', minBoxesValue, 'for medication', medicationId);
-            } else {
-              console.error('meds-add: Error updating min level:', updateError);
-              // Don't throw - continue with normal flow
-            }
+        // Always update min_level_boxes (persist min level)
+        // Do not return early - update min level, then continue
+        try {
+          await db.query('UPDATE medications SET min_level_boxes = $1 WHERE id = $2', [minBoxes, medicationId]);
+          console.log('meds-add: Updated min_level_boxes to', minBoxes, 'for medication', medicationId);
+        } catch (updateError) {
+          // If min_level_boxes column doesn't exist, try with min_level (for backward compatibility during migration)
+          if (updateError.message && updateError.message.includes('min_level_boxes')) {
+            console.warn('meds-add: min_level_boxes column not found, trying min_level instead');
+            await db.query('UPDATE medications SET min_level = $1 WHERE id = $2', [minBoxes, medicationId]);
+            console.log('meds-add: Updated min_level (fallback) to', minBoxes, 'for medication', medicationId);
+          } else {
+            console.error('meds-add: Error updating min level:', updateError);
+            // Don't throw - continue with normal flow
           }
         }
         
         // Continue with normal flow - return success with medicationId for batch creation
+        // Note: Frontend will then call batch-add separately to handle batch/inventory logic
         return {
           statusCode: 200,
           body: JSON.stringify({ success: true, reused: true, medicationId })
