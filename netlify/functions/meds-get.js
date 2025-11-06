@@ -73,7 +73,7 @@ exports.handler = async () => {
           strength: row.strength_clean || '', // Clean strength from view
           strengthRaw: row.strength_raw || '', // Raw strength (e.g., "500mg" or "4mg/mL")
           medicationDisplayId: displayId, // Explicit display ID field
-          minLevel: medDetails.minLevel || 0,
+          minLevel: medDetails.minLevel !== undefined && medDetails.minLevel !== null ? medDetails.minLevel : 0,
           unit: row.type || 'units', // type field from view (form)
           type: row.type || 'stock', // type field from view (form)
           location: row.location_name,

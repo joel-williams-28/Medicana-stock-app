@@ -213,6 +213,26 @@
       return pluralMap[unit] || unit;
     };
 
+    // Get unit label for "individual" display (e.g., "individual ampule", "individual capsule")
+    const getIndividualUnitLabel = (unit) => {
+      const unitMap = {
+        'tablet': 'tablet',
+        'capsule': 'capsule',
+        'ampule': 'ampule',
+        'ampoule': 'ampoule',
+        'vial': 'vial',
+        'bottle': 'bottle',
+        'pre-filled syringe': 'pre-filled syringe',
+        'Pre-filled Syringe': 'pre-filled syringe',
+        'inhaler': 'inhaler',
+        'cream': 'cream',
+        'stock': 'unit',
+        'units': 'unit'
+      };
+      const normalizedUnit = (unit || '').toLowerCase();
+      return unitMap[normalizedUnit] || normalizedUnit || 'unit';
+    };
+
     const createTransaction = (baseData, nextId) => ({
       id: nextId,
       timestamp: new Date().toISOString(),
@@ -1946,32 +1966,25 @@ Medicana Stock Management System`;
 
           let medicationId = null;
 
-          // If lookup found a medication, use its medicationId
+          // Prepare medicationUpsert payload with minLevel
+          const upsertPayload = {
+            name: barcodeNewMedForm.name,
+            strength: barcodeNewMedForm.strengthType === 'na' ? 'N/A' : barcodeNewMedForm.strength,
+            form: barcodeNewMedForm.type,
+            barcode: barcodeNewMedForm.barcode,
+            standardItemsPerBox: itemsPerBox || null,
+            minLevel: minLevel || 0
+          };
+
+          // If lookup found a medication, still call medicationUpsert to update minLevel safely
           if (barcodeNewMedForm.medicationId) {
             medicationId = barcodeNewMedForm.medicationId;
+            // Update minLevel via medicationUpsert (it will update if medication exists)
+            await window.api.medicationUpsert(upsertPayload);
           } else {
             // Call medicationUpsert to find or create medication
-            const upsertResult = await window.api.medicationUpsert({
-              name: barcodeNewMedForm.name,
-              strength: barcodeNewMedForm.strengthType === 'na' ? 'N/A' : barcodeNewMedForm.strength,
-              form: barcodeNewMedForm.type,
-              barcode: barcodeNewMedForm.barcode,
-              standardItemsPerBox: itemsPerBox || null
-            });
+            const upsertResult = await window.api.medicationUpsert(upsertPayload);
             medicationId = upsertResult.medicationId;
-          }
-
-          // Update medication minLevel if provided (using addMedication for update)
-          if (minLevel > 0) {
-            await window.api.addMedication({
-              id: medicationId,
-              name: barcodeNewMedForm.name,
-              strength: barcodeNewMedForm.strengthType === 'na' ? 'N/A' : barcodeNewMedForm.strength,
-              type: barcodeNewMedForm.type,
-              barcode: barcodeNewMedForm.barcode,
-              minLevel,
-              standardItemsPerBox: itemsPerBox || null
-            });
           }
 
           // Prepare batch add payload
@@ -3858,7 +3871,7 @@ Medicana Stock Management System`;
                                 }} 
                                 className="mr-2" 
                               />
-                              Individual {ui.selectedMed.unit}
+                              Individual {getIndividualUnitLabel(ui.selectedMed.unit)}
                             </label>
                       </div>
                     </div>
@@ -3939,7 +3952,7 @@ Medicana Stock Management System`;
                                         }} 
                                         className="mr-2" 
                                       />
-                                      Individual {ui.selectedMed.unit}
+                                      Individual {getIndividualUnitLabel(ui.selectedMed.unit)}
                                     </label>
                               </>
                             );
@@ -4012,7 +4025,7 @@ Medicana Stock Management System`;
                                         }} 
                                         className="mr-2" 
                                       />
-                                      Individual {ui.selectedMed.unit}
+                                      Individual {getIndividualUnitLabel(ui.selectedMed.unit)}
                                     </label>
                               </>
                             );
@@ -4543,7 +4556,7 @@ Medicana Stock Management System`;
                           }} 
                           className="mr-2" 
                         />
-                        Individual {ui.selectedMed.unit}
+                        Individual {getIndividualUnitLabel(ui.selectedMed.unit)}
                       </label>
                     </div>
                     {deliveryForm.quantityType === 'boxes' ? (
@@ -4592,7 +4605,7 @@ Medicana Stock Management System`;
                       </label>
                       <label className="flex items-center cursor-pointer">
                         <input type="radio" name="barcodeQuantityType" value="individual" checked={adjustmentForm.type === 'individual'} onClick={(e) => { setAdjustmentForm(prev => ({ ...prev, type: 'individual', amount: '' })); }} className="mr-2" />
-                        Individual {ui.selectedMed.unit}
+                        Individual {getIndividualUnitLabel(ui.selectedMed.unit)}
                       </label>
                     </div>
                     <input type="number" value={adjustmentForm.amount} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, amount: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder={adjustmentForm.type === 'boxes' ? 'Enter number of boxes' : `Enter number of ${ui.selectedMed.unit}`} />

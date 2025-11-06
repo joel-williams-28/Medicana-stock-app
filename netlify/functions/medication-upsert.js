@@ -17,7 +17,8 @@ exports.handler = async (event) => {
       strength, 
       form,       // maps to "form" in DB
       barcode, 
-      standardItemsPerBox 
+      standardItemsPerBox,
+      minLevel 
     } = JSON.parse(event.body || '{}');
 
     // Validate required fields
@@ -41,8 +42,14 @@ exports.handler = async (event) => {
       );
 
       if (barcodeResult.rows.length > 0) {
-        // Found existing medication by barcode
+        // Found existing medication by barcode - update minLevel if provided
         medicationId = barcodeResult.rows[0].id;
+        if (minLevel !== undefined && minLevel !== null) {
+          await db.query(
+            'UPDATE medications SET min_level = $1 WHERE id = $2',
+            [minLevel || 0, medicationId]
+          );
+        }
       } else {
         // Create new medication with barcode
         const maxIdResult = await db.query('SELECT COALESCE(MAX(id::integer), 0) + 1 AS next_id FROM medications WHERE id ~ \'^[0-9]+$\'');
@@ -51,13 +58,14 @@ exports.handler = async (event) => {
         await db.query(
           `INSERT INTO medications 
            (id, name, strength, form, barcode, min_level, standard_items_per_box, fefo, is_active)
-           VALUES ($1, $2, $3, $4, $5, 0, $6, true, true)`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, true, true)`,
           [
             medicationId,
             name,
             strength || '',
             form || 'stock',
             barcode.trim(),
+            minLevel || 0,
             standardItemsPerBox || null
           ]
         );
@@ -77,8 +85,14 @@ exports.handler = async (event) => {
       );
 
       if (slugResult.rows.length > 0) {
-        // Found existing medication by slug
+        // Found existing medication by slug - update minLevel if provided
         medicationId = slugResult.rows[0].id;
+        if (minLevel !== undefined && minLevel !== null) {
+          await db.query(
+            'UPDATE medications SET min_level = $1 WHERE id = $2',
+            [minLevel || 0, medicationId]
+          );
+        }
       } else {
         // Create new medication without barcode
         const maxIdResult = await db.query('SELECT COALESCE(MAX(id::integer), 0) + 1 AS next_id FROM medications WHERE id ~ \'^[0-9]+$\'');
@@ -87,13 +101,14 @@ exports.handler = async (event) => {
         await db.query(
           `INSERT INTO medications 
            (id, name, strength, form, barcode, min_level, standard_items_per_box, fefo, is_active)
-           VALUES ($1, $2, $3, $4, $5, 0, $6, true, true)`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, true, true)`,
           [
             medicationId,
             name,
             strengthValue || '',
             formValue,
             '', // No barcode
+            minLevel || 0,
             standardItemsPerBox || null
           ]
         );
