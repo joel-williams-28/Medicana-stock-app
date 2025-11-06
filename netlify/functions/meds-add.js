@@ -11,6 +11,7 @@ exports.handler = async (event) => {
   }
 
   try {
+    const body = JSON.parse(event.body || '{}');
     const { 
       id, 
       name, 
@@ -19,10 +20,14 @@ exports.handler = async (event) => {
       barcode, 
       minLevel,  // This should be boxes, not items
       standardItemsPerBox 
-    } = JSON.parse(event.body || '{}');
+    } = body;
+
+    console.log('meds-add received:', { id, name, minLevel, standardItemsPerBox });
 
     // Convert minLevel to boxes (treating it as boxes already)
     const minBoxes = Number.isFinite(Number(minLevel)) ? Number(minLevel) : 0;
+    
+    console.log('meds-add parsed minBoxes:', minBoxes);
 
     // Validate required fields
     if (!id || !name) {
@@ -36,7 +41,8 @@ exports.handler = async (event) => {
     }
 
     // Upsert medication
-    const query = `
+    // Try min_level_boxes first, fall back to min_level if column doesn't exist yet
+    let query = `
       INSERT INTO medications 
         (id, name, strength, form, barcode, min_level_boxes, standard_items_per_box, fefo)
       VALUES ($1, $2, $3, $4, $5, $6, $7, true)
@@ -50,15 +56,48 @@ exports.handler = async (event) => {
         standard_items_per_box = EXCLUDED.standard_items_per_box
     `;
 
-    await db.query(query, [
-      id,
-      name,
-      strength || '',
-      type || 'stock',
-      barcode || '',
-      minBoxes,
-      standardItemsPerBox || null
-    ]);
+    try {
+      await db.query(query, [
+        id,
+        name,
+        strength || '',
+        type || 'stock',
+        barcode || '',
+        minBoxes,
+        standardItemsPerBox || null
+      ]);
+      console.log('meds-add: Successfully inserted/updated medication with min_level_boxes:', minBoxes);
+    } catch (dbError) {
+      // If min_level_boxes column doesn't exist, try with min_level (for backward compatibility during migration)
+      if (dbError.message && dbError.message.includes('min_level_boxes')) {
+        console.warn('meds-add: min_level_boxes column not found, trying min_level instead');
+        query = `
+          INSERT INTO medications 
+            (id, name, strength, form, barcode, min_level, standard_items_per_box, fefo)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, true)
+          ON CONFLICT (id) 
+          DO UPDATE SET
+            name = EXCLUDED.name,
+            strength = EXCLUDED.strength,
+            form = EXCLUDED.form,
+            barcode = EXCLUDED.barcode,
+            min_level = EXCLUDED.min_level,
+            standard_items_per_box = EXCLUDED.standard_items_per_box
+        `;
+        await db.query(query, [
+          id,
+          name,
+          strength || '',
+          type || 'stock',
+          barcode || '',
+          minBoxes,
+          standardItemsPerBox || null
+        ]);
+        console.log('meds-add: Successfully inserted/updated medication with min_level (fallback):', minBoxes);
+      } else {
+        throw dbError;
+      }
+    }
 
     return {
       statusCode: 200,

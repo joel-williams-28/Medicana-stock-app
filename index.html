@@ -1823,9 +1823,14 @@ Medicana Stock Management System`;
             medicationName = addMedForm.strengthType === 'na' ? addMedForm.name : `${addMedForm.name} ${addMedForm.strength}`;
             
             // minLevel is now in boxes, pass it directly
-            const minLevel = (addMedForm.minLevelBoxes && parseInt(addMedForm.minLevelBoxes) > 0) 
-              ? parseInt(addMedForm.minLevelBoxes) 
-              : 0;
+            // Parse the value - treat empty string, null, or undefined as 0
+            let minLevel = 0;
+            if (addMedForm.minLevelBoxes !== undefined && addMedForm.minLevelBoxes !== null && addMedForm.minLevelBoxes !== '') {
+              const parsed = parseInt(addMedForm.minLevelBoxes);
+              minLevel = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+            }
+            
+            console.log('Adding medication with minLevel:', minLevel, 'from input:', addMedForm.minLevelBoxes);
             
             await window.api.addMedication({
               id: medicationId,
