@@ -69,6 +69,17 @@ window.api = (function () {
     return out;
   }
 
+  async function lookupByBarcode(barcode) {
+    const res = await fetch('/.netlify/functions/barcode-lookup', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ barcode })
+    });
+    const out = await res.json();
+    if (!res.ok || !out.success) throw new Error(out.message || 'Lookup failed');
+    return out;
+  }
+
   async function loginUser(username, password) {
     const res = await fetch(LOGIN_ENDPOINT, {
       method: 'POST',
@@ -107,6 +118,7 @@ window.api = (function () {
     addBatch,
     transferStock,
     checkBatch,
+    lookupByBarcode,
     loginUser,
     startPolling,
     stopPolling

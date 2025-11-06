@@ -475,23 +475,27 @@
 
         const [barcodeNewMedForm, setBarcodeNewMedForm] = useState({
           barcode: '',
+          medicationId: null, // Internal medication ID (from barcode lookup)
           name: '',
           strength: '',
           strengthType: 'value', // 'value' or 'na'
           type: 'tablet',
           expiryMonth: '',
           expiryYear: '',
-          quantityType: 'boxes',
+          quantityType: 'boxes', // Only 'boxes' now, no 'individual' option
           boxQuantity: '',
           itemsPerBox: '',
-          individualQuantity: '',
+          individualQuantity: '', // Still used for calculating total: (boxes * items_per_box) + individuals
           minLevelType: 'boxes',
           minLevel: '',
           minLevelBoxes: '',
           brand: '',
           batchNumber: '',
+          existingBatchId: null, // If user selects an existing batch
+          existingBatches: [], // List of existing batches for the medication
           batchLocked: false, // Batch integrity safeguard — do not remove. When true, brand/expiry/itemsPerBox are locked
           batchExists: false, // Whether the batch code exists in the system
+          medicationLocked: false, // When true, medication name/strength/type/itemsPerBox are locked (from barcode lookup)
           location: '',
           error: '',
           isSubmitting: false
@@ -1132,6 +1136,8 @@
                 location: defaultLocation,
                 strengthType: 'value' // Always default to 'value' for new barcode scans
               }));
+              // Trigger barcode lookup when modal opens
+              handleBarcodeLookup(ui.searchTerm);
               // Clear search term after opening modal
               setUi(prev => ({ ...prev, searchTerm: '' }));
               // Reset input speed detection
@@ -1229,6 +1235,104 @@
           } else if (formType === 'barcode') {
             setBarcodeNewMedForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
           }
+        }
+      };
+
+      // Barcode lookup handler - called when barcode is entered/scanned
+      const handleBarcodeLookup = async (barcode) => {
+        if (!barcode || !barcode.trim()) {
+          // Clear medication lock state if barcode is empty
+          setBarcodeNewMedForm(prev => ({
+            ...prev,
+            medicationId: null,
+            medicationLocked: false,
+            existingBatches: [],
+            existingBatchId: null,
+            name: '',
+            strength: '',
+            strengthType: 'value',
+            type: 'tablet',
+            itemsPerBox: ''
+          }));
+          return;
+        }
+
+        try {
+          const result = await window.api.lookupByBarcode(barcode.trim());
+          
+          if (result.found && result.medication) {
+            const med = result.medication;
+            // Prefill and lock medication fields
+            setBarcodeNewMedForm(prev => ({
+              ...prev,
+              medicationId: med.id,
+              medicationLocked: true,
+              name: med.name,
+              strength: med.strength_raw || '',
+              strengthType: med.strength_raw ? 'value' : 'na',
+              type: med.type.toLowerCase() || 'tablet',
+              itemsPerBox: med.standard_items_per_box ? String(med.standard_items_per_box) : '',
+              existingBatches: result.existingBatches || [],
+              existingBatchId: null // Reset batch selection
+            }));
+          } else {
+            // Medication not found - unlock fields for manual entry
+            setBarcodeNewMedForm(prev => ({
+              ...prev,
+              medicationId: null,
+              medicationLocked: false,
+              existingBatches: [],
+              existingBatchId: null
+            }));
+          }
+        } catch (err) {
+          console.error('Failed to lookup barcode:', err);
+          // On error, allow manual entry
+          setBarcodeNewMedForm(prev => ({
+            ...prev,
+            medicationId: null,
+            medicationLocked: false,
+            existingBatches: [],
+            existingBatchId: null
+          }));
+        }
+      };
+
+      // Handle existing batch selection
+      const handleExistingBatchSelect = (batchId) => {
+        if (!batchId) {
+          setBarcodeNewMedForm(prev => ({
+            ...prev,
+            existingBatchId: null,
+            batchLocked: false,
+            batchExists: false,
+            batchNumber: '',
+            brand: '',
+            expiryMonth: '',
+            expiryYear: '',
+            itemsPerBox: prev.medicationLocked ? prev.itemsPerBox : '' // Keep if medication locked
+          }));
+          return;
+        }
+
+        const selectedBatch = barcodeNewMedForm.existingBatches.find(b => b.id === batchId);
+        if (selectedBatch) {
+          // Parse expiry date
+          const expiryDate = selectedBatch.expiryDate ? new Date(selectedBatch.expiryDate) : null;
+          const expiryMonth = expiryDate ? String(expiryDate.getMonth() + 1).padStart(2, '0') : '';
+          const expiryYear = expiryDate ? expiryDate.getFullYear() : '';
+
+          setBarcodeNewMedForm(prev => ({
+            ...prev,
+            existingBatchId: batchId,
+            batchLocked: true,
+            batchExists: true,
+            batchNumber: selectedBatch.batchCode || '',
+            brand: selectedBatch.brand || '',
+            expiryMonth: expiryMonth,
+            expiryYear: expiryYear,
+            itemsPerBox: selectedBatch.itemsPerBox ? String(selectedBatch.itemsPerBox) : prev.itemsPerBox
+          }));
         }
       };
 
@@ -1696,33 +1800,31 @@ Medicana Stock Management System`;
         // Set submitting state
         setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
 
-        let totalQuantity = 0;
+        // Calculate total quantity: (boxes * items_per_box) + individuals
+        let totalFromBoxes = 0;
         let itemsPerBox = 0;
         
-        if (barcodeNewMedForm.quantityType === 'boxes') {
-          if (!barcodeNewMedForm.boxQuantity || !barcodeNewMedForm.itemsPerBox || 
-              parseInt(barcodeNewMedForm.boxQuantity) <= 0 || parseInt(barcodeNewMedForm.itemsPerBox) <= 0) {
-            setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter valid box quantity and items per box' }));
-            return;
+        if (barcodeNewMedForm.boxQuantity && barcodeNewMedForm.itemsPerBox) {
+          const boxes = parseInt(barcodeNewMedForm.boxQuantity) || 0;
+          itemsPerBox = parseInt(barcodeNewMedForm.itemsPerBox) || 0;
+          if (boxes > 0 && itemsPerBox > 0) {
+            totalFromBoxes = boxes * itemsPerBox;
           }
-          totalQuantity = parseInt(barcodeNewMedForm.boxQuantity) * parseInt(barcodeNewMedForm.itemsPerBox);
-          itemsPerBox = parseInt(barcodeNewMedForm.itemsPerBox);
-        } else {
-          if (!barcodeNewMedForm.individualQuantity || parseInt(barcodeNewMedForm.individualQuantity) <= 0) {
-            setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter valid quantity' }));
-            return;
-          }
-          totalQuantity = parseInt(barcodeNewMedForm.individualQuantity);
-          if (barcodeNewMedForm.itemsPerBox && parseInt(barcodeNewMedForm.itemsPerBox) > 0) {
-            itemsPerBox = parseInt(barcodeNewMedForm.itemsPerBox);
-          }
+        }
+        
+        const individuals = parseInt(barcodeNewMedForm.individualQuantity) || 0;
+        const totalQuantity = totalFromBoxes + individuals;
+
+        if (totalQuantity <= 0) {
+          setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: false, error: 'Please enter valid quantity (boxes and/or individual items)' }));
+          return;
         }
 
         // Calculate minimum level
         let minLevel = 0;
         if (barcodeNewMedForm.minLevelType === 'boxes' && barcodeNewMedForm.minLevelBoxes && parseInt(barcodeNewMedForm.minLevelBoxes) > 0) {
           if (!itemsPerBox) {
-            setBarcodeNewMedForm(prev => ({ ...prev, error: 'Items per box must be specified to use box-based minimum level' }));
+            setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: false, error: 'Items per box must be specified to use box-based minimum level' }));
             return;
           }
           minLevel = parseInt(barcodeNewMedForm.minLevelBoxes) * itemsPerBox;
@@ -1733,39 +1835,53 @@ Medicana Stock Management System`;
         try {
           const currentUser = getCurrentUserInfo();
           if (!currentUser || !currentUser.id) {
-            setBarcodeNewMedForm(prev => ({ ...prev, error: 'User not logged in' }));
+            setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: false, error: 'User not logged in' }));
             return;
           }
 
-          const medicationId = String(Math.max(...medications.map(m => parseInt(m.id) || 0), 0) + 1);
+          let medicationId = barcodeNewMedForm.medicationId;
 
-          // Create medication
-          await window.api.addMedication({
-            id: medicationId,
-            name: barcodeNewMedForm.name,
-            strength: barcodeNewMedForm.strengthType === 'na' ? 'N/A' : barcodeNewMedForm.strength,
-            type: barcodeNewMedForm.type,
-            barcode: barcodeNewMedForm.barcode,
-            minLevel,
-            standardItemsPerBox: itemsPerBox || null
-          });
+          // If medication doesn't exist (not found via barcode lookup), create it
+          if (!medicationId) {
+            medicationId = String(Math.max(...medications.map(m => parseInt(m.id) || 0), 0) + 1);
 
-          // Add batch/stock
-          const note = `New medication added via barcode scan - Barcode: ${barcodeNewMedForm.barcode} - Brand: ${barcodeNewMedForm.brand} - ${barcodeNewMedForm.quantityType === 'boxes' ? `${barcodeNewMedForm.boxQuantity} boxes (${itemsPerBox} per box)` : `${barcodeNewMedForm.individualQuantity} items`}`;
+            // Create medication
+            await window.api.addMedication({
+              id: medicationId,
+              name: barcodeNewMedForm.name,
+              strength: barcodeNewMedForm.strengthType === 'na' ? 'N/A' : barcodeNewMedForm.strength,
+              type: barcodeNewMedForm.type,
+              barcode: barcodeNewMedForm.barcode,
+              minLevel,
+              standardItemsPerBox: itemsPerBox || null
+            });
+          }
 
-          await window.api.addBatch({
-            medicationId,
-            batchNumber: barcodeNewMedForm.batchNumber || `BATCH-${Date.now()}`,
-            expiryMonth: parseInt(barcodeNewMedForm.expiryMonth),
-            expiryYear: parseInt(barcodeNewMedForm.expiryYear),
-            brand: barcodeNewMedForm.brand,
-            itemsPerBox: itemsPerBox || null,
-            quantityBoxes: barcodeNewMedForm.quantityType === 'boxes' ? parseInt(barcodeNewMedForm.boxQuantity) : 0,
-            quantityIndividuals: barcodeNewMedForm.quantityType === 'individuals' ? parseInt(barcodeNewMedForm.individualQuantity) : 0,
+          // Prepare batch add payload
+          const batchPayload = {
+            medicationId: medicationId,
             locationId: getLocationId(barcodeNewMedForm.location) || barcodeNewMedForm.location,
             userId: currentUser.id,
-            note
-          });
+            quantityBoxes: parseInt(barcodeNewMedForm.boxQuantity) || 0,
+            quantityIndividuals: individuals
+          };
+
+          // If existing batch is selected, use it
+          if (barcodeNewMedForm.existingBatchId) {
+            batchPayload.existingBatchId = barcodeNewMedForm.existingBatchId;
+            batchPayload.note = `Delivery (existing batch) - Barcode: ${barcodeNewMedForm.barcode} - Brand: ${barcodeNewMedForm.brand}`;
+          } else {
+            // Create new batch
+            batchPayload.batchCode = barcodeNewMedForm.batchNumber || `BATCH-${Date.now()}`;
+            batchPayload.expiryMonth = parseInt(barcodeNewMedForm.expiryMonth);
+            batchPayload.expiryYear = parseInt(barcodeNewMedForm.expiryYear);
+            batchPayload.brand = barcodeNewMedForm.brand;
+            batchPayload.itemsPerBox = itemsPerBox || null;
+            batchPayload.note = `Delivery - Barcode: ${barcodeNewMedForm.barcode} - Brand: ${barcodeNewMedForm.brand}`;
+          }
+
+          // Add batch/stock
+          await window.api.addBatch(batchPayload);
 
           // Refresh data from backend
           const data = await window.api.fetchAllData();
@@ -1776,6 +1892,7 @@ Medicana Stock Management System`;
           // Reset form and close modal
           setBarcodeNewMedForm({
             barcode: '',
+            medicationId: null,
             name: '',
             strength: '',
             strengthType: 'value',
@@ -1791,8 +1908,11 @@ Medicana Stock Management System`;
             minLevelBoxes: '',
             brand: '',
             batchNumber: '',
+            existingBatchId: null,
+            existingBatches: [],
             batchLocked: false,
             batchExists: false,
+            medicationLocked: false,
             location: '',
             error: '',
             isSubmitting: false
@@ -4629,8 +4749,7 @@ Medicana Stock Management System`;
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4" style={{zIndex: 9999}} onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showBarcodeNewMedication: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
                 <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-2xl w-full flex flex-col m-2 sm:m-4" style={{maxHeight: '90vh'}}>
                   <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex-shrink-0">
-                    <h2 className="text-base sm:text-lg font-bold text-gray-800">New Medication from Barcode</h2>
-                    <p className="text-xs text-gray-600 mt-1">Barcode: {barcodeNewMedForm.barcode}</p>
+                    <h2 className="text-base sm:text-lg font-bold text-gray-800">Add New Medication by Barcode</h2>
                   </div>
                   <div className="overflow-y-auto px-4 sm:px-6 py-3 sm:py-4 flex-1">
                     {barcodeNewMedForm.error && (
@@ -4645,12 +4764,40 @@ Medicana Stock Management System`;
                         <h3 className="text-md font-semibold text-gray-700 border-b pb-2">Medication Details</h3>
                         
                         <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
+                          <input
+                            type="text"
+                            value={barcodeNewMedForm.barcode}
+                            onChange={(e) => {
+                              const barcode = e.target.value;
+                              setBarcodeNewMedForm(prev => ({ ...prev, barcode, error: '' }));
+                              // Trigger lookup when barcode changes (debounced)
+                              if (barcode.trim()) {
+                                setTimeout(() => handleBarcodeLookup(barcode), 500);
+                              } else {
+                                handleBarcodeLookup('');
+                              }
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            placeholder="Scan or enter barcode"
+                          />
+                          {barcodeNewMedForm.medicationLocked && (
+                            <p className="text-xs text-green-700 mt-1">✓ Medication found — details auto-filled.</p>
+                          )}
+                        </div>
+
+                        <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Medication Name *</label>
                           <input
                             type="text"
                             value={barcodeNewMedForm.name}
-                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, name: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            onChange={(e) => {
+                              if (!barcodeNewMedForm.medicationLocked) {
+                                setBarcodeNewMedForm(prev => ({ ...prev, name: e.target.value, error: '' }));
+                              }
+                            }}
+                            readOnly={barcodeNewMedForm.medicationLocked}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.medicationLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             placeholder="e.g., Paracetamol"
                           />
                         </div>
@@ -4659,24 +4806,34 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Strength/Concentration *</label>
                           <div className="mb-2">
                             <div className="flex gap-4">
-                              <label className="flex items-center cursor-pointer">
+                              <label className={`flex items-center ${barcodeNewMedForm.medicationLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
                                 <input 
                                   type="radio" 
                                   name="barcodeStrengthType" 
                                   value="value" 
                                   checked={barcodeNewMedForm.strengthType === 'value'} 
-                                  onClick={(e) => setBarcodeNewMedForm(prev => ({ ...prev, strengthType: 'value', error: '' }))} 
+                                  onClick={(e) => {
+                                    if (!barcodeNewMedForm.medicationLocked) {
+                                      setBarcodeNewMedForm(prev => ({ ...prev, strengthType: 'value', error: '' }));
+                                    }
+                                  }}
+                                  disabled={barcodeNewMedForm.medicationLocked}
                                   className="mr-2"
                                 />
                                 <span className="text-sm text-gray-700">Value</span>
                               </label>
-                              <label className="flex items-center cursor-pointer">
+                              <label className={`flex items-center ${barcodeNewMedForm.medicationLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
                                 <input 
                                   type="radio" 
                                   name="barcodeStrengthType" 
                                   value="na" 
                                   checked={barcodeNewMedForm.strengthType === 'na'} 
-                                  onClick={(e) => setBarcodeNewMedForm(prev => ({ ...prev, strengthType: 'na', strength: '', error: '' }))} 
+                                  onClick={(e) => {
+                                    if (!barcodeNewMedForm.medicationLocked) {
+                                      setBarcodeNewMedForm(prev => ({ ...prev, strengthType: 'na', strength: '', error: '' }));
+                                    }
+                                  }}
+                                  disabled={barcodeNewMedForm.medicationLocked}
                                   className="mr-2"
                                 />
                                 <span className="text-sm text-gray-700">N/A</span>
@@ -4687,8 +4844,13 @@ Medicana Stock Management System`;
                             <input
                               type="text"
                               value={barcodeNewMedForm.strength}
-                              onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, strength: e.target.value, error: '' }))}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              onChange={(e) => {
+                                if (!barcodeNewMedForm.medicationLocked) {
+                                  setBarcodeNewMedForm(prev => ({ ...prev, strength: e.target.value, error: '' }));
+                                }
+                              }}
+                              readOnly={barcodeNewMedForm.medicationLocked}
+                              className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.medicationLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                               placeholder="e.g., 500mg"
                             />
                           )}
@@ -4698,8 +4860,13 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
                           <select
                             value={barcodeNewMedForm.type}
-                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, type: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            onChange={(e) => {
+                              if (!barcodeNewMedForm.medicationLocked) {
+                                setBarcodeNewMedForm(prev => ({ ...prev, type: e.target.value, error: '' }));
+                              }
+                            }}
+                            disabled={barcodeNewMedForm.medicationLocked}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.medicationLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                           >
                             {MEDICATION_TYPES.map(type => (
                               <option key={type} value={type.toLowerCase()}>{type}</option>
@@ -4795,13 +4962,33 @@ Medicana Stock Management System`;
                           </div>
                         </div>
 
+                        {barcodeNewMedForm.existingBatches.length > 0 && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Existing Batch (optional)</label>
+                            <select
+                              value={barcodeNewMedForm.existingBatchId || ''}
+                              onChange={(e) => handleExistingBatchSelect(e.target.value ? parseInt(e.target.value) : null)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            >
+                              <option value="">Select existing batch or enter new batch code below</option>
+                              {barcodeNewMedForm.existingBatches.map(batch => {
+                                const expiryStr = batch.expiryDate ? new Date(batch.expiryDate).toISOString().slice(0, 7) : 'N/A';
+                                const displayText = `${batch.batchCode} — ${batch.brand || 'N/A'} — Exp: ${expiryStr} — Items/Box: ${batch.itemsPerBox || 'N/A'}`;
+                                return (
+                                  <option key={batch.id} value={batch.id}>{displayText}</option>
+                                );
+                              })}
+                            </select>
+                          </div>
+                        )}
+
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Batch Number</label>
                           <input
                             type="text"
                             value={barcodeNewMedForm.batchNumber}
                             onChange={(e) => {
-                              setBarcodeNewMedForm(prev => ({ ...prev, batchNumber: e.target.value, error: '' }));
+                              setBarcodeNewMedForm(prev => ({ ...prev, batchNumber: e.target.value, existingBatchId: null, error: '' }));
                               // Batch integrity safeguard — do not remove.
                               // Check batch code after user stops typing (debounce)
                               const code = e.target.value.trim();
@@ -4811,7 +4998,8 @@ Medicana Stock Management System`;
                                 setBarcodeNewMedForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
                               }
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            disabled={!!barcodeNewMedForm.existingBatchId}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.existingBatchId ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             placeholder="e.g., BN123456"
                           />
                           {barcodeNewMedForm.batchExists && (
@@ -4820,79 +5008,46 @@ Medicana Stock Management System`;
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Quantity Type</label>
-                          <div className="flex gap-4">
-                            <label className="flex items-center cursor-pointer">
-                              <input
-                                type="radio"
-                                name="quantityType"
-                                value="boxes"
-                                checked={barcodeNewMedForm.quantityType === 'boxes'}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setBarcodeNewMedForm(prev => ({ ...prev, quantityType: 'boxes', error: '' }));
-                                }}
-                                className="mr-2"
-                              />
-                              Boxes
-                            </label>
-                            <label className="flex items-center cursor-pointer">
-                              <input
-                                type="radio"
-                                name="quantityType"
-                                value="individual"
-                                checked={barcodeNewMedForm.quantityType === 'individual'}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setBarcodeNewMedForm(prev => ({ ...prev, quantityType: 'individual', error: '' }));
-                                }}
-                                className="mr-2"
-                              />
-                              Individual Items
-                            </label>
-                          </div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Number of Boxes</label>
+                          <input
+                            type="number"
+                            value={barcodeNewMedForm.boxQuantity}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, boxQuantity: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            min="0"
+                            placeholder="0"
+                          />
                         </div>
 
-                        {barcodeNewMedForm.quantityType === 'boxes' ? (
-                          <>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Number of Boxes *</label>
-                              <input
-                                type="number"
-                                value={barcodeNewMedForm.boxQuantity}
-                                onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, boxQuantity: e.target.value, error: '' }))}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                                min="1"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Items per Box *</label>
-                              <input
-                                type="number"
-                                value={barcodeNewMedForm.itemsPerBox}
-                                onChange={(e) => {
-                                  if (!barcodeNewMedForm.batchLocked) {
-                                    setBarcodeNewMedForm(prev => ({ ...prev, itemsPerBox: e.target.value, error: '' }));
-                                  }
-                                }}
-                                readOnly={barcodeNewMedForm.batchLocked}
-                                className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                                min="1"
-                              />
-                            </div>
-                          </>
-                        ) : (
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
-                            <input
-                              type="number"
-                              value={barcodeNewMedForm.individualQuantity}
-                              onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, individualQuantity: e.target.value, error: '' }))}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                              min="1"
-                            />
-                          </div>
-                        )}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Items per Box {barcodeNewMedForm.medicationLocked ? '*' : ''}</label>
+                          <input
+                            type="number"
+                            value={barcodeNewMedForm.itemsPerBox}
+                            onChange={(e) => {
+                              if (!barcodeNewMedForm.batchLocked && !barcodeNewMedForm.medicationLocked) {
+                                setBarcodeNewMedForm(prev => ({ ...prev, itemsPerBox: e.target.value, error: '' }));
+                              }
+                            }}
+                            readOnly={barcodeNewMedForm.batchLocked || barcodeNewMedForm.medicationLocked}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${(barcodeNewMedForm.batchLocked || barcodeNewMedForm.medicationLocked) ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            min="1"
+                            placeholder="e.g., 100"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Individual Items</label>
+                          <input
+                            type="number"
+                            value={barcodeNewMedForm.individualQuantity}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, individualQuantity: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            min="0"
+                            placeholder="0"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Total: (Boxes × Items per Box) + Individual Items</p>
+                        </div>
 
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Minimum Stock Level</label>

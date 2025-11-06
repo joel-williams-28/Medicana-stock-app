@@ -1,5 +1,6 @@
 // netlify/functions/batch-add.js
 // Adds a new batch/delivery of medication to inventory
+// Supports both existing batch selection and new batch creation with integrity enforcement
 const db = require('./_db');
 
 exports.handler = async (event) => {
@@ -13,7 +14,9 @@ exports.handler = async (event) => {
   try {
     const { 
       medicationId,
-      batchNumber,
+      existingBatchId, // If provided, use this batch's metadata
+      batchNumber, // For new batch creation
+      batchCode, // Alternative name for batchNumber
       expiryMonth,
       expiryYear,
       brand,
@@ -26,12 +29,12 @@ exports.handler = async (event) => {
     } = JSON.parse(event.body || '{}');
 
     // Validate required fields
-    if (!medicationId || !locationId || !userId) {
+    if (!locationId || !userId) {
       return {
         statusCode: 400,
         body: JSON.stringify({ 
           success: false, 
-          message: 'Missing required fields: medicationId, locationId, userId' 
+          message: 'Missing required fields: locationId, userId' 
         })
       };
     }
@@ -53,56 +56,117 @@ exports.handler = async (event) => {
       };
     }
 
-    // Build expiry date (first of month)
-    let expiryDate = null;
-    if (expiryMonth && expiryYear) {
-      expiryDate = `${expiryYear}-${String(expiryMonth).padStart(2, '0')}-01`;
-    }
-
     // Begin transaction
     await db.query('BEGIN');
 
     try {
-      // Batch integrity safeguard — do not remove.
-      // batch_code is the unique key for batch metadata globally (not per medication)
-      // If a batch_code exists, we MUST use its canonical values and ignore user input
       let batchIdResult;
-      if (batchNumber && batchNumber.trim()) {
+      let canonicalMedicationId; // Will be derived from batch
+
+      // Batch integrity safeguard — do not remove.
+      if (existingBatchId) {
+        // Use existing batch - fetch its canonical metadata
         const existingBatch = await db.query(
-          `SELECT id, medication_id, expiry_date, brand, items_per_box
+          `SELECT id, medication_id, expiry_date, brand, items_per_box, batch_code
            FROM batches
-           WHERE batch_code = $1`,
-          [batchNumber.trim()]
+           WHERE id = $1`,
+          [existingBatchId]
         );
 
-        if (existingBatch.rows.length > 0) {
-          // Batch code exists - use existing values and ignore user input for batch metadata
-          const existing = existingBatch.rows[0];
-          batchIdResult = existing.id;
-          
-          // Note: We use the existing batch's medication_id, expiry_date, brand, items_per_box
-          // User-provided values for these fields are ignored to maintain batch integrity
-          // The medicationId parameter may differ, but we use the batch's linked medication_id
-          // This ensures batch_code is the authoritative source for batch metadata
+        if (existingBatch.rows.length === 0) {
+          await db.query('ROLLBACK');
+          return {
+            statusCode: 400,
+            body: JSON.stringify({ 
+              success: false, 
+              message: 'Existing batch not found' 
+            })
+          };
+        }
+
+        const existing = existingBatch.rows[0];
+        batchIdResult = existing.id;
+        canonicalMedicationId = existing.medication_id;
+        
+        // Use existing batch's metadata - ignore any client-provided overrides
+        // This ensures batch_code is the authoritative source for batch metadata
+      } else {
+        // Create new batch or use existing batch_code
+        const batchCodeToUse = batchNumber || batchCode;
+        
+        if (batchCodeToUse && batchCodeToUse.trim()) {
+          // Check if batch_code already exists
+          const existingBatch = await db.query(
+            `SELECT id, medication_id, expiry_date, brand, items_per_box
+             FROM batches
+             WHERE batch_code = $1`,
+            [batchCodeToUse.trim()]
+          );
+
+          if (existingBatch.rows.length > 0) {
+            // Batch code exists - use existing values and ignore user input for batch metadata
+            const existing = existingBatch.rows[0];
+            batchIdResult = existing.id;
+            canonicalMedicationId = existing.medication_id;
+            
+            // Note: We use the existing batch's medication_id, expiry_date, brand, items_per_box
+            // User-provided values for these fields are ignored to maintain batch integrity
+          } else {
+            // Batch code doesn't exist - create new batch with provided values
+            if (!medicationId) {
+              await db.query('ROLLBACK');
+              return {
+                statusCode: 400,
+                body: JSON.stringify({ 
+                  success: false, 
+                  message: 'medicationId is required when creating a new batch' 
+                })
+              };
+            }
+
+            // Build expiry date (first of month)
+            let expiryDate = null;
+            if (expiryMonth && expiryYear) {
+              expiryDate = `${expiryYear}-${String(expiryMonth).padStart(2, '0')}-01`;
+            }
+
+            const insertBatch = await db.query(
+              `INSERT INTO batches (medication_id, batch_code, expiry_date, brand, items_per_box)
+               VALUES ($1, $2, $3, $4, $5)
+               RETURNING id, medication_id`,
+              [medicationId, batchCodeToUse.trim(), expiryDate, brand || '', itemsPerBox || null]
+            );
+            batchIdResult = insertBatch.rows[0].id;
+            canonicalMedicationId = insertBatch.rows[0].medication_id;
+          }
         } else {
-          // Batch code doesn't exist - create new batch with provided values
+          // No batch number provided, create a generic batch with unique timestamp
+          if (!medicationId) {
+            await db.query('ROLLBACK');
+            return {
+              statusCode: 400,
+              body: JSON.stringify({ 
+                success: false, 
+                message: 'medicationId is required when creating a new batch' 
+              })
+            };
+          }
+
+          // Build expiry date (first of month)
+          let expiryDate = null;
+          if (expiryMonth && expiryYear) {
+            expiryDate = `${expiryYear}-${String(expiryMonth).padStart(2, '0')}-01`;
+          }
+
           const insertBatch = await db.query(
             `INSERT INTO batches (medication_id, batch_code, expiry_date, brand, items_per_box)
              VALUES ($1, $2, $3, $4, $5)
-             RETURNING id`,
-            [medicationId, batchNumber.trim(), expiryDate, brand || '', itemsPerBox || null]
+             RETURNING id, medication_id`,
+            [medicationId, `BATCH-${Date.now()}`, expiryDate, brand || '', itemsPerBox || null]
           );
           batchIdResult = insertBatch.rows[0].id;
+          canonicalMedicationId = insertBatch.rows[0].medication_id;
         }
-      } else {
-        // No batch number provided, create a generic batch with unique timestamp
-        const insertBatch = await db.query(
-          `INSERT INTO batches (medication_id, batch_code, expiry_date, brand, items_per_box)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING id`,
-          [medicationId, `BATCH-${Date.now()}`, expiryDate, brand || '', itemsPerBox || null]
-        );
-        batchIdResult = insertBatch.rows[0].id;
       }
 
       // Ensure inventory row exists
@@ -123,13 +187,13 @@ exports.handler = async (event) => {
         );
       }
 
-      // Insert transaction record
+      // Insert transaction record using canonical medication_id derived from batch
       const reason = note || `Delivery received - ${finalTotal} units`;
       await db.query(
         `INSERT INTO transactions 
          (user_id, medication_id, location_id, batch_id, delta, reason, occurred_at)
          VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-        [userId, medicationId, locationId, batchIdResult, finalTotal, reason]
+        [userId, canonicalMedicationId, locationId, batchIdResult, finalTotal, reason]
       );
 
       // Commit transaction
@@ -151,4 +215,3 @@ exports.handler = async (event) => {
     };
   }
 };
-

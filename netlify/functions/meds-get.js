@@ -1,36 +1,24 @@
 // netlify/functions/meds-get.js
 // Returns all medications (with batches/inventory), recent transactions, and locations list
+// Uses inventory_full view as the primary source
 const db = require('./_db');
 
 exports.handler = async () => {
   try {
     // Query medication/stock snapshot from inventory_full view
-    // The view returns: location_id, batch_id, on_hand, location_name, location_group,
-    // medication_name, strength_clean, medication_display_id, barcode,
-    // batch_code, expiry_date, brand, items_per_box, number_of_boxes
+    // The view returns columns in this exact order:
+    // batch_id, location_id, location_name, location_group, medication_name, strength_clean,
+    // medication_display_id, barcode, batch_code, brand, expiry_date, on_hand, items_per_box, number_of_boxes
+    // Plus helper fields: type (form) and strength_raw
     const medsQuery = `
-      SELECT
-        location_id,
-        batch_id,
-        on_hand,
-        location_name,
-        location_group,
-        medication_name,
-        strength_clean,
-        medication_display_id,
-        barcode,
-        batch_code,
-        expiry_date,
-        brand,
-        items_per_box,
-        number_of_boxes
+      SELECT *
       FROM inventory_full
       WHERE on_hand > 0
       ORDER BY medication_name, location_name, expiry_date;
     `;
     const medsResult = await db.query(medsQuery);
 
-    // Get medication details (form, fefo, min_level, standard_items_per_box) from medications table
+    // Get medication details (fefo, min_level) from medications table
     // We still need this because inventory_full doesn't have all medication metadata
     // Match by medication_display_id (which is name + strength combination)
     const medicationDetailsQuery = `
@@ -38,10 +26,8 @@ exports.handler = async () => {
         id,
         name,
         strength,
-        form,
         fefo,
-        min_level,
-        standard_items_per_box
+        min_level
       FROM medications
     `;
     const medicationDetailsResult = await db.query(medicationDetailsQuery);
@@ -53,10 +39,8 @@ exports.handler = async () => {
         ? `${med.name} ${med.strength}`
         : med.name;
       medicationDetailsMap[displayId] = {
-        form: med.form,
         fefo: med.fefo,
-        minLevel: med.min_level,
-        standardItemsPerBox: med.standard_items_per_box
+        minLevel: med.min_level
       };
     });
 
@@ -71,22 +55,28 @@ exports.handler = async () => {
       // Get medication details from the map
       const medDetails = medicationDetailsMap[displayId] || {};
       
+      // Build display name: Medication Name + " " + Strength Raw (e.g., "Paracetamol 500mg")
+      const displayName = row.strength_raw && row.strength_raw !== 'N/A'
+        ? `${row.medication_name} ${row.strength_raw}`
+        : row.medication_name;
+      
       if (!medsByKey[key]) {
         medsByKey[key] = {
           id: displayId, // Use display_id as the identifier (no internal id exposed)
-          name: displayId, // Full display name (e.g., "Paracetamol 500mg")
+          name: displayName, // Display name: "Medication Name + Strength Raw"
           // Extended fields from inventory_full view for sorting/filtering
           medicationName: row.medication_name, // Base medication name (without strength)
           strength: row.strength_clean || '', // Clean strength from view
+          strengthRaw: row.strength_raw || '', // Raw strength (e.g., "500mg" or "4mg/mL")
           medicationDisplayId: displayId, // Explicit display ID field
           minLevel: medDetails.minLevel || 0,
-          unit: medDetails.form || 'units',
-          type: medDetails.form || 'stock',
+          unit: row.type || 'units', // type field from view (form)
+          type: row.type || 'stock', // type field from view (form)
           location: row.location_name,
           locationId: locationId,
           locationGroup: row.location_group || null, // Location group from inventory_full
           barcode: row.barcode || '', // Barcode from inventory_full
-          standardItemsPerBox: medDetails.standardItemsPerBox || null,
+          standardItemsPerBox: null, // Not in view, would need separate query if needed
           fefo: medDetails.fefo || false,
           batches: []
         };
