@@ -726,7 +726,10 @@
               }
               return med.location === ui.currentLocation;
             })
-            .filter(med => getTotalBoxes(med) < med.minLevelBoxes);
+            .filter(med => {
+              // Include medications that are below minimum level OR have zero stock with pending orders
+              return getTotalBoxes(med) < med.minLevelBoxes || (getTotalBoxes(med) === 0 && hasPendingOrder(med));
+            });
           
           // Group by name when viewing "All Locations"
           if (ui.currentLocation === 'All') {
@@ -1028,9 +1031,15 @@
             })
             .forEach(med => {
               const totalBoxes = getTotalBoxes(med);
-              if (totalBoxes < med.minLevelBoxes) statuses.add('Low Stock');
-              if (totalBoxes >= med.minLevelBoxes) statuses.add('OK');
-              if (hasPendingOrder(med)) statuses.add('Ordered');
+              if (totalBoxes === 0 && hasPendingOrder(med)) {
+                statuses.add('Order Pending');
+              } else if (totalBoxes < med.minLevelBoxes) {
+                statuses.add('Low Stock');
+                if (hasPendingOrder(med)) statuses.add('Ordered');
+              } else if (totalBoxes >= med.minLevelBoxes) {
+                statuses.add('OK');
+                if (hasPendingOrder(med)) statuses.add('Ordered');
+              }
             });
           return Array.from(statuses).sort();
         })();
@@ -1054,14 +1063,16 @@
           .filter(med => {
             if (medicationFilters.statuses.length === 0) return true;
             const totalBoxes = getTotalBoxes(med);
-            const isLowStock = totalBoxes < med.minLevelBoxes;
+            const isLowStock = totalBoxes < med.minLevelBoxes && totalBoxes > 0;
             const isOK = totalBoxes >= med.minLevelBoxes;
-            const isOrdered = hasPendingOrder(med);
+            const isOrdered = hasPendingOrder(med) && totalBoxes > 0;
+            const isOrderPending = totalBoxes === 0 && hasPendingOrder(med);
 
             return medicationFilters.statuses.some(status => {
               if (status === 'Low Stock' && isLowStock) return true;
               if (status === 'OK' && isOK) return true;
               if (status === 'Ordered' && isOrdered) return true;
+              if (status === 'Order Pending' && isOrderPending) return true;
               return false;
             });
           })
@@ -3083,13 +3094,22 @@ Medicana Stock Management System`;
                               </td>
                               <td className="px-2 sm:px-4 py-2 sm:py-3 text-center">
                                 <div className="flex flex-col gap-1 items-center">
-                                  {getTotalBoxes(med) < med.minLevelBoxes ? (
-                                      <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-red-100 text-red-800"><AlertTriangle className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />Low</span>
+                                  {getTotalBoxes(med) === 0 && hasPendingOrder(med) ? (
+                                      <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800"><Download className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />Order Pending</span>
+                                  ) : getTotalBoxes(med) < med.minLevelBoxes ? (
+                                      <>
+                                        <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-red-100 text-red-800"><AlertTriangle className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />Low</span>
+                                        {hasPendingOrder(med) && (
+                                          <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"><Download className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />Ordered</span>
+                                        )}
+                                      </>
                                   ) : (
-                                      <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">OK</span>
-                                  )}
-                                  {hasPendingOrder(med) && (
-                                      <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"><Download className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />Ordered</span>
+                                      <>
+                                        <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">OK</span>
+                                        {hasPendingOrder(med) && (
+                                          <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"><Download className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />Ordered</span>
+                                        )}
+                                      </>
                                   )}
                                 </div>
                               </td>
@@ -3184,9 +3204,11 @@ Medicana Stock Management System`;
                                           if (order) {
                                             return (
                                               <div className="text-xs text-blue-800">
-                                                <p>Order Date: {new Date(order.timestamp).toLocaleString('en-GB')}</p>
+                                                <p>Order Date: {new Date(order.orderedAt).toLocaleString('en-GB')}</p>
+                                                <p>Quantity: {order.quantity} {med.unit}</p>
+                                                <p>Urgency: {order.urgency.toUpperCase()}</p>
                                                 <p>Ordered by: {order.user}</p>
-                                                {order.note && <p className="mt-1">{order.note}</p>}
+                                                {order.notes && <p className="mt-1">Notes: {order.notes}</p>}
                                               </div>
                                             );
                                           }
@@ -3395,7 +3417,11 @@ Medicana Stock Management System`;
                             <td className="px-4 py-3 text-sm text-gray-900">
                               <div className="flex items-center gap-2">
                                 <span>{med.name}</span>
-                                  {hasPendingOrder(med) && (<span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"><Download className="w-3 h-3 mr-1" />Ordered</span>)}
+                                  {getTotalBoxes(med) === 0 && hasPendingOrder(med) ? (
+                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800"><Download className="w-3 h-3 mr-1" />Order Pending</span>
+                                  ) : hasPendingOrder(med) && (
+                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"><Download className="w-3 h-3 mr-1" />Ordered</span>
+                                  )}
                               </div>
                             </td>
                               {(ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') && (
