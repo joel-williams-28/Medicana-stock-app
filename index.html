@@ -2472,13 +2472,24 @@ Medicana Stock Management System`;
           }
 
           // Get internal medication ID for backend update
-          const internalMedicationId = editMinLevel.editing.internalId || editMinLevel.editing.id;
-          
+          const internalMedicationId = Number(editMinLevel.editing.internalId);
+          if (!Number.isFinite(internalMedicationId)) {
+            setEditMinLevel(prev => ({ ...prev, error: 'Unable to determine medication ID for update.' }));
+            return;
+          }
+
           // Update min level using dedicated function
           await window.api.setMedicationMinLevel({
-            medicationId: internalMedicationId,
-            minLevel: finalMinLevelBoxes
+            medicationId: Math.floor(internalMedicationId),
+            minLevel: Math.floor(finalMinLevelBoxes)
           });
+
+          // Optimistically update local state while awaiting refetch
+          setMedications(prev => prev.map(med => (
+            med.internalId === Math.floor(internalMedicationId)
+              ? { ...med, minLevelBoxes: Math.floor(finalMinLevelBoxes) }
+              : med
+          )));
 
           // Create transaction note for Activity Log
           const displayText = `${finalMinLevelBoxes} ${finalMinLevelBoxes === 1 ? 'box' : 'boxes'}`;
