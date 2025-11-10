@@ -63,9 +63,9 @@ exports.handler = async () => {
       const medDetailsById = row.medication_id ? medicationDetailsById[row.medication_id] : undefined;
       const medDetails = medDetailsById || medicationDetailsByDisplayId[displayId] || {};
 
-      const rawRowMinLevelBoxes = Number(row.min_level_boxes);
-      const resolvedMinLevelBoxes = Number.isFinite(rawRowMinLevelBoxes)
-        ? rawRowMinLevelBoxes
+      const rawRowMinLevelBoxes = row.min_level_boxes;
+      const resolvedMinLevelBoxes = Number.isFinite(Number(rawRowMinLevelBoxes))
+        ? Number(rawRowMinLevelBoxes)
         : (medDetails.minLevelBoxes || 0);
       
       // Build display name: Medication Name + " " + Strength Raw (e.g., "Paracetamol 500mg")
