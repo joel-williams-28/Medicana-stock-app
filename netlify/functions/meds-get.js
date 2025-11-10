@@ -35,16 +35,20 @@ exports.handler = async () => {
     const medicationDetailsResult = await db.query(medicationDetailsQuery);
     
     // Create a map by display_id (name + strength combination)
-    const medicationDetailsMap = {};
+    const medicationDetailsByDisplayId = {};
+    const medicationDetailsById = {};
     medicationDetailsResult.rows.forEach(med => {
       const displayId = med.strength && med.strength !== 'N/A'
         ? `${med.name} ${med.strength}`
         : med.name;
-      medicationDetailsMap[displayId] = {
+      const minLevelBoxes = Number.isFinite(Number(med.min_level_boxes)) ? Number(med.min_level_boxes) : 0;
+      const details = {
         internalId: med.id,
         fefo: med.fefo,
-        minLevelBoxes: med.min_level_boxes !== undefined && med.min_level_boxes !== null ? med.min_level_boxes : 0
+        minLevelBoxes
       };
+      medicationDetailsByDisplayId[displayId] = details;
+      medicationDetailsById[med.id] = { ...details, displayId };
     });
 
     // Shape into front-end-friendly structure
@@ -56,7 +60,13 @@ exports.handler = async () => {
       const key = `${displayId}|${locationId}`;
       
       // Get medication details from the map
-      const medDetails = medicationDetailsMap[displayId] || {};
+      const medDetailsById = row.medication_id ? medicationDetailsById[row.medication_id] : undefined;
+      const medDetails = medDetailsById || medicationDetailsByDisplayId[displayId] || {};
+
+      const rowMinLevelBoxes = row.min_level_boxes !== undefined && row.min_level_boxes !== null
+        ? Number(row.min_level_boxes)
+        : null;
+      const resolvedMinLevelBoxes = Number.isFinite(rowMinLevelBoxes) ? rowMinLevelBoxes : medDetails.minLevelBoxes || 0;
       
       // Build display name: Medication Name + " " + Strength Raw (e.g., "Paracetamol 500mg")
       const displayName = row.strength_raw && row.strength_raw !== 'N/A'
@@ -66,14 +76,14 @@ exports.handler = async () => {
       if (!medsByKey[key]) {
         medsByKey[key] = {
           id: displayId, // Use display_id as the identifier (no internal id exposed)
-          internalId: medDetails.internalId || null, // Internal medication ID for backend operations
+          internalId: (medDetailsById && medDetailsById.internalId) || medDetails.internalId || row.medication_id || null,
           name: displayName, // Display name: "Medication Name + Strength Raw"
           // Extended fields from inventory_full view for sorting/filtering
           medicationName: row.medication_name, // Base medication name (without strength)
           strength: row.strength_clean || '', // Clean strength from view
           strengthRaw: row.strength_raw || '', // Raw strength (e.g., "500mg" or "4mg/mL")
           medicationDisplayId: displayId, // Explicit display ID field
-          minLevelBoxes: medDetails.minLevelBoxes || 0, // Minimum level in boxes
+          minLevelBoxes: resolvedMinLevelBoxes,
           unit: row.type || 'units', // type field from view (form)
           type: row.type || 'stock', // type field from view (form)
           location: row.location_name,
