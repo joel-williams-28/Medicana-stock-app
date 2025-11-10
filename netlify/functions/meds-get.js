@@ -6,15 +6,18 @@ const db = require('./_db');
 exports.handler = async () => {
   try {
     // Query medication/stock snapshot from inventory_full view
+    // INCLUDE medications with on_hand = 0 if they have pending orders
     // The view returns columns in this exact order:
     // batch_id, location_id, location_name, location_group, medication_name, strength_clean,
     // medication_display_id, barcode, batch_code, brand, expiry_date, on_hand, items_per_box, number_of_boxes
     // Plus helper fields: type (form) and strength_raw
     const medsQuery = `
-      SELECT *
+      SELECT DISTINCT ON (medication_id, location_id, batch_id) *
       FROM inventory_full
-      WHERE on_hand > 0
-      ORDER BY medication_name, location_name, expiry_date;
+      WHERE on_hand > 0 OR medication_id IN (
+        SELECT medication_id FROM orders WHERE status = 'pending'
+      )
+      ORDER BY medication_id, location_id, batch_id, medication_name, location_name, expiry_date;
     `;
     const medsResult = await db.query(medsQuery);
 
@@ -96,7 +99,7 @@ exports.handler = async () => {
         };
       }
 
-      // Add batch with all fields from inventory_full view
+      // Add batch with all fields from inventory_full view (only if on_hand > 0)
       if (row.batch_id && row.on_hand > 0) {
         medsByKey[key].batches.push({
           id: row.batch_id,
@@ -111,6 +114,9 @@ exports.handler = async () => {
           numberOfBoxes: row.number_of_boxes || null // Calculated by view: on_hand / items_per_box
         });
       }
+      // Note: If on_hand = 0, we still created the medication entry above,
+      // but we don't add any batches. This allows medications with pending
+      // orders to remain visible even when stock reaches zero.
     }
 
     // Calculate total number_of_boxes for each medication and add to response
@@ -121,8 +127,53 @@ exports.handler = async () => {
       }, 0);
     });
 
-    // Remove entries with no batches (no actual stock)
-    const medications = Object.values(medsByKey).filter(med => med.batches.length > 0);
+    // Query pending orders BEFORE filtering medications
+    // We need this to keep medications with pending orders even if they have no stock
+    const ordersQuery = `
+      SELECT
+        o.id,
+        o.medication_id,
+        CASE
+          WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
+          ELSE m.name || ' ' || m.strength
+        END AS med_name,
+        o.quantity,
+        o.urgency,
+        o.notes,
+        o.pharmacist_email,
+        o.status,
+        o.ordered_at,
+        o.fulfilled_at,
+        u.username AS user_name
+      FROM orders o
+      LEFT JOIN medications m ON m.id = o.medication_id
+      LEFT JOIN users u ON u.id = o.user_id
+      WHERE o.status = 'pending'
+      ORDER BY o.ordered_at DESC;
+    `;
+    const ordersResult = await db.query(ordersQuery);
+
+    const orders = ordersResult.rows.map(row => ({
+      id: row.id,
+      medId: row.medication_id,
+      medName: row.med_name || '',
+      quantity: row.quantity,
+      urgency: row.urgency,
+      notes: row.notes || '',
+      pharmacistEmail: row.pharmacist_email,
+      status: row.status,
+      orderedAt: row.ordered_at ? row.ordered_at.toISOString() : new Date().toISOString(),
+      fulfilledAt: row.fulfilled_at ? row.fulfilled_at.toISOString() : null,
+      user: row.user_name || 'System'
+    }));
+
+    // Create set of medication IDs with pending orders
+    const medicationIdsWithOrders = new Set(orders.map(o => o.medId));
+
+    // Filter medications: keep if they have batches OR have pending orders
+    const medications = Object.values(medsByKey).filter(med =>
+      med.batches.length > 0 || medicationIdsWithOrders.has(med.internalId)
+    );
 
     // Query recent transactions for Activity tab
     // Note: transactions table still has medication_id, so we join to get display info
@@ -188,44 +239,8 @@ exports.handler = async () => {
       groupName: row.group_name
     }));
 
-    // Query pending orders
-    const ordersQuery = `
-      SELECT
-        o.id,
-        o.medication_id,
-        CASE
-          WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
-          ELSE m.name || ' ' || m.strength
-        END AS med_name,
-        o.quantity,
-        o.urgency,
-        o.notes,
-        o.pharmacist_email,
-        o.status,
-        o.ordered_at,
-        o.fulfilled_at,
-        u.username AS user_name
-      FROM orders o
-      LEFT JOIN medications m ON m.id = o.medication_id
-      LEFT JOIN users u ON u.id = o.user_id
-      WHERE o.status = 'pending'
-      ORDER BY o.ordered_at DESC;
-    `;
-    const ordersResult = await db.query(ordersQuery);
-
-    const orders = ordersResult.rows.map(row => ({
-      id: row.id,
-      medId: row.medication_id,
-      medName: row.med_name || '',
-      quantity: row.quantity,
-      urgency: row.urgency,
-      notes: row.notes || '',
-      pharmacistEmail: row.pharmacist_email,
-      status: row.status,
-      orderedAt: row.ordered_at ? row.ordered_at.toISOString() : new Date().toISOString(),
-      fulfilledAt: row.fulfilled_at ? row.fulfilled_at.toISOString() : null,
-      user: row.user_name || 'System'
-    }));
+    // Orders already queried above (before filtering medications)
+    // to allow medications with pending orders to remain visible even with zero stock
 
     return {
       statusCode: 200,
