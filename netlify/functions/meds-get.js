@@ -63,10 +63,10 @@ exports.handler = async () => {
       const medDetailsById = row.medication_id ? medicationDetailsById[row.medication_id] : undefined;
       const medDetails = medDetailsById || medicationDetailsByDisplayId[displayId] || {};
 
-      const rowMinLevelBoxes = row.min_level_boxes !== undefined && row.min_level_boxes !== null
-        ? Number(row.min_level_boxes)
-        : null;
-      const resolvedMinLevelBoxes = Number.isFinite(rowMinLevelBoxes) ? rowMinLevelBoxes : medDetails.minLevelBoxes || 0;
+      const rawRowMinLevelBoxes = row.min_level_boxes;
+      const resolvedMinLevelBoxes = Number.isFinite(Number(rawRowMinLevelBoxes))
+        ? Number(rawRowMinLevelBoxes)
+        : (medDetails.minLevelBoxes || 0);
       
       // Build display name: Medication Name + " " + Strength Raw (e.g., "Paracetamol 500mg")
       const displayName = row.strength_raw && row.strength_raw !== 'N/A'
@@ -76,7 +76,7 @@ exports.handler = async () => {
       if (!medsByKey[key]) {
         medsByKey[key] = {
           id: displayId, // Use display_id as the identifier (no internal id exposed)
-          internalId: (medDetailsById && medDetailsById.internalId) || medDetails.internalId || row.medication_id || null,
+          internalId: row.medication_id || (medDetailsById && medDetailsById.internalId) || medDetails.internalId || null,
           name: displayName, // Display name: "Medication Name + Strength Raw"
           // Extended fields from inventory_full view for sorting/filtering
           medicationName: row.medication_name, // Base medication name (without strength)
