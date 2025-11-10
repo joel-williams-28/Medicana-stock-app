@@ -175,17 +175,56 @@ exports.handler = async () => {
     const locationsQuery = `
       SELECT id, display_name, group_name
       FROM locations
-      ORDER BY 
+      ORDER BY
         CASE WHEN group_name IS NOT NULL THEN 0 ELSE 1 END,
         group_name,
         display_name;
     `;
     const locationsResult = await db.query(locationsQuery);
-    
+
     const locations = locationsResult.rows.map(row => ({
       id: row.id,
       displayName: row.display_name,
       groupName: row.group_name
+    }));
+
+    // Query pending orders
+    const ordersQuery = `
+      SELECT
+        o.id,
+        o.medication_id,
+        CASE
+          WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
+          ELSE m.name || ' ' || m.strength
+        END AS med_name,
+        o.quantity,
+        o.urgency,
+        o.notes,
+        o.pharmacist_email,
+        o.status,
+        o.ordered_at,
+        o.fulfilled_at,
+        u.username AS user_name
+      FROM orders o
+      LEFT JOIN medications m ON m.id = o.medication_id
+      LEFT JOIN users u ON u.id = o.user_id
+      WHERE o.status = 'pending'
+      ORDER BY o.ordered_at DESC;
+    `;
+    const ordersResult = await db.query(ordersQuery);
+
+    const orders = ordersResult.rows.map(row => ({
+      id: row.id,
+      medId: row.medication_id,
+      medName: row.med_name || '',
+      quantity: row.quantity,
+      urgency: row.urgency,
+      notes: row.notes || '',
+      pharmacistEmail: row.pharmacist_email,
+      status: row.status,
+      orderedAt: row.ordered_at ? row.ordered_at.toISOString() : new Date().toISOString(),
+      fulfilledAt: row.fulfilled_at ? row.fulfilled_at.toISOString() : null,
+      user: row.user_name || 'System'
     }));
 
     return {
@@ -193,7 +232,8 @@ exports.handler = async () => {
       body: JSON.stringify({
         medications,
         transactions,
-        locations
+        locations,
+        orders
       })
     };
   } catch (e) {

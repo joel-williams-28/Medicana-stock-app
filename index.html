@@ -548,6 +548,8 @@
 
         const [locations, setLocations] = useState([]);
 
+        const [orders, setOrders] = useState([]);
+
         // Load saved state from localStorage on first mount
       useEffect(() => {
           const savedAuth = storage.load('medicana_auth');
@@ -988,13 +990,13 @@
       });
 
       const hasPendingOrder = (medId) => {
-        const orders = transactions.filter(t => t.medId === medId && t.type === 'order');
-        const fulfilled = transactions.filter(t => t.medId === medId && t.type === 'order_fulfilled');
-        return orders.length > fulfilled.length;
+        // Check orders from database (using internalId)
+        return orders.some(o => o.medId === medId && o.status === 'pending');
       };
         const getMostRecentOrder = (medId) => {
-          const orders = transactions.filter(t => t.medId === medId && t.type === 'order');
-          return orders.length > 0 ? orders[0] : null;
+          // Get most recent pending order from database
+          const pendingOrders = orders.filter(o => o.medId === medId && o.status === 'pending');
+          return pendingOrders.length > 0 ? pendingOrders[0] : null;
         };
 
         // Get dynamic filter options (moved here after functions are defined)
@@ -1521,10 +1523,11 @@
             
             // Start polling to keep data in sync
             window.api.startPolling({
-              onData: ({ medications: meds, transactions: txs, locations: locs }) => {
+              onData: ({ medications: meds, transactions: txs, locations: locs, orders: ords }) => {
                 setMedications(meds || []);
                 setTransactions(txs || []);
                 setLocations(locs || []);
+                setOrders(ords || []);
               },
               intervalMs: 20000
             });
@@ -2529,25 +2532,78 @@ Medicana Stock Management System`;
         return { subject, body };
       };
 
-      const handleCopyToClipboard = () => {
+      const handleCopyToClipboard = async () => {
           if (!orderForm.quantity || parseInt(orderForm.quantity) <= 0) { alert('Please enter a valid quantity'); return; }
-          const orderTransaction = createTransaction({ medId: orderForm.med.id, medName: orderForm.med.name, type: 'order', amount: parseInt(orderForm.quantity), user: getCurrentUserInfo()?.fullName || auth.currentUser, location: 'Order Request', note: `Order placed (copied to clipboard) - Quantity: ${orderForm.quantity} ${orderForm.med.unit} - Urgency: ${orderForm.urgency.toUpperCase()}${orderForm.notes ? ` - ${orderForm.notes}` : ''} - Sent to: ${orderForm.pharmacistEmail}` }, transactions.length + 1);
-        setTransactions([orderTransaction, ...transactions]);
-        const { subject, body } = generateEmailContent();
-        const fullText = `To: ${orderForm.pharmacistEmail}\nSubject: ${subject}\n\n${body}`;
-        navigator.clipboard.writeText(fullText).then(() => {
+
+          // Save order to backend database
+          try {
+            const userInfo = getCurrentUserInfo();
+            await window.api.placeOrder({
+              medicationId: orderForm.med.internalId,
+              userId: userInfo?.id || null,
+              quantity: parseInt(orderForm.quantity),
+              urgency: orderForm.urgency,
+              notes: orderForm.notes || '',
+              pharmacistEmail: orderForm.pharmacistEmail
+            });
+
+            // Copy to clipboard
+            const { subject, body } = generateEmailContent();
+            const fullText = `To: ${orderForm.pharmacistEmail}\nSubject: ${subject}\n\n${body}`;
+            await navigator.clipboard.writeText(fullText);
+
+            // Close the modal
             setOrderForm({ med: null, quantity: '', urgency: 'routine', notes: '', pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk' });
-          }).catch(() => { alert('Failed to copy to clipboard. Please try selecting and copying the text manually.'); });
+
+            // Refresh data to show updated order status
+            const data = await window.api.fetchAllData();
+            setMedications(data.medications || []);
+            setTransactions(data.transactions || []);
+            setOrders(data.orders || []);
+          } catch (err) {
+            console.error('Failed to place order:', err);
+            alert('Failed to place order. Please try again.');
+          }
       };
 
-      const handleOpenOutlook = () => {
+      const handleOpenOutlook = async () => {
           if (!orderForm.quantity || parseInt(orderForm.quantity) <= 0) { alert('Please enter a valid quantity'); return; }
-          const orderTransaction = createTransaction({ medId: orderForm.med.id, medName: orderForm.med.name, type: 'order', amount: parseInt(orderForm.quantity), user: getCurrentUserInfo()?.fullName || auth.currentUser, location: 'Order Request', note: `Order placed - Quantity: ${orderForm.quantity} ${orderForm.med.unit} - Urgency: ${orderForm.urgency.toUpperCase()}${orderForm.notes ? ` - ${orderForm.notes}` : ''} - Sent to: ${orderForm.pharmacistEmail}` }, transactions.length + 1);
-        setTransactions([orderTransaction, ...transactions]);
-        const { subject, body } = generateEmailContent();
-        const mailtoLink = `mailto:${orderForm.pharmacistEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-        window.location.href = mailtoLink;
-          setTimeout(() => { setOrderForm({ med: null, quantity: '', urgency: 'routine', notes: '', pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk' }); }, 1000);
+
+          // Save order to backend database
+          try {
+            const userInfo = getCurrentUserInfo();
+            await window.api.placeOrder({
+              medicationId: orderForm.med.internalId,
+              userId: userInfo?.id || null,
+              quantity: parseInt(orderForm.quantity),
+              urgency: orderForm.urgency,
+              notes: orderForm.notes || '',
+              pharmacistEmail: orderForm.pharmacistEmail
+            });
+
+            // Open email client
+            const { subject, body } = generateEmailContent();
+            const mailtoLink = `mailto:${orderForm.pharmacistEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            window.location.href = mailtoLink;
+
+            // Close the modal after a short delay
+            setTimeout(async () => {
+              setOrderForm({ med: null, quantity: '', urgency: 'routine', notes: '', pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk' });
+
+              // Refresh data to show updated order status
+              try {
+                const data = await window.api.fetchAllData();
+                setMedications(data.medications || []);
+                setTransactions(data.transactions || []);
+                setOrders(data.orders || []);
+              } catch (refreshErr) {
+                console.error('Failed to refresh data:', refreshErr);
+              }
+            }, 1000);
+          } catch (err) {
+            console.error('Failed to place order:', err);
+            alert('Failed to place order. Please try again.');
+          }
       };
 
       const generateLowStockEmailContent = () => {
