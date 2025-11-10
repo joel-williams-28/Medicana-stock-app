@@ -17,16 +17,17 @@ exports.handler = async (event) => {
       name, 
       strength, 
       type,       // maps to "form" in DB
-      barcode, 
-      minLevel,  // This should be boxes, not items
-      standardItemsPerBox 
+      barcode,
+      minLevel,       // boxes
+      minLevelBoxes,  // boxes (alt name tolerated)
+      standardItemsPerBox
     } = body;
 
-    console.log('meds-add received:', { id, name, minLevel, standardItemsPerBox, barcode });
+    console.log('meds-add received:', { id, name, minLevel, minLevelBoxes, standardItemsPerBox, barcode });
 
-    // Convert minLevel to boxes (treating it as boxes already)
-    // Always persist min level, defaulting to 0 if not provided or invalid
-    const minBoxes = Number.isFinite(Number(minLevel)) ? Number(minLevel) : 0;
+    // Accept either 'minLevel' or 'minLevelBoxes', default to 0
+    const rawMin = (minLevelBoxes !== undefined ? minLevelBoxes : minLevel);
+    const minBoxes = Number.isFinite(Number(rawMin)) ? Number(rawMin) : 0;
     
     console.log('meds-add parsed minBoxes:', minBoxes);
 

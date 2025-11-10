@@ -16,13 +16,16 @@ exports.handler = async (event) => {
       name, 
       strength, 
       form,       // maps to "form" in DB
-      barcode, 
+      barcode,
       standardItemsPerBox,
-      minLevel  // This should be boxes, not items
+      minLevel,          // boxes
+      minLevelBoxes      // boxes (alt name tolerated)
     } = JSON.parse(event.body || '{}');
 
-    // Convert minLevel to boxes (treating it as boxes already)
-    const minBoxes = Number.isFinite(Number(minLevel)) ? Number(minLevel) : 0;
+    // Accept either 'minLevel' or 'minLevelBoxes' from client; prefer a defined one
+    const rawMin = (minLevelBoxes !== undefined ? minLevelBoxes : minLevel);
+    const minBoxes = Number.isFinite(Number(rawMin)) ? Number(rawMin) : 0;
+    const minProvided = (minLevelBoxes !== undefined || minLevel !== undefined);
 
     // Validate required fields
     if (!name) {
@@ -47,7 +50,7 @@ exports.handler = async (event) => {
       if (barcodeResult.rows.length > 0) {
         // Found existing medication by barcode - update min_level_boxes if provided
         medicationId = barcodeResult.rows[0].id;
-        if (minLevel !== undefined && minLevel !== null) {
+        if (minProvided) {
           await db.query(
             'UPDATE medications SET min_level_boxes = $1 WHERE id = $2',
             [minBoxes, medicationId]
@@ -90,7 +93,7 @@ exports.handler = async (event) => {
       if (slugResult.rows.length > 0) {
         // Found existing medication by slug - update min_level_boxes if provided
         medicationId = slugResult.rows[0].id;
-        if (minLevel !== undefined && minLevel !== null) {
+        if (minProvided) {
           await db.query(
             'UPDATE medications SET min_level_boxes = $1 WHERE id = $2',
             [minBoxes, medicationId]
