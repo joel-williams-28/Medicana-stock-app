@@ -113,6 +113,17 @@ window.api = (function () {
     return out;
   }
 
+  async function placeOrder(payload) {
+    const res = await fetch('/.netlify/functions/order-place', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const out = await res.json();
+    if (!res.ok || !out.success) throw new Error(out.message || 'Order placement failed');
+    return out;
+  }
+
   async function loginUser(username, password) {
     const res = await fetch(LOGIN_ENDPOINT, {
       method: 'POST',
@@ -155,6 +166,7 @@ window.api = (function () {
     setMedicationActive,
     medicationUpsert,
     setMedicationMinLevel,
+    placeOrder,
     loginUser,
     startPolling,
     stopPolling
