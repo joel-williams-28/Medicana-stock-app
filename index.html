@@ -486,7 +486,8 @@
         boxQuantity: '',
         itemsPerBox: '',
         individualQuantity: '',
-        error: ''
+        error: '',
+        isSubmitting: false
       });
 
       const [newMedicationOrderForm, setNewMedicationOrderForm] = useState({
@@ -2785,6 +2786,11 @@ Medicana Stock Management System`;
       };
 
       const handleFulfilOrder = async () => {
+        // Prevent multiple submissions
+        if (fulfilOrderForm.isSubmitting) {
+          return;
+        }
+
         // Validate form
         if (!fulfilOrderForm.brand.trim() || !fulfilOrderForm.expiryMonth || !fulfilOrderForm.expiryYear) {
           setFulfilOrderForm(prev => ({ ...prev, error: 'Please enter brand name and expiry date' }));
@@ -2814,10 +2820,13 @@ Medicana Stock Management System`;
           totalQuantity = parseInt(fulfilOrderForm.individualQuantity);
         }
 
+        // Set submitting state
+        setFulfilOrderForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
+
         try {
           const currentUser = getCurrentUserInfo();
           if (!currentUser || !currentUser.id) {
-            setFulfilOrderForm(prev => ({ ...prev, error: 'User not logged in' }));
+            setFulfilOrderForm(prev => ({ ...prev, error: 'User not logged in', isSubmitting: false }));
             return;
           }
 
@@ -2850,7 +2859,7 @@ Medicana Stock Management System`;
           await window.api.fulfillOrder(fulfilOrderForm.order.id);
 
           // Refresh data from backend
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, 500));
           const data = await window.api.fetchAllData();
           setMedications(data.medications || []);
           setTransactions(data.transactions || []);
@@ -2871,13 +2880,14 @@ Medicana Stock Management System`;
             boxQuantity: '',
             itemsPerBox: '',
             individualQuantity: '',
-            error: ''
+            error: '',
+            isSubmitting: false
           });
           setModals(prev => ({ ...prev, showFulfilOrder: false }));
 
         } catch (err) {
           console.error('Failed to fulfill order:', err);
-          setFulfilOrderForm(prev => ({ ...prev, error: err.message || 'Failed to fulfill order' }));
+          setFulfilOrderForm(prev => ({ ...prev, error: err.message || 'Failed to fulfill order', isSubmitting: false }));
         }
       };
 
@@ -3284,7 +3294,7 @@ Medicana Stock Management System`;
                                       }
                                       // Get the pending order
                                       const pendingOrder = getMostRecentOrder(med);
-                                      const defaultQuantityType = med.standardItemsPerBox ? 'boxes' : 'individuals';
+                                      const defaultQuantityType = 'boxes';
 
                                       // Pre-fill location if medication is only in one location
                                       let defaultLocationId = '';
@@ -3320,7 +3330,7 @@ Medicana Stock Management System`;
                                       alert(`This medication is in multiple locations: ${med.locations.sort().join(', ')}. Please select a specific location to adjust stock.`);
                                       return;
                                     }
-                                    const defaultQuantityType = med.standardItemsPerBox ? 'boxes' : 'individuals';
+                                    const defaultQuantityType = 'boxes';
                                     setUi(prev => ({ ...prev, selectedMed: med }));
                                     setModals(prev => ({ ...prev, showAdjustStock: true }));
                                     setAdjustmentForm({ amount: '', note: '', location: '', type: defaultQuantityType, action: 'out', batchId: '', sourceDepartment: '', stockInSource: 'transfer', transferBatchOption: 'existing', deliveryBatchOption: 'new', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' });
@@ -6945,9 +6955,14 @@ Medicana Stock Management System`;
                     <div className="flex gap-2">
                       <button
                         onClick={handleFulfilOrder}
-                        className="flex-1 bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 transition-colors font-medium"
+                        disabled={fulfilOrderForm.isSubmitting}
+                        className={`flex-1 py-2 rounded-lg transition-colors font-medium ${
+                          fulfilOrderForm.isSubmitting
+                            ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
+                            : 'bg-purple-600 text-white hover:bg-purple-700'
+                        }`}
                       >
-                        Fulfil Order & Add Stock
+                        {fulfilOrderForm.isSubmitting ? 'Fulfilling Order...' : 'Fulfil Order & Add Stock'}
                       </button>
                       <button
                         onClick={() => {
@@ -6965,7 +6980,8 @@ Medicana Stock Management System`;
                             boxQuantity: '',
                             itemsPerBox: '',
                             individualQuantity: '',
-                            error: ''
+                            error: '',
+                            isSubmitting: false
                           });
                           setModals(prev => ({ ...prev, showFulfilOrder: false }));
                         }}
