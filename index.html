@@ -476,6 +476,8 @@
         order: null,
         med: null,
         selectedLocationId: '',
+        batchOption: 'new', // 'new' or 'existing'
+        selectedBatchId: '',
         brand: '',
         batchNumber: '',
         expiryMonth: '',
@@ -2737,6 +2739,51 @@ Medicana Stock Management System`;
         }, 1000);
       };
 
+      const handleFulfilOrderBatchSelect = (batchId) => {
+        if (!batchId) {
+          // Reset to new batch mode
+          setFulfilOrderForm(prev => ({
+            ...prev,
+            selectedBatchId: '',
+            brand: '',
+            batchNumber: '',
+            expiryMonth: '',
+            expiryYear: '',
+            itemsPerBox: prev.med?.standardItemsPerBox || ''
+          }));
+          return;
+        }
+
+        // Get all batches from all locations for this medication
+        const allBatches = [];
+        medications.forEach(med => {
+          if (med.medicationName === fulfilOrderForm.med.medicationName &&
+              med.strengthRaw === fulfilOrderForm.med.strengthRaw &&
+              med.type === fulfilOrderForm.med.type) {
+            if (med.batches && Array.isArray(med.batches)) {
+              allBatches.push(...med.batches);
+            }
+          }
+        });
+
+        const selectedBatch = allBatches.find(b => b.id === batchId);
+        if (selectedBatch) {
+          const expiryDate = selectedBatch.expiryDate ? new Date(selectedBatch.expiryDate + '-01') : null;
+          const expiryMonth = expiryDate ? String(expiryDate.getMonth() + 1).padStart(2, '0') : '';
+          const expiryYear = expiryDate ? String(expiryDate.getFullYear()) : '';
+
+          setFulfilOrderForm(prev => ({
+            ...prev,
+            selectedBatchId: batchId,
+            batchNumber: selectedBatch.batchNumber || selectedBatch.batchCode || '',
+            brand: selectedBatch.brand || '',
+            expiryMonth: expiryMonth,
+            expiryYear: expiryYear,
+            itemsPerBox: selectedBatch.itemsPerBox ? String(selectedBatch.itemsPerBox) : (prev.med?.standardItemsPerBox || '')
+          }));
+        }
+      };
+
       const handleFulfilOrder = async () => {
         // Validate form
         if (!fulfilOrderForm.brand.trim() || !fulfilOrderForm.expiryMonth || !fulfilOrderForm.expiryYear) {
@@ -2814,6 +2861,8 @@ Medicana Stock Management System`;
             order: null,
             med: null,
             selectedLocationId: '',
+            batchOption: 'new',
+            selectedBatchId: '',
             brand: '',
             batchNumber: '',
             expiryMonth: '',
@@ -3250,6 +3299,8 @@ Medicana Stock Management System`;
                                         order: pendingOrder,
                                         med: med,
                                         selectedLocationId: defaultLocationId,
+                                        batchOption: 'new',
+                                        selectedBatchId: '',
                                         brand: '',
                                         batchNumber: '',
                                         expiryMonth: '',
@@ -3269,7 +3320,7 @@ Medicana Stock Management System`;
                                       alert(`This medication is in multiple locations: ${med.locations.sort().join(', ')}. Please select a specific location to adjust stock.`);
                                       return;
                                     }
-                                    const defaultQuantityType = med.standardItemsPerBox ? 'boxes' : 'individual';
+                                    const defaultQuantityType = med.standardItemsPerBox ? 'boxes' : 'individuals';
                                     setUi(prev => ({ ...prev, selectedMed: med }));
                                     setModals(prev => ({ ...prev, showAdjustStock: true }));
                                     setAdjustmentForm({ amount: '', note: '', location: '', type: defaultQuantityType, action: 'out', batchId: '', sourceDepartment: '', stockInSource: 'transfer', transferBatchOption: 'existing', deliveryBatchOption: 'new', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' });
@@ -4097,7 +4148,9 @@ Medicana Stock Management System`;
                     {deliveryForm.quantityType === 'boxes' ? (
                       <div className="grid grid-cols-2 gap-3 mb-4">
                         <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">Number of Boxes <span className="text-red-600">*</span></label>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Number of {deliveryForm.boxQuantity && parseInt(deliveryForm.boxQuantity) === 1 ? 'Box' : 'Boxes'} <span className="text-red-600">*</span>
+                              </label>
                               <input type="number" value={deliveryForm.boxQuantity} onChange={(e) => setDeliveryForm(prev => ({ ...prev, boxQuantity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. 5" min="1" />
                         </div>
                         <div>
@@ -4781,7 +4834,9 @@ Medicana Stock Management System`;
                     {deliveryForm.quantityType === 'boxes' ? (
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Number of Boxes <span className="text-red-600">*</span></label>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Number of {deliveryForm.boxQuantity && parseInt(deliveryForm.boxQuantity) === 1 ? 'Box' : 'Boxes'} <span className="text-red-600">*</span>
+                          </label>
                           <input type="number" value={deliveryForm.boxQuantity} onChange={(e) => setDeliveryForm(prev => ({ ...prev, boxQuantity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. 5" />
                         </div>
                         <div>
@@ -5129,7 +5184,9 @@ Medicana Stock Management System`;
                     {addMedForm.quantityType === 'boxes' ? (
                       <div className="grid grid-cols-2 gap-3 mb-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Number of Boxes <span className="text-red-600">*</span></label>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Number of {addMedForm.boxQuantity && parseInt(addMedForm.boxQuantity) === 1 ? 'Box' : 'Boxes'} <span className="text-red-600">*</span>
+                          </label>
                           <input type="number" value={addMedForm.boxQuantity} onChange={(e) => setAddMedForm(prev => ({ ...prev, boxQuantity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. 5" min="1" />
                         </div>
                         <div>
@@ -5494,7 +5551,9 @@ Medicana Stock Management System`;
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Number of Boxes</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Number of {barcodeNewMedForm.boxQuantity && parseInt(barcodeNewMedForm.boxQuantity) === 1 ? 'Box' : 'Boxes'}
+                          </label>
                           <input
                             type="number"
                             value={barcodeNewMedForm.boxQuantity}
@@ -5783,7 +5842,9 @@ Medicana Stock Management System`;
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Number of Boxes</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Number of {addMedForm.boxQuantity && parseInt(addMedForm.boxQuantity) === 1 ? 'Box' : 'Boxes'}
+                          </label>
                           <input
                             type="number"
                             value={addMedForm.boxQuantity}
@@ -6627,10 +6688,96 @@ Medicana Stock Management System`;
                       <p className="text-xs text-gray-500 mt-1"><span className="text-green-600 font-semibold">Green locations ✓</span> already have this medication</p>
                     </div>
 
-                    {/* Batch Details */}
-                    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
-                      <p className="text-sm font-medium text-blue-800 mb-2">Enter batch details for the delivery</p>
+                    {/* Batch Selection Option */}
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Batch Option</label>
+                      <div className="flex gap-4 mb-3">
+                        <label className="flex items-center cursor-pointer">
+                          <input
+                            type="radio"
+                            name="fulfilBatchOption"
+                            value="new"
+                            checked={fulfilOrderForm.batchOption === 'new'}
+                            onClick={(e) => {
+                              setFulfilOrderForm(prev => ({ ...prev, batchOption: 'new', selectedBatchId: '', error: '' }));
+                              handleFulfilOrderBatchSelect('');
+                            }}
+                            className="mr-2"
+                          />
+                          New Batch
+                        </label>
+                        <label className="flex items-center cursor-pointer">
+                          <input
+                            type="radio"
+                            name="fulfilBatchOption"
+                            value="existing"
+                            checked={fulfilOrderForm.batchOption === 'existing'}
+                            onClick={(e) => {
+                              setFulfilOrderForm(prev => ({ ...prev, batchOption: 'existing', selectedBatchId: '', error: '' }));
+                            }}
+                            className="mr-2"
+                          />
+                          Use Existing Batch Details
+                        </label>
+                      </div>
                     </div>
+
+                    {/* Batch Dropdown for Existing Batches */}
+                    {fulfilOrderForm.batchOption === 'existing' && (
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Select Batch <span className="text-red-600">*</span></label>
+                        <select
+                          value={fulfilOrderForm.selectedBatchId}
+                          onChange={(e) => handleFulfilOrderBatchSelect(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        >
+                          <option value="">Select batch...</option>
+                          {(() => {
+                            // Get all batches from all locations for this medication (including zero-stock batches)
+                            const allBatches = [];
+                            const seenBatchKeys = new Set();
+
+                            medications.forEach(med => {
+                              if (med.medicationName === fulfilOrderForm.med.medicationName &&
+                                  med.strengthRaw === fulfilOrderForm.med.strengthRaw &&
+                                  med.type === fulfilOrderForm.med.type) {
+                                if (med.batches && Array.isArray(med.batches)) {
+                                  med.batches.forEach(batch => {
+                                    // Use a unique key to avoid duplicates
+                                    const batchKey = `${batch.batchNumber || batch.batchCode}-${batch.brand}-${batch.expiryDate}`;
+                                    if (!seenBatchKeys.has(batchKey)) {
+                                      seenBatchKeys.add(batchKey);
+                                      allBatches.push({ ...batch, location: med.location });
+                                    }
+                                  });
+                                }
+                              }
+                            });
+
+                            return allBatches
+                              .sort((a, b) => new Date(a.expiryDate + '-01') - new Date(b.expiryDate + '-01'))
+                              .map((batch, idx) => {
+                                const formattedExpiry = formatExpiry(batch.expiryDate);
+                                const batchLabel = batch.batchNumber || batch.batchCode || `Batch ${idx + 1}`;
+                                const hasStock = batch.quantity > 0;
+                                return (
+                                  <option key={batch.id} value={batch.id}>
+                                    {batchLabel} - {batch.brand} - Exp: {formattedExpiry} ({batch.location}){!hasStock ? ' [No Stock]' : ''}
+                                  </option>
+                                );
+                              });
+                          })()}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">Select an existing batch to auto-fill brand, expiry date, and items per box</p>
+                      </div>
+                    )}
+
+                    {/* Batch Details */}
+                    {fulfilOrderForm.batchOption === 'new' && (
+                      <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                        <p className="text-sm font-medium text-blue-800 mb-2">Enter batch details for the delivery</p>
+                      </div>
+                    )}
 
                     <div className="mb-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Brand <span className="text-red-600">*</span></label>
@@ -6640,6 +6787,7 @@ Medicana Stock Management System`;
                         onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, brand: e.target.value, error: '' }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                         placeholder="e.g. Actavis, Accord, Teva"
+                        readOnly={fulfilOrderForm.batchOption === 'existing' && fulfilOrderForm.selectedBatchId}
                       />
                     </div>
 
@@ -6651,6 +6799,7 @@ Medicana Stock Management System`;
                         onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, batchNumber: e.target.value }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                         placeholder="e.g. BN123456"
+                        readOnly={fulfilOrderForm.batchOption === 'existing' && fulfilOrderForm.selectedBatchId}
                       />
                     </div>
 
@@ -6663,6 +6812,7 @@ Medicana Stock Management System`;
                             value={fulfilOrderForm.expiryMonth}
                             onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, expiryMonth: e.target.value, error: '' }))}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                            disabled={fulfilOrderForm.batchOption === 'existing' && fulfilOrderForm.selectedBatchId}
                           >
                             <option value="">Select...</option>
                             {['January','February','March','April','May','June','July','August','September','October','November','December'].map((month, idx) => (
@@ -6675,11 +6825,15 @@ Medicana Stock Management System`;
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => setFulfilOrderForm(prev => {
-                                const year = prev.expiryYear ? parseInt(prev.expiryYear) : new Date().getFullYear();
-                                return { ...prev, expiryYear: String(year - 1) };
-                              })}
+                              onClick={() => {
+                                if (fulfilOrderForm.batchOption === 'existing' && fulfilOrderForm.selectedBatchId) return;
+                                setFulfilOrderForm(prev => {
+                                  const year = prev.expiryYear ? parseInt(prev.expiryYear) : new Date().getFullYear();
+                                  return { ...prev, expiryYear: String(year - 1) };
+                                });
+                              }}
                               className="text-slate-700 hover:text-slate-900 text-2xl leading-none p-0 border-0 bg-transparent"
+                              disabled={fulfilOrderForm.batchOption === 'existing' && fulfilOrderForm.selectedBatchId}
                             >
                               ←
                             </button>
@@ -6691,14 +6845,19 @@ Medicana Stock Management System`;
                               className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-center"
                               min="2024"
                               max="2099"
+                              readOnly={fulfilOrderForm.batchOption === 'existing' && fulfilOrderForm.selectedBatchId}
                             />
                             <button
                               type="button"
-                              onClick={() => setFulfilOrderForm(prev => {
-                                const year = prev.expiryYear ? parseInt(prev.expiryYear) : new Date().getFullYear();
-                                return { ...prev, expiryYear: String(year + 1) };
-                              })}
+                              onClick={() => {
+                                if (fulfilOrderForm.batchOption === 'existing' && fulfilOrderForm.selectedBatchId) return;
+                                setFulfilOrderForm(prev => {
+                                  const year = prev.expiryYear ? parseInt(prev.expiryYear) : new Date().getFullYear();
+                                  return { ...prev, expiryYear: String(year + 1) };
+                                });
+                              }}
                               className="text-slate-700 hover:text-slate-900 text-2xl leading-none p-0 border-0 bg-transparent"
+                              disabled={fulfilOrderForm.batchOption === 'existing' && fulfilOrderForm.selectedBatchId}
                             >
                               →
                             </button>
@@ -6717,7 +6876,9 @@ Medicana Stock Management System`;
                             name="fulfilQuantityType"
                             value="boxes"
                             checked={fulfilOrderForm.quantityType === 'boxes'}
-                            onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, quantityType: 'boxes', error: '' }))}
+                            onClick={(e) => {
+                              setFulfilOrderForm(prev => ({ ...prev, quantityType: 'boxes', boxQuantity: '', itemsPerBox: prev.itemsPerBox || (prev.med?.standardItemsPerBox || ''), error: '' }));
+                            }}
                             className="mr-2"
                           />
                           Boxes
@@ -6728,10 +6889,12 @@ Medicana Stock Management System`;
                             name="fulfilQuantityType"
                             value="individuals"
                             checked={fulfilOrderForm.quantityType === 'individuals'}
-                            onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, quantityType: 'individuals', error: '' }))}
+                            onClick={(e) => {
+                              setFulfilOrderForm(prev => ({ ...prev, quantityType: 'individuals', individualQuantity: '', error: '' }));
+                            }}
                             className="mr-2"
                           />
-                          Individual {fulfilOrderForm.med.unit}
+                          Individual {pluralizeUnit(1, fulfilOrderForm.med.unit)}
                         </label>
                       </div>
                     </div>
@@ -6739,7 +6902,9 @@ Medicana Stock Management System`;
                     {fulfilOrderForm.quantityType === 'boxes' ? (
                       <div className="grid grid-cols-2 gap-3 mb-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Number of Boxes <span className="text-red-600">*</span></label>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Number of {fulfilOrderForm.boxQuantity && parseInt(fulfilOrderForm.boxQuantity) === 1 ? 'Box' : 'Boxes'} <span className="text-red-600">*</span>
+                          </label>
                           <input
                             type="number"
                             value={fulfilOrderForm.boxQuantity}
@@ -6790,6 +6955,8 @@ Medicana Stock Management System`;
                             order: null,
                             med: null,
                             selectedLocationId: '',
+                            batchOption: 'new',
+                            selectedBatchId: '',
                             brand: '',
                             batchNumber: '',
                             expiryMonth: '',
