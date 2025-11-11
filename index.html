@@ -2749,7 +2749,8 @@ Medicana Stock Management System`;
             batchNumber: '',
             expiryMonth: '',
             expiryYear: '',
-            itemsPerBox: prev.med?.standardItemsPerBox || ''
+            itemsPerBox: prev.med?.standardItemsPerBox || '',
+            error: ''
           }));
           return;
         }
@@ -2779,7 +2780,15 @@ Medicana Stock Management System`;
             brand: selectedBatch.brand || '',
             expiryMonth: expiryMonth,
             expiryYear: expiryYear,
-            itemsPerBox: selectedBatch.itemsPerBox ? String(selectedBatch.itemsPerBox) : (prev.med?.standardItemsPerBox || '')
+            itemsPerBox: selectedBatch.itemsPerBox ? String(selectedBatch.itemsPerBox) : (prev.med?.standardItemsPerBox || ''),
+            error: ''
+          }));
+        } else {
+          // Update selectedBatchId even if batch not found, to show selection in dropdown
+          setFulfilOrderForm(prev => ({
+            ...prev,
+            selectedBatchId: batchId,
+            error: ''
           }));
         }
       };
