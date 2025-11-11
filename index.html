@@ -404,7 +404,8 @@
           showNewMedicationOrder: false,
           showBarcodeNewMedication: false,
           showLowStockAlert: false,
-          showBarcodeStockAdjust: false
+          showBarcodeStockAdjust: false,
+          showFulfilOrder: false
       });
       const [adjustmentForm, setAdjustmentForm] = useState({
         amount: '',
@@ -469,6 +470,21 @@
         urgency: 'routine',
         notes: '',
         pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk'
+      });
+
+      const [fulfilOrderForm, setFulfilOrderForm] = useState({
+        order: null,
+        med: null,
+        selectedLocationId: '',
+        brand: '',
+        batchNumber: '',
+        expiryMonth: '',
+        expiryYear: '',
+        quantityType: 'boxes',
+        boxQuantity: '',
+        itemsPerBox: '',
+        individualQuantity: '',
+        error: ''
       });
 
       const [newMedicationOrderForm, setNewMedicationOrderForm] = useState({
@@ -2695,30 +2711,125 @@ Medicana Stock Management System`;
       const handleOpenOutlookNewMedication = () => {
         const medicationName = `${newMedicationOrderForm.name} ${newMedicationOrderForm.strength}`;
         const unitName = getUnitName(newMedicationOrderForm.type);
-        
+
         // Format quantity for transaction note
         let quantityText = newMedicationOrderForm.quantityNeeded;
         if (newMedicationOrderForm.type === 'Fluid bag' && newMedicationOrderForm.bagSize) {
           quantityText = `${newMedicationOrderForm.quantityNeeded} (${newMedicationOrderForm.bagSize} bags)`;
         }
-        
-        const orderTransaction = createTransaction({ 
-          medId: 0, 
-          medName: medicationName, 
-          type: 'order', 
-          amount: parseInt(newMedicationOrderForm.containerQuantity), 
-          user: getCurrentUserInfo()?.fullName || auth.currentUser, 
-          location: 'New Medication Order Request', 
-          note: `New medication order request - ${medicationName} - Quantity: ${quantityText} - Urgency: ${newMedicationOrderForm.urgency.toUpperCase()}${newMedicationOrderForm.notes ? ` - ${newMedicationOrderForm.notes}` : ''} - Sent to: ${newMedicationOrderForm.pharmacistEmail}` 
+
+        const orderTransaction = createTransaction({
+          medId: 0,
+          medName: medicationName,
+          type: 'order',
+          amount: parseInt(newMedicationOrderForm.containerQuantity),
+          user: getCurrentUserInfo()?.fullName || auth.currentUser,
+          location: 'New Medication Order Request',
+          note: `New medication order request - ${medicationName} - Quantity: ${quantityText} - Urgency: ${newMedicationOrderForm.urgency.toUpperCase()}${newMedicationOrderForm.notes ? ` - ${newMedicationOrderForm.notes}` : ''} - Sent to: ${newMedicationOrderForm.pharmacistEmail}`
         }, transactions.length + 1);
         setTransactions([orderTransaction, ...transactions]);
         const { subject, body } = generateNewMedicationEmailContent();
         const mailtoLink = `mailto:${newMedicationOrderForm.pharmacistEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
         window.location.href = mailtoLink;
-        setTimeout(() => { 
+        setTimeout(() => {
           setNewMedicationOrderForm({ name: '', type: 'Tablet', strength: '', quantityNeeded: '', bagSize: '', urgency: 'routine', notes: '', pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk', error: '' });
-          setModals(prev => ({ ...prev, showNewMedicationOrder: false })); 
+          setModals(prev => ({ ...prev, showNewMedicationOrder: false }));
         }, 1000);
+      };
+
+      const handleFulfilOrder = async () => {
+        // Validate form
+        if (!fulfilOrderForm.brand.trim() || !fulfilOrderForm.expiryMonth || !fulfilOrderForm.expiryYear) {
+          setFulfilOrderForm(prev => ({ ...prev, error: 'Please enter brand name and expiry date' }));
+          return;
+        }
+        if (!fulfilOrderForm.selectedLocationId) {
+          setFulfilOrderForm(prev => ({ ...prev, error: 'Please select a delivery location' }));
+          return;
+        }
+
+        let totalQuantity = 0;
+        let itemsPerBox = null;
+
+        if (fulfilOrderForm.quantityType === 'boxes') {
+          if (!fulfilOrderForm.boxQuantity || !fulfilOrderForm.itemsPerBox ||
+              parseInt(fulfilOrderForm.boxQuantity) <= 0 || parseInt(fulfilOrderForm.itemsPerBox) <= 0) {
+            setFulfilOrderForm(prev => ({ ...prev, error: 'Please enter valid box quantity and items per box' }));
+            return;
+          }
+          totalQuantity = parseInt(fulfilOrderForm.boxQuantity) * parseInt(fulfilOrderForm.itemsPerBox);
+          itemsPerBox = parseInt(fulfilOrderForm.itemsPerBox);
+        } else {
+          if (!fulfilOrderForm.individualQuantity || parseInt(fulfilOrderForm.individualQuantity) <= 0) {
+            setFulfilOrderForm(prev => ({ ...prev, error: 'Please enter valid quantity' }));
+            return;
+          }
+          totalQuantity = parseInt(fulfilOrderForm.individualQuantity);
+        }
+
+        try {
+          const currentUser = getCurrentUserInfo();
+          if (!currentUser || !currentUser.id) {
+            setFulfilOrderForm(prev => ({ ...prev, error: 'User not logged in' }));
+            return;
+          }
+
+          const displayAmount = formatQuantityDisplay(
+            totalQuantity,
+            itemsPerBox,
+            fulfilOrderForm.med.unit,
+            fulfilOrderForm.quantityType,
+            fulfilOrderForm.quantityType === 'boxes' ? fulfilOrderForm.boxQuantity : null
+          );
+
+          const deliveryNote = `Order fulfilled - Brand: ${fulfilOrderForm.brand} - ${displayAmount} - Order ID: ${fulfilOrderForm.order.id}`;
+
+          // Add the batch with stock
+          await window.api.addBatch({
+            medicationId: fulfilOrderForm.med.id,
+            batchNumber: fulfilOrderForm.batchNumber || `BATCH-${Date.now()}`,
+            expiryMonth: parseInt(fulfilOrderForm.expiryMonth),
+            expiryYear: parseInt(fulfilOrderForm.expiryYear),
+            brand: fulfilOrderForm.brand,
+            itemsPerBox: itemsPerBox || null,
+            quantityBoxes: fulfilOrderForm.quantityType === 'boxes' ? parseInt(fulfilOrderForm.boxQuantity) : 0,
+            quantityIndividuals: fulfilOrderForm.quantityType === 'individuals' ? parseInt(fulfilOrderForm.individualQuantity) : 0,
+            locationId: fulfilOrderForm.selectedLocationId,
+            userId: currentUser.id,
+            note: deliveryNote
+          });
+
+          // Mark order as fulfilled
+          await window.api.fulfillOrder(fulfilOrderForm.order.id);
+
+          // Refresh data from backend
+          await new Promise(resolve => setTimeout(resolve, 100));
+          const data = await window.api.fetchAllData();
+          setMedications(data.medications || []);
+          setTransactions(data.transactions || []);
+          setOrders(data.orders || []);
+
+          // Reset form and close modal
+          setFulfilOrderForm({
+            order: null,
+            med: null,
+            selectedLocationId: '',
+            brand: '',
+            batchNumber: '',
+            expiryMonth: '',
+            expiryYear: '',
+            quantityType: 'boxes',
+            boxQuantity: '',
+            itemsPerBox: '',
+            individualQuantity: '',
+            error: ''
+          });
+          setModals(prev => ({ ...prev, showFulfilOrder: false }));
+
+        } catch (err) {
+          console.error('Failed to fulfill order:', err);
+          setFulfilOrderForm(prev => ({ ...prev, error: err.message || 'Failed to fulfill order' }));
+        }
       };
 
       const handleCopyLowStockReport = () => {
@@ -3114,18 +3225,57 @@ Medicana Stock Management System`;
                                 </div>
                               </td>
                               <td className="px-2 sm:px-4 py-2 sm:py-3 text-center">
-                                  <button onClick={() => { 
+                                <div className="flex gap-1 sm:gap-2 justify-center">
+                                  {hasPendingOrder(med) && (
+                                    <button onClick={() => {
+                                      // Check if this is a grouped medication (multiple locations)
+                                      if (ui.currentLocation === 'All' && med.locations && med.locations.length > 1) {
+                                        alert(`This medication is in multiple locations: ${med.locations.sort().join(', ')}. Please select a specific location to fulfil the order.`);
+                                        return;
+                                      }
+                                      // Get the pending order
+                                      const pendingOrder = getMostRecentOrder(med);
+                                      const defaultQuantityType = med.standardItemsPerBox ? 'boxes' : 'individuals';
+
+                                      // Pre-fill location if medication is only in one location
+                                      let defaultLocationId = '';
+                                      if (med.locationId) {
+                                        defaultLocationId = med.locationId;
+                                      } else if (med.locations && med.locations.length === 1) {
+                                        const location = locations.find(l => l.displayName === med.locations[0]);
+                                        if (location) defaultLocationId = location.id;
+                                      }
+
+                                      setFulfilOrderForm({
+                                        order: pendingOrder,
+                                        med: med,
+                                        selectedLocationId: defaultLocationId,
+                                        brand: '',
+                                        batchNumber: '',
+                                        expiryMonth: '',
+                                        expiryYear: '',
+                                        quantityType: defaultQuantityType,
+                                        boxQuantity: '',
+                                        itemsPerBox: med.standardItemsPerBox || '',
+                                        individualQuantity: '',
+                                        error: ''
+                                      });
+                                      setModals(prev => ({ ...prev, showFulfilOrder: true }));
+                                    }} className="bg-purple-600 hover:bg-purple-700 text-white px-2 sm:px-3 py-1 rounded text-xs sm:text-sm font-medium transition-colors">Fulfil Order</button>
+                                  )}
+                                  <button onClick={() => {
                                     // Check if this is a grouped medication (multiple locations)
                                     if (ui.currentLocation === 'All' && med.locations && med.locations.length > 1) {
                                       alert(`This medication is in multiple locations: ${med.locations.sort().join(', ')}. Please select a specific location to adjust stock.`);
                                       return;
                                     }
                                     const defaultQuantityType = med.standardItemsPerBox ? 'boxes' : 'individual';
-                                    setUi(prev => ({ ...prev, selectedMed: med })); 
-                                    setModals(prev => ({ ...prev, showAdjustStock: true })); 
-                                    setAdjustmentForm({ amount: '', note: '', location: '', type: defaultQuantityType, action: 'out', batchId: '', sourceDepartment: '', stockInSource: 'transfer', transferBatchOption: 'existing', deliveryBatchOption: 'new', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' }); 
-                                    setDeliveryForm({ brand: '', expiryMonth: '', expiryYear: '', quantityType: defaultQuantityType, boxQuantity: '', itemsPerBox: '', individualQuantity: '', batchNumber: '' }); 
+                                    setUi(prev => ({ ...prev, selectedMed: med }));
+                                    setModals(prev => ({ ...prev, showAdjustStock: true }));
+                                    setAdjustmentForm({ amount: '', note: '', location: '', type: defaultQuantityType, action: 'out', batchId: '', sourceDepartment: '', stockInSource: 'transfer', transferBatchOption: 'existing', deliveryBatchOption: 'new', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' });
+                                    setDeliveryForm({ brand: '', expiryMonth: '', expiryYear: '', quantityType: defaultQuantityType, boxQuantity: '', itemsPerBox: '', individualQuantity: '', batchNumber: '' });
                                   }} className="text-cyan-600 hover:text-cyan-700 font-medium text-xs sm:text-sm">Adjust</button>
+                                </div>
                               </td>
                             </tr>
                             {ui.expandedMedId === med.id && (
@@ -6414,6 +6564,253 @@ Medicana Stock Management System`;
                 </div>
               );
             })()}
+
+            {/* Fulfil Order Modal */}
+            {modals.showFulfilOrder && fulfilOrderForm.med && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50" onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showFulfilOrder: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
+                <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-2xl w-full flex flex-col m-2 sm:m-4" style={{maxHeight: '90vh'}}>
+                  <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex-shrink-0">
+                    <h2 className="text-base sm:text-lg font-bold text-gray-800">Fulfil Order</h2>
+                    <p className="text-xs text-gray-600 mt-1">Add stock and mark order as fulfilled</p>
+                  </div>
+
+                  <div className="overflow-y-auto px-4 sm:px-6 py-3 sm:py-4 flex-1">
+                    {fulfilOrderForm.error && (
+                      <div className="mb-4 p-3 bg-red-50 border border-red-300 rounded text-sm text-red-700">
+                        {fulfilOrderForm.error}
+                      </div>
+                    )}
+
+                    {/* Order Details */}
+                    <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                      <h3 className="font-semibold text-purple-900 mb-2 flex items-center gap-2">
+                        <Download className="w-4 h-4" />
+                        Pending Order Details
+                      </h3>
+                      <div className="space-y-1 text-sm">
+                        <div><span className="font-medium text-purple-800">Medication:</span> <span className="text-gray-900">{fulfilOrderForm.med.name}</span></div>
+                        <div><span className="font-medium text-purple-800">Quantity Ordered:</span> <span className="text-gray-900">{fulfilOrderForm.order.quantity} {fulfilOrderForm.med.unit}</span></div>
+                        <div><span className="font-medium text-purple-800">Urgency:</span> <span className={`font-medium ${fulfilOrderForm.order.urgency === 'urgent' ? 'text-red-600' : 'text-blue-600'} uppercase`}>{fulfilOrderForm.order.urgency}</span></div>
+                        <div><span className="font-medium text-purple-800">Ordered:</span> <span className="text-gray-900">{new Date(fulfilOrderForm.order.orderedAt).toLocaleString('en-GB')}</span></div>
+                        {fulfilOrderForm.order.notes && (
+                          <div><span className="font-medium text-purple-800">Notes:</span> <span className="text-gray-900">{fulfilOrderForm.order.notes}</span></div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Location Selector */}
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Delivery Location <span className="text-red-600">*</span>
+                      </label>
+                      <select
+                        value={fulfilOrderForm.selectedLocationId}
+                        onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, selectedLocationId: e.target.value, error: '' }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      >
+                        <option value="">Select location...</option>
+                        {locations.map(location => {
+                          // Check if this medication exists at this location
+                          const medAtLocation = medications.find(m =>
+                            m.medicationName === fulfilOrderForm.med.medicationName &&
+                            m.strengthRaw === fulfilOrderForm.med.strengthRaw &&
+                            m.type === fulfilOrderForm.med.type &&
+                            m.location === location.displayName
+                          );
+                          return (
+                            <option key={location.id} value={location.id} style={medAtLocation ? { color: '#059669', fontWeight: '600' } : {}}>
+                              {location.displayName}{medAtLocation ? ' ✓' : ''}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1"><span className="text-green-600 font-semibold">Green locations ✓</span> already have this medication</p>
+                    </div>
+
+                    {/* Batch Details */}
+                    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                      <p className="text-sm font-medium text-blue-800 mb-2">Enter batch details for the delivery</p>
+                    </div>
+
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Brand <span className="text-red-600">*</span></label>
+                      <input
+                        type="text"
+                        value={fulfilOrderForm.brand}
+                        onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, brand: e.target.value, error: '' }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        placeholder="e.g. Actavis, Accord, Teva"
+                      />
+                    </div>
+
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Batch Number</label>
+                      <input
+                        type="text"
+                        value={fulfilOrderForm.batchNumber}
+                        onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, batchNumber: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        placeholder="e.g. BN123456"
+                      />
+                    </div>
+
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Expiry Date <span className="text-red-600">*</span></label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Month</label>
+                          <select
+                            value={fulfilOrderForm.expiryMonth}
+                            onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, expiryMonth: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                          >
+                            <option value="">Select...</option>
+                            {['January','February','March','April','May','June','July','August','September','October','November','December'].map((month, idx) => (
+                              <option key={month} value={String(idx + 1).padStart(2, '0')}>{month}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Year</label>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setFulfilOrderForm(prev => {
+                                const year = prev.expiryYear ? parseInt(prev.expiryYear) : new Date().getFullYear();
+                                return { ...prev, expiryYear: String(year - 1) };
+                              })}
+                              className="text-slate-700 hover:text-slate-900 text-2xl leading-none p-0 border-0 bg-transparent"
+                            >
+                              ←
+                            </button>
+                            <input
+                              type="number"
+                              value={fulfilOrderForm.expiryYear}
+                              onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, expiryYear: e.target.value, error: '' }))}
+                              placeholder={String(new Date().getFullYear())}
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-center"
+                              min="2024"
+                              max="2099"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setFulfilOrderForm(prev => {
+                                const year = prev.expiryYear ? parseInt(prev.expiryYear) : new Date().getFullYear();
+                                return { ...prev, expiryYear: String(year + 1) };
+                              })}
+                              className="text-slate-700 hover:text-slate-900 text-2xl leading-none p-0 border-0 bg-transparent"
+                            >
+                              →
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Quantity Input */}
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Quantity Type</label>
+                      <div className="flex gap-4 mb-3">
+                        <label className="flex items-center cursor-pointer">
+                          <input
+                            type="radio"
+                            name="fulfilQuantityType"
+                            value="boxes"
+                            checked={fulfilOrderForm.quantityType === 'boxes'}
+                            onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, quantityType: 'boxes', error: '' }))}
+                            className="mr-2"
+                          />
+                          Boxes
+                        </label>
+                        <label className="flex items-center cursor-pointer">
+                          <input
+                            type="radio"
+                            name="fulfilQuantityType"
+                            value="individuals"
+                            checked={fulfilOrderForm.quantityType === 'individuals'}
+                            onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, quantityType: 'individuals', error: '' }))}
+                            className="mr-2"
+                          />
+                          Individual {fulfilOrderForm.med.unit}
+                        </label>
+                      </div>
+                    </div>
+
+                    {fulfilOrderForm.quantityType === 'boxes' ? (
+                      <div className="grid grid-cols-2 gap-3 mb-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Number of Boxes <span className="text-red-600">*</span></label>
+                          <input
+                            type="number"
+                            value={fulfilOrderForm.boxQuantity}
+                            onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, boxQuantity: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                            placeholder="e.g. 5"
+                            min="1"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Items per Box <span className="text-red-600">*</span></label>
+                          <input
+                            type="number"
+                            value={fulfilOrderForm.itemsPerBox}
+                            onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, itemsPerBox: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                            placeholder="e.g. 100"
+                            min="1"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Quantity ({fulfilOrderForm.med.unit}) <span className="text-red-600">*</span></label>
+                        <input
+                          type="number"
+                          value={fulfilOrderForm.individualQuantity}
+                          onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, individualQuantity: e.target.value, error: '' }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                          placeholder="Enter quantity"
+                          min="1"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0 bg-gray-50">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleFulfilOrder}
+                        className="flex-1 bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 transition-colors font-medium"
+                      >
+                        Fulfil Order & Add Stock
+                      </button>
+                      <button
+                        onClick={() => {
+                          setFulfilOrderForm({
+                            order: null,
+                            med: null,
+                            selectedLocationId: '',
+                            brand: '',
+                            batchNumber: '',
+                            expiryMonth: '',
+                            expiryYear: '',
+                            quantityType: 'boxes',
+                            boxQuantity: '',
+                            itemsPerBox: '',
+                            individualQuantity: '',
+                            error: ''
+                          });
+                          setModals(prev => ({ ...prev, showFulfilOrder: false }));
+                        }}
+                        className="px-6 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors font-medium"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Change Password Modal */}
             {modals.showChangePassword && (

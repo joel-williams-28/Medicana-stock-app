@@ -124,6 +124,17 @@ window.api = (function () {
     return out;
   }
 
+  async function fulfillOrder(orderId) {
+    const res = await fetch('/.netlify/functions/order-fulfill', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ orderId })
+    });
+    const out = await res.json();
+    if (!res.ok || !out.success) throw new Error(out.message || 'Order fulfillment failed');
+    return out;
+  }
+
   async function loginUser(username, password) {
     const res = await fetch(LOGIN_ENDPOINT, {
       method: 'POST',
@@ -167,6 +178,7 @@ window.api = (function () {
     medicationUpsert,
     setMedicationMinLevel,
     placeOrder,
+    fulfillOrder,
     loginUser,
     startPolling,
     stopPolling
