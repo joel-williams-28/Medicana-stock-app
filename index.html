@@ -2766,7 +2766,7 @@ Medicana Stock Management System`;
           }
         });
 
-        const selectedBatch = allBatches.find(b => b.id === batchId);
+        const selectedBatch = allBatches.find(b => b.id === parseInt(batchId));
         if (selectedBatch) {
           const expiryDate = selectedBatch.expiryDate ? new Date(selectedBatch.expiryDate + '-01') : null;
           const expiryMonth = expiryDate ? String(expiryDate.getMonth() + 1).padStart(2, '0') : '';
