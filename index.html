@@ -159,13 +159,25 @@
         }
       });
 
-      // Handle zero stock
-      if (totalFullBoxes === 0 && totalLooseItems === 0) {
-        return standardItemsPerBox
-          ? `0 boxes (${standardItemsPerBox} ${pluralizeUnit(standardItemsPerBox, med.unit)} per box)`
-          : `0 ${pluralizeUnit(0, med.unit)}`;
+      // If we have itemsPerBox info, always show the × format
+      if (standardItemsPerBox) {
+        if (totalFullBoxes === 0 && totalLooseItems === 0) {
+          return `0 boxes × ${standardItemsPerBox} ${pluralizeUnit(standardItemsPerBox, med.unit)} per box`;
+        }
+        if (totalFullBoxes && totalLooseItems) {
+          return `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'} × ${standardItemsPerBox} items per box + ${totalLooseItems} ${pluralizeUnit(totalLooseItems, med.unit)}`;
+        }
+        if (totalFullBoxes) {
+          return `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'} × ${standardItemsPerBox} items per box`;
+        }
+        // Only loose items
+        return `${totalLooseItems} ${pluralizeUnit(totalLooseItems, med.unit)} (from open box)`;
       }
 
+      // Fallback for medications without itemsPerBox
+      if (totalFullBoxes === 0 && totalLooseItems === 0) {
+        return `0 ${pluralizeUnit(0, med.unit)}`;
+      }
       if (totalFullBoxes && totalLooseItems) {
         return `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'} and ${totalLooseItems} ${pluralizeUnit(totalLooseItems, med.unit)}`;
       }
@@ -178,16 +190,16 @@
       if (!batch.itemsPerBox) {
         return `${batch.quantity} ${pluralizeUnit(batch.quantity, unit)}`;
       }
-      
+
       const fullBoxes = Math.floor(batch.quantity / batch.itemsPerBox);
       const looseItems = batch.quantity % batch.itemsPerBox;
-      
+
       if (fullBoxes === 0) {
-        return `${looseItems} ${pluralizeUnit(looseItems, unit)} (open box)`;
+        return `${looseItems} ${pluralizeUnit(looseItems, unit)} (from open box)`;
       } else if (looseItems === 0) {
-        return `${fullBoxes} full ${fullBoxes === 1 ? 'box' : 'boxes'} of ${batch.itemsPerBox}`;
+        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} items per box`;
       } else {
-        return `${fullBoxes} full ${fullBoxes === 1 ? 'box' : 'boxes'} of ${batch.itemsPerBox} + 1 open box of ${looseItems}`;
+        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} items per box + ${looseItems} ${pluralizeUnit(looseItems, unit)}`;
       }
     };
 
