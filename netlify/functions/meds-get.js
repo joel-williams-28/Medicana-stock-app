@@ -176,49 +176,62 @@ exports.handler = async () => {
     );
 
     // Query recent transactions for Activity tab
-    // Note: transactions table still has medication_id, so we join to get display info
+    // Join with batches to get medication_id, then join with medications for display info
     const txQuery = `
       SELECT
         t.id,
-        t.medication_id,
+        b.medication_id,
         CASE 
           WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
           ELSE m.name || ' ' || m.strength
         END AS med_name,
-        t.delta,
-        t.reason,
+        t.quantity,
+        t.type,
+        t.notes,
         t.location_id,
         l.display_name AS location_name,
         l.group_name AS location_group,
-        t.occurred_at,
+        t.created_at,
         u.username AS user_name
       FROM transactions t
-      LEFT JOIN medications m ON m.id = t.medication_id
+      LEFT JOIN batches b ON b.id = t.batch_id
+      LEFT JOIN medications m ON m.id = b.medication_id
       LEFT JOIN locations l ON l.id = t.location_id
       LEFT JOIN users u ON u.id = t.user_id
-      ORDER BY t.occurred_at DESC
+      ORDER BY t.created_at DESC
       LIMIT 200;
     `;
     const txResult = await db.query(txQuery);
 
     const transactions = txResult.rows.map(row => {
-      let txType = 'system';
-      if (row.delta > 0) txType = 'in';
-      if (row.delta < 0) txType = 'out';
+      // Use the type from database, or determine from quantity if type is just 'in'/'out'
+      let txType = row.type || 'system';
+      
+      // If type is generic 'in' or 'out', check notes to determine specific type
+      if (txType === 'in' && row.notes && row.notes.startsWith('Order fulfilled')) {
+        txType = 'order_fulfilled';
+      } else if (txType === 'out' && row.notes && row.notes.startsWith('Batch removed')) {
+        // Batch removal handled by location check in categorizeTransaction
+        txType = 'out';
+      } else if (txType === 'in' && row.notes && (row.notes.includes('Transfer from') || row.notes.includes('Transfer to'))) {
+        txType = 'transfer';
+      } else if (txType === 'out' && row.notes && (row.notes.includes('Transfer to') || row.notes.includes('Transfer from'))) {
+        txType = 'transfer';
+      }
 
       return {
         id: row.id,
-        medId: row.medication_id,
+        medId: row.medication_id || null,
         medName: row.med_name || '',
         type: txType,
-        amount: Math.abs(row.delta),
+        amount: Math.abs(row.quantity || 0),
         user: row.user_name || 'System',
         location: row.location_name || row.location_id || 'System',
         locationGroup: row.location_group || null,
-        timestamp: row.occurred_at
-          ? row.occurred_at.toISOString()
+        timestamp: row.created_at
+          ? row.created_at.toISOString()
           : new Date().toISOString(),
-        note: row.reason || ''
+        note: row.notes || ''
       };
     });
 

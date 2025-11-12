@@ -82,12 +82,16 @@ exports.handler = async (event) => {
         );
       }
 
-      // Insert transaction record (using server-derived medication_id)
+      // Insert transaction record
+      // Determine transaction type: positive delta = 'in', negative delta = 'out'
+      const transactionType = delta > 0 ? 'in' : 'out';
+      const transactionQuantity = Math.abs(delta);
+      
       await db.query(
         `INSERT INTO transactions 
-         (user_id, medication_id, location_id, batch_id, delta, reason, occurred_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-        [userId, medicationId, locationId, batchId, delta, reason || '']
+         (batch_id, location_id, quantity, type, notes, user_id)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [batchId, locationId, transactionQuantity, transactionType, reason || '', userId]
       );
 
       // Commit transaction

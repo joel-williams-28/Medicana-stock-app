@@ -199,13 +199,13 @@ exports.handler = async (event) => {
         );
       }
 
-      // Insert transaction record using canonical medication_id derived from batch
+      // Insert transaction record for delivery (incoming stock)
       const finalReason = transactionNote || `Delivery received - ${finalTotal} units`;
       await db.query(
         `INSERT INTO transactions 
-         (user_id, medication_id, location_id, batch_id, delta, reason, occurred_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-        [userId, canonicalMedicationId, locationId, batchIdResult, finalTotal, finalReason]
+         (batch_id, location_id, quantity, type, notes, user_id)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [batchIdResult, locationId, finalTotal, 'in', finalReason, userId]
       );
 
       // Commit transaction
