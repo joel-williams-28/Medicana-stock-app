@@ -147,18 +147,29 @@
     const formatStockDisplay = (med) => {
       let totalFullBoxes = 0;
       let totalLooseItems = 0;
+      let standardItemsPerBox = med.standardItemsPerBox || null;
+
       med.batches.forEach(batch => {
         if (batch.itemsPerBox) {
           totalFullBoxes += Math.floor(batch.quantity / batch.itemsPerBox);
           totalLooseItems += batch.quantity % batch.itemsPerBox;
+          if (!standardItemsPerBox) standardItemsPerBox = batch.itemsPerBox;
         } else {
           totalLooseItems += batch.quantity;
         }
       });
+
+      // Handle zero stock
+      if (totalFullBoxes === 0 && totalLooseItems === 0) {
+        return standardItemsPerBox
+          ? `0 boxes (${standardItemsPerBox} ${pluralizeUnit(standardItemsPerBox, med.unit)} per box)`
+          : `0 ${pluralizeUnit(0, med.unit)}`;
+      }
+
       if (totalFullBoxes && totalLooseItems) {
         return `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'} and ${totalLooseItems} ${pluralizeUnit(totalLooseItems, med.unit)}`;
       }
-      return totalFullBoxes 
+      return totalFullBoxes
         ? `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'}`
         : `${totalLooseItems} ${pluralizeUnit(totalLooseItems, med.unit)}`;
     };
@@ -250,7 +261,7 @@
 
     const formatQuantityDisplay = (quantity, itemsPerBox, unit, inputType = 'boxes', inputAmount = null) => {
       if (inputType === 'boxes' && inputAmount && itemsPerBox) {
-        return `${inputAmount} ${inputAmount === '1' ? 'box' : 'boxes'} (${quantity} ${unit})`;
+        return `${inputAmount} ${inputAmount === '1' ? 'box' : 'boxes'} × ${itemsPerBox} items per box`;
       }
       return `${quantity} ${unit}`;
     };
@@ -486,7 +497,8 @@
         boxQuantity: '',
         itemsPerBox: '',
         individualQuantity: '',
-        error: ''
+        error: '',
+        isSubmitting: false
       });
 
       const [newMedicationOrderForm, setNewMedicationOrderForm] = useState({
@@ -2823,10 +2835,13 @@ Medicana Stock Management System`;
           totalQuantity = parseInt(fulfilOrderForm.individualQuantity);
         }
 
+        // Set submitting state
+        setFulfilOrderForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
+
         try {
           const currentUser = getCurrentUserInfo();
           if (!currentUser || !currentUser.id) {
-            setFulfilOrderForm(prev => ({ ...prev, error: 'User not logged in' }));
+            setFulfilOrderForm(prev => ({ ...prev, error: 'User not logged in', isSubmitting: false }));
             return;
           }
 
@@ -2880,13 +2895,14 @@ Medicana Stock Management System`;
             boxQuantity: '',
             itemsPerBox: '',
             individualQuantity: '',
-            error: ''
+            error: '',
+            isSubmitting: false
           });
           setModals(prev => ({ ...prev, showFulfilOrder: false }));
 
         } catch (err) {
           console.error('Failed to fulfill order:', err);
-          setFulfilOrderForm(prev => ({ ...prev, error: err.message || 'Failed to fulfill order' }));
+          setFulfilOrderForm(prev => ({ ...prev, error: err.message || 'Failed to fulfill order', isSubmitting: false }));
         }
       };
 
@@ -6659,7 +6675,19 @@ Medicana Stock Management System`;
                       </h3>
                       <div className="space-y-1 text-sm">
                         <div><span className="font-medium text-purple-800">Medication:</span> <span className="text-gray-900">{fulfilOrderForm.med.name}</span></div>
-                        <div><span className="font-medium text-purple-800">Quantity Ordered:</span> <span className="text-gray-900">{fulfilOrderForm.order.quantity} {fulfilOrderForm.med.unit}</span></div>
+                        <div><span className="font-medium text-purple-800">Quantity Ordered:</span> <span className="text-gray-900">{(() => {
+                          const qty = fulfilOrderForm.order.quantity;
+                          const itemsPerBox = fulfilOrderForm.med.standardItemsPerBox;
+                          if (itemsPerBox && qty >= itemsPerBox) {
+                            const boxes = Math.floor(qty / itemsPerBox);
+                            const loose = qty % itemsPerBox;
+                            if (loose > 0) {
+                              return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} items per box + ${loose} ${pluralizeUnit(loose, fulfilOrderForm.med.unit)}`;
+                            }
+                            return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} items per box`;
+                          }
+                          return `${qty} ${pluralizeUnit(qty, fulfilOrderForm.med.unit)}`;
+                        })()}</span></div>
                         <div><span className="font-medium text-purple-800">Urgency:</span> <span className={`font-medium ${fulfilOrderForm.order.urgency === 'urgent' ? 'text-red-600' : 'text-blue-600'} uppercase`}>{fulfilOrderForm.order.urgency}</span></div>
                         <div><span className="font-medium text-purple-800">Ordered:</span> <span className="text-gray-900">{new Date(fulfilOrderForm.order.orderedAt).toLocaleString('en-GB')}</span></div>
                         {fulfilOrderForm.order.notes && (
@@ -6954,9 +6982,14 @@ Medicana Stock Management System`;
                     <div className="flex gap-2">
                       <button
                         onClick={handleFulfilOrder}
-                        className="flex-1 bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 transition-colors font-medium"
+                        disabled={fulfilOrderForm.isSubmitting}
+                        className={`flex-1 py-2 rounded-lg transition-colors font-medium ${
+                          fulfilOrderForm.isSubmitting
+                            ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
+                            : 'bg-purple-600 text-white hover:bg-purple-700'
+                        }`}
                       >
-                        Fulfil Order & Add Stock
+                        {fulfilOrderForm.isSubmitting ? 'Fulfilling Order...' : 'Fulfil Order & Add Stock'}
                       </button>
                       <button
                         onClick={() => {
@@ -6974,7 +7007,8 @@ Medicana Stock Management System`;
                             boxQuantity: '',
                             itemsPerBox: '',
                             individualQuantity: '',
-                            error: ''
+                            error: '',
+                            isSubmitting: false
                           });
                           setModals(prev => ({ ...prev, showFulfilOrder: false }));
                         }}
