@@ -1029,6 +1029,8 @@
       };
 
       const filteredTransactions = transactions.filter(trans => {
+        // Always show order transactions regardless of location filter
+        if (trans.type === 'order') return true;
         if (trans.medId === 0) return trans.type === 'order' && lowStockMedications.length > 0;
         if (ui.currentLocation === 'All') return true;
 
@@ -3091,13 +3093,13 @@ Medicana Stock Management System`;
           <div className="max-w-7xl mx-auto p-3 sm:p-4 md:p-6">
             <div className="bg-white rounded-lg shadow">
               {/* Tabs */}
-              <div className="border-b border-gray-200 shadow-lg">
-                <nav className="flex -mb-px overflow-x-auto scrollbar-hide">
+              <div className="border-b border-gray-200 shadow-lg relative z-30">
+                <nav className="flex -mb-px overflow-x-auto scrollbar-hide relative z-10">
                     {canAccessTab('medications') && (
-                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'medications' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${ui.activeTab === 'medications' ? 'border-cyan-500 text-cyan-600 shadow-lg' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Medications List</button>
+                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'medications' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'medications' ? 'border-cyan-500 text-cyan-600 shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Medications List</button>
                     )}
                     {canAccessTab('transactions') && (
-                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'transactions' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-all whitespace-nowrap ${ui.activeTab === 'transactions' ? 'border-cyan-500 text-cyan-600 shadow-lg' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Activity Log</button>
+                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'transactions' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-all whitespace-nowrap relative ${ui.activeTab === 'transactions' ? 'border-cyan-500 text-cyan-600 shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Activity Log</button>
                     )}
                     {canAccessTab('lowstock') && (
                       <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'lowstock' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors relative whitespace-nowrap ${ui.activeTab === 'lowstock' ? 'border-cyan-500 text-cyan-600 shadow-lg' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
@@ -3538,7 +3540,7 @@ Medicana Stock Management System`;
                 {/* Activity Log Tab */}
               {ui.activeTab === 'transactions' && (
                 <>
-                  <div className="p-4 border-b bg-gray-50">
+                  <div className="p-4 border-b bg-gray-50 relative z-0">
                     <div className="flex justify-between items-start mb-3">
                       <p className="text-sm font-medium text-gray-700">Filter by Activity Type:</p>
                       <div className="flex gap-2">
