@@ -264,6 +264,8 @@
     const categorizeTransaction = (trans, locations) => {
       if (trans.type === 'order') return 'order';
       if (trans.type === 'order_fulfilled') return 'order_fulfilled';
+      // Check if this is a fulfilled order (type='in' with note starting with "Order fulfilled")
+      if (trans.type === 'in' && trans.note && trans.note.startsWith('Order fulfilled')) return 'order_fulfilled';
       if (trans.type === 'delete') return 'system';
       if (trans.location === 'Batch Removal') return 'removal';
       if (trans.location === 'System') return 'system';
