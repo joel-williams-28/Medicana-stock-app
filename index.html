@@ -4101,21 +4101,63 @@ Medicana Stock Management System`;
                             <label className="block text-sm font-medium text-gray-700 mb-2">Department (Stock Coming From) <span className="text-red-600">*</span></label>
                             <select value={adjustmentForm.sourceDepartment} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, sourceDepartment: e.target.value, batchId: '' })); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
                           <option value="">Select department...</option>
-                          {locations.map(location => {
-                                // Check if location has the same medication (name, strength, type)
-                                const medInLocation = medications.find(m => 
-                                  m.medicationName === ui.selectedMed.medicationName && 
-                                  m.strengthRaw === ui.selectedMed.strengthRaw && 
-                                  m.type === ui.selectedMed.type && 
+                          {(() => {
+                            // Group locations by groupName
+                            const grouped = {};
+                            locations.forEach(loc => {
+                              if (loc.groupName) {
+                                if (!grouped[loc.groupName]) grouped[loc.groupName] = [];
+                                grouped[loc.groupName].push(loc);
+                              } else {
+                                if (!grouped['_ungrouped']) grouped['_ungrouped'] = [];
+                                grouped['_ungrouped'].push(loc);
+                              }
+                            });
+
+                            const elements = [];
+                            // Render grouped locations
+                            Object.keys(grouped).forEach(groupName => {
+                              if (groupName !== '_ungrouped') {
+                                elements.push(
+                                  <optgroup key={groupName} label={groupName}>
+                                    {grouped[groupName].map(location => {
+                                      // Check if location has the same medication (name, strength, type)
+                                      const medInLocation = medications.find(m =>
+                                        m.medicationName === ui.selectedMed.medicationName &&
+                                        m.strengthRaw === ui.selectedMed.strengthRaw &&
+                                        m.type === ui.selectedMed.type &&
+                                        m.location === location.displayName
+                                      );
+                                      const hasBatches = medInLocation && medInLocation.batches.length > 0 && location.displayName !== ui.selectedMed.location;
+                                      return (
+                                        <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#059669', fontWeight: '600' } : {}}>
+                                          {location.displayName}{hasBatches ? ' ✓' : ''}
+                                        </option>
+                                      );
+                                    })}
+                                  </optgroup>
+                                );
+                              }
+                            });
+                            // Render ungrouped locations
+                            if (grouped['_ungrouped']) {
+                              grouped['_ungrouped'].forEach(location => {
+                                const medInLocation = medications.find(m =>
+                                  m.medicationName === ui.selectedMed.medicationName &&
+                                  m.strengthRaw === ui.selectedMed.strengthRaw &&
+                                  m.type === ui.selectedMed.type &&
                                   m.location === location.displayName
                                 );
                                 const hasBatches = medInLocation && medInLocation.batches.length > 0 && location.displayName !== ui.selectedMed.location;
-                            return (
+                                elements.push(
                                   <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#059669', fontWeight: '600' } : {}}>
-                                {location.displayName}{hasBatches ? ' ✓' : ''}
-                              </option>
-                            );
-                          })}
+                                    {location.displayName}{hasBatches ? ' ✓' : ''}
+                                  </option>
+                                );
+                              });
+                            }
+                            return elements;
+                          })()}
                         </select>
                             <p className="text-xs text-gray-500 mt-1"><span className="text-green-600 font-semibold">Green departments ✓</span> contain batches of {ui.selectedMed.name}</p>
                       </div>
@@ -4708,21 +4750,63 @@ Medicana Stock Management System`;
                             <label className="block text-sm font-medium text-gray-700 mb-2">Department (Stock Coming From) <span className="text-red-600">*</span></label>
                             <select value={adjustmentForm.sourceDepartment} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, sourceDepartment: e.target.value, batchId: '' })); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
                           <option value="">Select department...</option>
-                          {locations.map(location => {
-                                // Check if location has the same medication (name, strength, type)
-                                const medInLocation = medications.find(m => 
-                                  m.medicationName === ui.selectedMed.medicationName && 
-                                  m.strengthRaw === ui.selectedMed.strengthRaw && 
-                                  m.type === ui.selectedMed.type && 
+                          {(() => {
+                            // Group locations by groupName
+                            const grouped = {};
+                            locations.forEach(loc => {
+                              if (loc.groupName) {
+                                if (!grouped[loc.groupName]) grouped[loc.groupName] = [];
+                                grouped[loc.groupName].push(loc);
+                              } else {
+                                if (!grouped['_ungrouped']) grouped['_ungrouped'] = [];
+                                grouped['_ungrouped'].push(loc);
+                              }
+                            });
+
+                            const elements = [];
+                            // Render grouped locations
+                            Object.keys(grouped).forEach(groupName => {
+                              if (groupName !== '_ungrouped') {
+                                elements.push(
+                                  <optgroup key={groupName} label={groupName}>
+                                    {grouped[groupName].map(location => {
+                                      // Check if location has the same medication (name, strength, type)
+                                      const medInLocation = medications.find(m =>
+                                        m.medicationName === ui.selectedMed.medicationName &&
+                                        m.strengthRaw === ui.selectedMed.strengthRaw &&
+                                        m.type === ui.selectedMed.type &&
+                                        m.location === location.displayName
+                                      );
+                                      const hasBatches = medInLocation && medInLocation.batches.length > 0 && location.displayName !== ui.selectedMed.location;
+                                      return (
+                                        <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#059669', fontWeight: '600' } : {}}>
+                                          {location.displayName}{hasBatches ? ' ✓' : ''}
+                                        </option>
+                                      );
+                                    })}
+                                  </optgroup>
+                                );
+                              }
+                            });
+                            // Render ungrouped locations
+                            if (grouped['_ungrouped']) {
+                              grouped['_ungrouped'].forEach(location => {
+                                const medInLocation = medications.find(m =>
+                                  m.medicationName === ui.selectedMed.medicationName &&
+                                  m.strengthRaw === ui.selectedMed.strengthRaw &&
+                                  m.type === ui.selectedMed.type &&
                                   m.location === location.displayName
                                 );
                                 const hasBatches = medInLocation && medInLocation.batches.length > 0 && location.displayName !== ui.selectedMed.location;
-                            return (
+                                elements.push(
                                   <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#059669', fontWeight: '600' } : {}}>
-                                {location.displayName}{hasBatches ? ' ✓' : ''}
-                              </option>
-                            );
-                          })}
+                                    {location.displayName}{hasBatches ? ' ✓' : ''}
+                                  </option>
+                                );
+                              });
+                            }
+                            return elements;
+                          })()}
                         </select>
                             <p className="text-xs text-gray-500 mt-1"><span className="text-green-600 font-semibold">Green departments ✓</span> contain batches of {ui.selectedMed.name}</p>
                       </div>
@@ -5513,18 +5597,41 @@ Medicana Stock Management System`;
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
                           >
                             <option value="">Select Location</option>
-                            <optgroup label="Medication Stock L1">
-                              <option value="Medication Stock L1">Medication Stock L1 (All)</option>
-                              <option value="Cupboard 1">Cupboard 1</option>
-                              <option value="Cupboard 2">Cupboard 2</option>
-                              <option value="Cupboard 3">Cupboard 3</option>
-                            </optgroup>
-                            {locations.map(location => {
-                              if (location.groupName === 'Medication Stock L1') {
-                                return null; // Already handled above (cupboards)
+                            {(() => {
+                              // Group locations by groupName
+                              const grouped = {};
+                              locations.forEach(loc => {
+                                if (loc.groupName) {
+                                  if (!grouped[loc.groupName]) grouped[loc.groupName] = [];
+                                  grouped[loc.groupName].push(loc);
+                                } else {
+                                  if (!grouped['_ungrouped']) grouped['_ungrouped'] = [];
+                                  grouped['_ungrouped'].push(loc);
+                                }
+                              });
+
+                              const elements = [];
+                              // Render grouped locations
+                              Object.keys(grouped).forEach(groupName => {
+                                if (groupName !== '_ungrouped') {
+                                  elements.push(
+                                    <optgroup key={groupName} label={groupName}>
+                                      <option value={groupName}>{groupName} (All)</option>
+                                      {grouped[groupName].map(loc => (
+                                        <option key={loc.id} value={loc.displayName}>{loc.displayName}</option>
+                                      ))}
+                                    </optgroup>
+                                  );
+                                }
+                              });
+                              // Render ungrouped locations
+                              if (grouped['_ungrouped']) {
+                                grouped['_ungrouped'].forEach(loc => {
+                                  elements.push(<option key={loc.id} value={loc.displayName}>{loc.displayName}</option>);
+                                });
                               }
-                              return <option key={location.id} value={location.displayName}>{location.displayName}</option>;
-                            })}
+                              return elements;
+                            })()}
                           </select>
                         </div>
                       </div>
@@ -6774,20 +6881,61 @@ Medicana Stock Management System`;
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                       >
                         <option value="">Select location...</option>
-                        {locations.map(location => {
-                          // Check if this medication exists at this location
-                          const medAtLocation = medications.find(m =>
-                            m.medicationName === fulfilOrderForm.med.medicationName &&
-                            m.strengthRaw === fulfilOrderForm.med.strengthRaw &&
-                            m.type === fulfilOrderForm.med.type &&
-                            m.location === location.displayName
-                          );
-                          return (
-                            <option key={location.id} value={location.id} style={medAtLocation ? { color: '#059669', fontWeight: '600' } : {}}>
-                              {location.displayName}{medAtLocation ? ' ✓' : ''}
-                            </option>
-                          );
-                        })}
+                        {(() => {
+                          // Group locations by groupName
+                          const grouped = {};
+                          locations.forEach(loc => {
+                            if (loc.groupName) {
+                              if (!grouped[loc.groupName]) grouped[loc.groupName] = [];
+                              grouped[loc.groupName].push(loc);
+                            } else {
+                              if (!grouped['_ungrouped']) grouped['_ungrouped'] = [];
+                              grouped['_ungrouped'].push(loc);
+                            }
+                          });
+
+                          const elements = [];
+                          // Render grouped locations
+                          Object.keys(grouped).forEach(groupName => {
+                            if (groupName !== '_ungrouped') {
+                              elements.push(
+                                <optgroup key={groupName} label={groupName}>
+                                  {grouped[groupName].map(location => {
+                                    // Check if this medication exists at this location
+                                    const medAtLocation = medications.find(m =>
+                                      m.medicationName === fulfilOrderForm.med.medicationName &&
+                                      m.strengthRaw === fulfilOrderForm.med.strengthRaw &&
+                                      m.type === fulfilOrderForm.med.type &&
+                                      m.location === location.displayName
+                                    );
+                                    return (
+                                      <option key={location.id} value={location.id} style={medAtLocation ? { color: '#059669', fontWeight: '600' } : {}}>
+                                        {location.displayName}{medAtLocation ? ' ✓' : ''}
+                                      </option>
+                                    );
+                                  })}
+                                </optgroup>
+                              );
+                            }
+                          });
+                          // Render ungrouped locations
+                          if (grouped['_ungrouped']) {
+                            grouped['_ungrouped'].forEach(location => {
+                              const medAtLocation = medications.find(m =>
+                                m.medicationName === fulfilOrderForm.med.medicationName &&
+                                m.strengthRaw === fulfilOrderForm.med.strengthRaw &&
+                                m.type === fulfilOrderForm.med.type &&
+                                m.location === location.displayName
+                              );
+                              elements.push(
+                                <option key={location.id} value={location.id} style={medAtLocation ? { color: '#059669', fontWeight: '600' } : {}}>
+                                  {location.displayName}{medAtLocation ? ' ✓' : ''}
+                                </option>
+                              );
+                            });
+                          }
+                          return elements;
+                        })()}
                       </select>
                       <p className="text-xs text-gray-500 mt-1"><span className="text-green-600 font-semibold">Green locations ✓</span> already have this medication</p>
                     </div>
