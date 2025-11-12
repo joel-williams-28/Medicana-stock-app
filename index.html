@@ -2611,6 +2611,19 @@ Medicana Stock Management System`;
               pharmacistEmail: orderForm.pharmacistEmail
             });
 
+            // Create transaction for activity log
+            const orderNote = `Order placed - Quantity: ${orderForm.quantity} ${orderForm.med.unit} - Urgency: ${orderForm.urgency.toUpperCase()}${orderForm.notes ? ` - Notes: ${orderForm.notes}` : ''} - Sent to: ${orderForm.pharmacistEmail}`;
+            const orderTransaction = createTransaction({
+              medId: orderForm.med.internalId || orderForm.med.id,
+              medName: orderForm.med.name,
+              type: 'order',
+              amount: parseInt(orderForm.quantity),
+              user: userInfo?.fullName || auth.currentUser,
+              location: 'Order Request',
+              note: orderNote
+            }, transactions.length + 1);
+            setTransactions([orderTransaction, ...transactions]);
+
             // Copy to clipboard
             const { subject, body } = generateEmailContent();
             const fullText = `To: ${orderForm.pharmacistEmail}\nSubject: ${subject}\n\n${body}`;
@@ -2622,7 +2635,7 @@ Medicana Stock Management System`;
             // Refresh data to show updated order status
             const data = await window.api.fetchAllData();
             setMedications(data.medications || []);
-            setTransactions(data.transactions || []);
+            setTransactions([orderTransaction, ...(data.transactions || [])]);
             setOrders(data.orders || []);
           } catch (err) {
             console.error('Failed to place order:', err);
@@ -2645,6 +2658,19 @@ Medicana Stock Management System`;
               pharmacistEmail: orderForm.pharmacistEmail
             });
 
+            // Create transaction for activity log
+            const orderNote = `Order placed - Quantity: ${orderForm.quantity} ${orderForm.med.unit} - Urgency: ${orderForm.urgency.toUpperCase()}${orderForm.notes ? ` - Notes: ${orderForm.notes}` : ''} - Sent to: ${orderForm.pharmacistEmail}`;
+            const orderTransaction = createTransaction({
+              medId: orderForm.med.internalId || orderForm.med.id,
+              medName: orderForm.med.name,
+              type: 'order',
+              amount: parseInt(orderForm.quantity),
+              user: userInfo?.fullName || auth.currentUser,
+              location: 'Order Request',
+              note: orderNote
+            }, transactions.length + 1);
+            setTransactions([orderTransaction, ...transactions]);
+
             // Open email client
             const { subject, body } = generateEmailContent();
             const mailtoLink = `mailto:${orderForm.pharmacistEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -2658,7 +2684,7 @@ Medicana Stock Management System`;
               try {
                 const data = await window.api.fetchAllData();
                 setMedications(data.medications || []);
-                setTransactions(data.transactions || []);
+                setTransactions([orderTransaction, ...(data.transactions || [])]);
                 setOrders(data.orders || []);
               } catch (refreshErr) {
                 console.error('Failed to refresh data:', refreshErr);
@@ -3071,7 +3097,7 @@ Medicana Stock Management System`;
                       <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'medications' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${ui.activeTab === 'medications' ? 'border-cyan-500 text-cyan-600 shadow-lg' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Medications List</button>
                     )}
                     {canAccessTab('transactions') && (
-                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'transactions' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${ui.activeTab === 'transactions' ? 'border-cyan-500 text-cyan-600 shadow-lg' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Activity Log</button>
+                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'transactions' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-all whitespace-nowrap ${ui.activeTab === 'transactions' ? 'border-cyan-500 text-cyan-600 shadow-lg' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Activity Log</button>
                     )}
                     {canAccessTab('lowstock') && (
                       <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'lowstock' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors relative whitespace-nowrap ${ui.activeTab === 'lowstock' ? 'border-cyan-500 text-cyan-600 shadow-lg' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
