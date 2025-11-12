@@ -267,6 +267,8 @@
       // Check if this is a fulfilled order (type='in' with note starting with "Order fulfilled")
       if (trans.type === 'in' && trans.note && trans.note.startsWith('Order fulfilled')) return 'order_fulfilled';
       if (trans.type === 'delete') return 'system';
+      // Check if this is a batch removal (note starting with "Batch removed")
+      if (trans.note && trans.note.startsWith('Batch removed')) return 'removal';
       if (trans.location === 'Batch Removal') return 'removal';
       if (trans.location === 'System') return 'system';
       if (trans.type === 'in' && (trans.location === 'Delivery' || trans.location === 'Stock Delivery')) return 'delivery';
@@ -3616,15 +3618,14 @@ Medicana Stock Management System`;
                             <div key={trans.id} className="p-4 hover:bg-gray-50">
                               <div className="flex justify-between items-start mb-1">
                                 <span className="font-medium text-gray-900">{trans.medName}</span>
-                                {trans.location === 'Batch Removal' ? (
+                                {trans.note && trans.note.startsWith('Batch removed') ? (
                                   <div className="bg-red-100 text-red-800 px-3 py-2 rounded border border-red-300 text-right">
                                     <div className="text-xs font-bold uppercase">Batch Removed</div>
                                     <div className="text-lg font-bold mt-1">{trans.amount}</div>
                                   </div>
                                 ) : (
                                     <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${trans.type === 'transfer' ? 'bg-blue-100 text-blue-800' : trans.type === 'in' ? 'bg-green-100 text-green-800' : trans.type === 'delete' ? 'bg-red-100 text-red-800' : trans.type === 'order' ? 'bg-blue-100 text-blue-800' : trans.type === 'order_fulfilled' ? 'bg-emerald-100 text-emerald-800' : 'bg-cyan-100 text-cyan-800'}`}>
-                                      {trans.type === 'transfer' ? <Download className="w-3 h-3 mr-1" /> : trans.type === 'in' ? <Plus className="w-3 h-3 mr-1" /> : trans.type === 'delete' ? <AlertTriangle className="w-3 h-3 mr-1" /> : trans.type === 'order' ? <Download className="w-3 h-3 mr-1" /> : trans.type === 'order_fulfilled' ? <Download className="w-3 h-3 mr-1" /> : <Minus className="w-3 h-3 mr-1" />}
-                                      {trans.type === 'transfer' ? 'TRANSFER' : trans.type === 'delete' ? 'DELETED' : trans.type === 'order' ? 'ORDERED' : trans.type === 'order_fulfilled' ? 'FULFILLED' : trans.type === 'in' ? `+${String(trans.amount).replace(/^[+-]/, '')}` : `-${String(trans.amount).replace(/^[+-]/, '')}`}
+                                      {trans.type === 'transfer' ? <><Download className="w-3 h-3 mr-1" />TRANSFER</> : trans.type === 'delete' ? <><AlertTriangle className="w-3 h-3 mr-1" />DELETED</> : trans.type === 'order' ? <><Download className="w-3 h-3 mr-1" />ORDERED</> : trans.type === 'order_fulfilled' ? <><Download className="w-3 h-3 mr-1" />FULFILLED</> : trans.type === 'in' ? `+${String(trans.amount).replace(/^[+-]/, '')}` : `-${String(trans.amount).replace(/^[+-]/, '')}`}
                                 </span>
                                 )}
                               </div>
