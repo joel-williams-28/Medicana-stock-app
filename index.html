@@ -139,12 +139,22 @@
         : date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
     };
 
-    const getTotalQuantity = (med) => med.batches.reduce((sum, batch) => sum + (batch ? batch.quantity : 0), 0);
+    const getTotalQuantity = (med) => med.batches.reduce((sum, batch) => {
+      if (!batch) return sum;
+      // Use totalQuantity when available (for "All locations" view), otherwise use quantity
+      return sum + (batch.totalQuantity !== undefined ? batch.totalQuantity : batch.quantity);
+    }, 0);
 
     // Get total number of boxes across all batches
     const getTotalBoxes = (med) => {
       return med.batches.reduce((sum, batch) => {
-        return sum + (batch && batch.numberOfBoxes ? batch.numberOfBoxes : 0);
+        if (!batch) return sum;
+        // When viewing "All locations", use totalQuantity to calculate boxes
+        if (batch.totalQuantity !== undefined && batch.itemsPerBox) {
+          return sum + Math.floor(batch.totalQuantity / batch.itemsPerBox);
+        }
+        // Otherwise use the pre-calculated numberOfBoxes
+        return sum + (batch.numberOfBoxes || 0);
       }, 0);
     };
 
@@ -155,12 +165,14 @@
 
       med.batches.forEach(batch => {
         if (!batch) return; // Skip null/undefined batches
+        // Use totalQuantity when available (for "All locations" view), otherwise use quantity
+        const qty = batch.totalQuantity !== undefined ? batch.totalQuantity : batch.quantity;
         if (batch.itemsPerBox) {
-          totalFullBoxes += Math.floor(batch.quantity / batch.itemsPerBox);
-          totalLooseItems += batch.quantity % batch.itemsPerBox;
+          totalFullBoxes += Math.floor(qty / batch.itemsPerBox);
+          totalLooseItems += qty % batch.itemsPerBox;
           if (!standardItemsPerBox) standardItemsPerBox = batch.itemsPerBox;
         } else {
-          totalLooseItems += batch.quantity;
+          totalLooseItems += qty;
         }
       });
 
@@ -170,10 +182,10 @@
           return `0 boxes × ${standardItemsPerBox} ${pluralizeUnit(standardItemsPerBox, med.unit)} per box`;
         }
         if (totalFullBoxes && totalLooseItems) {
-          return `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'} × ${standardItemsPerBox} items per box + ${totalLooseItems} ${pluralizeUnit(totalLooseItems, med.unit)}`;
+          return `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'} × ${standardItemsPerBox} ${standardItemsPerBox === 1 ? 'item' : 'items'} per box + ${totalLooseItems} ${pluralizeUnit(totalLooseItems, med.unit)}`;
         }
         if (totalFullBoxes) {
-          return `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'} × ${standardItemsPerBox} items per box`;
+          return `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'} × ${standardItemsPerBox} ${standardItemsPerBox === 1 ? 'item' : 'items'} per box`;
         }
         // Only loose items
         return `${totalLooseItems} ${pluralizeUnit(totalLooseItems, med.unit)} (from open box)`;
@@ -202,9 +214,9 @@
       if (fullBoxes === 0) {
         return `${looseItems} ${pluralizeUnit(looseItems, unit)} (from open box)`;
       } else if (looseItems === 0) {
-        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} items per box`;
+        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} ${batch.itemsPerBox === 1 ? 'item' : 'items'} per box`;
       } else {
-        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} items per box + ${looseItems} ${pluralizeUnit(looseItems, unit)}`;
+        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} ${batch.itemsPerBox === 1 ? 'item' : 'items'} per box + ${looseItems} ${pluralizeUnit(looseItems, unit)}`;
       }
     };
 
@@ -281,7 +293,7 @@
 
     const formatQuantityDisplay = (quantity, itemsPerBox, unit, inputType = 'boxes', inputAmount = null) => {
       if (inputType === 'boxes' && inputAmount && itemsPerBox) {
-        return `${inputAmount} ${inputAmount === '1' ? 'box' : 'boxes'} × ${itemsPerBox} items per box`;
+        return `${inputAmount} ${inputAmount === '1' ? 'box' : 'boxes'} × ${itemsPerBox} ${itemsPerBox === 1 ? 'item' : 'items'} per box`;
       }
       return `${quantity} ${unit}`;
     };
@@ -1193,14 +1205,18 @@
                 ...med,
                 locations: [med.location],
                 batches: med.batches.map(b => ({ ...b, locations: [{ location: med.location, quantity: b.quantity }], totalQuantity: b.quantity })),
-                originalMeds: [med]
+                originalMeds: [med],
+                minLevelBoxes: med.minLevelBoxes || 0 // Start with first location's minimum
               };
             } else {
               // Add this location
               if (!grouped[med.name].locations.includes(med.location)) {
                 grouped[med.name].locations.push(med.location);
               }
-              
+
+              // Aggregate minimum stock levels across all locations
+              grouped[med.name].minLevelBoxes += (med.minLevelBoxes || 0);
+
               // Merge batches intelligently - group by batch number and expiry date
               med.batches.forEach(newBatch => {
                 if (!newBatch) return; // Skip null/undefined batches
@@ -1209,7 +1225,7 @@
                   b.batchNumber === newBatch.batchNumber &&
                   b.brand === newBatch.brand
                 );
-                
+
                 if (existingBatch) {
                   // Same batch exists - add this location and combine quantities
                   existingBatch.locations.push({ location: med.location, quantity: newBatch.quantity });
@@ -1223,7 +1239,7 @@
                   });
                 }
               });
-              
+
               // Keep track of original medications
               grouped[med.name].originalMeds.push(med);
             }
@@ -2716,14 +2732,17 @@ Medicana Stock Management System`;
           }
 
           // Update min level using dedicated function
+          // Pass locationId for per-location minimum levels
           await window.api.setMedicationMinLevel({
             medicationId: Math.floor(internalMedicationId),
+            locationId: editMinLevel.editing.locationId,
             minLevel: Math.floor(finalMinLevelBoxes)
           });
 
           // Optimistically update local state while awaiting refetch
+          // Update only the medication for this specific location
           setMedications(prev => prev.map(med => (
-            med.internalId === Math.floor(internalMedicationId)
+            med.internalId === Math.floor(internalMedicationId) && med.locationId === editMinLevel.editing.locationId
               ? { ...med, minLevelBoxes: Math.floor(finalMinLevelBoxes) }
               : med
           )));
@@ -3494,7 +3513,11 @@ Medicana Stock Management System`;
                               <td className="px-4 py-3 text-sm text-gray-600 text-center">
                                 <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
                                   <span>{formatMinLevelDisplay(med)}</span>
+                                  {ui.currentLocation === 'All' ? (
+                                    <span className="text-xs text-gray-500 italic">(Across all locations)</span>
+                                  ) : (
                                     <button onClick={() => setEditMinLevel({ editing: med, newLevel: '', type: 'boxes', boxes: (med.minLevelBoxes || 0).toString(), error: '' })} className="text-cyan-600 hover:text-cyan-700 text-xs underline">Edit</button>
+                                  )}
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-center">
@@ -3628,9 +3651,9 @@ Medicana Stock Management System`;
                                                       if (fullBoxes === 0) {
                                                         return `${looseItems} ${pluralizeUnit(looseItems, med.unit)} (from open box)`;
                                                       } else if (looseItems === 0) {
-                                                        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} items per box`;
+                                                        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} ${batch.itemsPerBox === 1 ? 'item' : 'items'} per box`;
                                                       } else {
-                                                        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} items per box + ${looseItems} ${pluralizeUnit(looseItems, med.unit)}`;
+                                                        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} ${batch.itemsPerBox === 1 ? 'item' : 'items'} per box + ${looseItems} ${pluralizeUnit(looseItems, med.unit)}`;
                                                       }
                                                     };
                                                     return (
@@ -3676,9 +3699,9 @@ Medicana Stock Management System`;
                                                     const boxes = Math.floor(qty / itemsPerBox);
                                                     const loose = qty % itemsPerBox;
                                                     if (loose > 0) {
-                                                      return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} items per box + ${loose} ${pluralizeUnit(loose, med.unit)}`;
+                                                      return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} ${itemsPerBox === 1 ? 'item' : 'items'} per box + ${loose} ${pluralizeUnit(loose, med.unit)}`;
                                                     }
-                                                    return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} items per box`;
+                                                    return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} ${itemsPerBox === 1 ? 'item' : 'items'} per box`;
                                                   }
                                                   return `${qty} ${pluralizeUnit(qty, med.unit)}`;
                                                 })()}</p>
@@ -3776,8 +3799,8 @@ Medicana Stock Management System`;
                             ...trans,
                             id: `transfer-${trans.id}-${match.id}`,
                             type: 'transfer',
-                            location: `${sourceLocation} to ${targetLocation}`,
-                            note: `Quantity: ${quantity}${brand ? ` - Brand: ${brand}` : ''}`,
+                            location: sourceLocation,
+                            note: `Transferred from ${sourceLocation} to ${targetLocation} - Quantity: ${quantity}${brand ? ` - Brand: ${brand}` : ''}`,
                             originalAmount: trans.amount,
                             timestamp: trans.timestamp, // Use earlier timestamp
                             user: trans.user
@@ -6375,7 +6398,7 @@ Medicana Stock Management System`;
                           const batchWithBoxes = med.batches.find(b => b.itemsPerBox);
                           if (batchWithBoxes) {
                             const boxes = Math.ceil(qty / batchWithBoxes.itemsPerBox);
-                            return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${batchWithBoxes.itemsPerBox} items per box`;
+                            return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${batchWithBoxes.itemsPerBox} ${batchWithBoxes.itemsPerBox === 1 ? 'item' : 'items'} per box`;
                           }
                           return `${qty} ${med.unit}`;
                         };
@@ -6786,7 +6809,7 @@ Medicana Stock Management System`;
                                             const boxes = med.recommendation.suggestedOrderQty;
                                             const itemsPerBox = med.standardItemsPerBox;
                                             if (itemsPerBox && boxes > 0) {
-                                              return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} items per box`;
+                                              return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} ${itemsPerBox === 1 ? 'item' : 'items'} per box`;
                                             }
                                             return `${boxes} ${boxes === 1 ? 'box' : 'boxes'}`;
                                           })()}
@@ -7048,9 +7071,9 @@ Medicana Stock Management System`;
                             const boxes = Math.floor(qty / itemsPerBox);
                             const loose = qty % itemsPerBox;
                             if (loose > 0) {
-                              return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} items per box + ${loose} ${pluralizeUnit(loose, fulfilOrderForm.med.unit)}`;
+                              return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} ${itemsPerBox === 1 ? 'item' : 'items'} per box + ${loose} ${pluralizeUnit(loose, fulfilOrderForm.med.unit)}`;
                             }
-                            return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} items per box`;
+                            return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} ${itemsPerBox === 1 ? 'item' : 'items'} per box`;
                           }
                           return `${qty} ${pluralizeUnit(qty, fulfilOrderForm.med.unit)}`;
                         })()}</span></div>

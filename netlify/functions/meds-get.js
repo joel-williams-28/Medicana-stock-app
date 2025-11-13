@@ -12,12 +12,17 @@ exports.handler = async () => {
     // medication_display_id, barcode, batch_code, brand, expiry_date, on_hand, items_per_box, number_of_boxes
     // Plus helper fields: type (form) and strength_raw
     const medsQuery = `
-      SELECT DISTINCT ON (medication_id, location_id, batch_id) *
-      FROM inventory_full
-      WHERE on_hand > 0 OR medication_id IN (
+      SELECT DISTINCT ON (inv.medication_id, inv.location_id, inv.batch_id)
+        inv.*,
+        COALESCE(lml.min_level_boxes, 0) as location_min_level_boxes
+      FROM inventory_full inv
+      LEFT JOIN location_min_levels lml
+        ON lml.medication_id = inv.medication_id
+        AND lml.location_id = inv.location_id
+      WHERE inv.on_hand > 0 OR inv.medication_id IN (
         SELECT medication_id FROM orders WHERE status = 'pending'
       )
-      ORDER BY medication_id, location_id, batch_id, medication_name, location_name, expiry_date;
+      ORDER BY inv.medication_id, inv.location_id, inv.batch_id, inv.medication_name, inv.location_name, inv.expiry_date;
     `;
     const medsResult = await db.query(medsQuery);
 
@@ -66,10 +71,11 @@ exports.handler = async () => {
       const medDetailsById = row.medication_id ? medicationDetailsById[row.medication_id] : undefined;
       const medDetails = medDetailsById || medicationDetailsByDisplayId[displayId] || {};
 
-      const rawRowMinLevelBoxes = row.min_level_boxes;
+      // Use per-location minimum level from the joined table
+      const rawRowMinLevelBoxes = row.location_min_level_boxes;
       const resolvedMinLevelBoxes = Number.isFinite(Number(rawRowMinLevelBoxes))
         ? Number(rawRowMinLevelBoxes)
-        : (medDetails.minLevelBoxes || 0);
+        : 0;
       
       // Build display name: Medication Name + " " + Strength Raw (e.g., "Paracetamol 500mg")
       const displayName = row.strength_raw && row.strength_raw !== 'N/A'
@@ -213,11 +219,9 @@ exports.handler = async () => {
       } else if (txType === 'out' && row.reason && row.reason.startsWith('Batch removed')) {
         // Batch removal handled by location check in categorizeTransaction
         txType = 'out';
-      } else if (txType === 'in' && row.reason && (row.reason.includes('Transfer from') || row.reason.includes('Transfer to'))) {
-        txType = 'transfer';
-      } else if (txType === 'out' && row.reason && (row.reason.includes('Transfer to') || row.reason.includes('Transfer from'))) {
-        txType = 'transfer';
       }
+      // Keep transfer transactions as 'in' or 'out' so frontend can pair them
+      // The frontend pairing logic will combine them into a single 'transfer' entry
 
       return {
         id: row.id,

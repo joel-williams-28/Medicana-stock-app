@@ -119,11 +119,11 @@ window.api = (function () {
     return out;
   }
 
-  async function setMedicationMinLevel({ medicationId, minLevel }) {
+  async function setMedicationMinLevel({ medicationId, locationId, minLevel }) {
     const res = await fetch('/.netlify/functions/medication-minlevel-set', {
       method: 'POST',
       headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({ medicationId, minLevel })
+      body: JSON.stringify({ medicationId, locationId, minLevel })
     });
     const out = await res.json();
     if (!res.ok || !out.success) throw new Error(out.message || 'Server error');

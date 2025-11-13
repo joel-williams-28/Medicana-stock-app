@@ -1,24 +1,24 @@
 // netlify/functions/medication-minlevel-set.js
-// Updates the minimum level (in boxes) for a medication
+// Updates the minimum level (in boxes) for a medication at a specific location
 const db = require('./_db');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
-    return { 
-      statusCode: 405, 
-      body: JSON.stringify({ success: false, message: 'Method not allowed' }) 
+    return {
+      statusCode: 405,
+      body: JSON.stringify({ success: false, message: 'Method not allowed' })
     };
   }
 
   try {
-    const { medicationId, minLevel } = JSON.parse(event.body || '{}');
+    const { medicationId, locationId, minLevel } = JSON.parse(event.body || '{}');
 
-    if (!medicationId) {
+    if (!medicationId || !locationId) {
       return {
         statusCode: 400,
-        body: JSON.stringify({ 
-          success: false, 
-          message: 'Missing required field: medicationId' 
+        body: JSON.stringify({
+          success: false,
+          message: 'Missing required fields: medicationId and locationId'
         })
       };
     }
@@ -26,24 +26,27 @@ exports.handler = async (event) => {
     // Convert minLevel to integer boxes
     const minBoxes = Number.isFinite(Number(minLevel)) ? Math.floor(Number(minLevel)) : 0;
 
-    // Update min_level_boxes column (ensure this column exists in your database)
-    // If the column doesn't exist, you'll need to run: ALTER TABLE medications ADD COLUMN min_level_boxes INTEGER DEFAULT 0;
+    // Insert or update the per-location minimum level
     const result = await db.query(
-      'UPDATE medications SET min_level_boxes = $1 WHERE id = $2 RETURNING id',
-      [minBoxes, medicationId]
+      `INSERT INTO location_min_levels (location_id, medication_id, min_level_boxes)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (location_id, medication_id)
+       DO UPDATE SET min_level_boxes = $3
+       RETURNING location_id, medication_id`,
+      [locationId, medicationId, minBoxes]
     );
-    
+
     if (result.rowCount === 0) {
       return {
         statusCode: 404,
-        body: JSON.stringify({ 
-          success: false, 
-          message: 'Medication not found' 
+        body: JSON.stringify({
+          success: false,
+          message: 'Failed to update minimum level'
         })
       };
     }
-    
-    console.log('medication-minlevel-set: Updated min_level_boxes to', minBoxes, 'for medication', medicationId);
+
+    console.log('medication-minlevel-set: Updated min_level_boxes to', minBoxes, 'for medication', medicationId, 'at location', locationId);
 
     return {
       statusCode: 200,
