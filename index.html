@@ -139,12 +139,12 @@
         : date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
     };
 
-    const getTotalQuantity = (med) => med.batches.reduce((sum, batch) => sum + batch.quantity, 0);
-    
+    const getTotalQuantity = (med) => med.batches.reduce((sum, batch) => sum + (batch ? batch.quantity : 0), 0);
+
     // Get total number of boxes across all batches
     const getTotalBoxes = (med) => {
       return med.batches.reduce((sum, batch) => {
-        return sum + (batch.numberOfBoxes || 0);
+        return sum + (batch && batch.numberOfBoxes ? batch.numberOfBoxes : 0);
       }, 0);
     };
 
@@ -154,6 +154,7 @@
       let standardItemsPerBox = med.standardItemsPerBox || null;
 
       med.batches.forEach(batch => {
+        if (!batch) return; // Skip null/undefined batches
         if (batch.itemsPerBox) {
           totalFullBoxes += Math.floor(batch.quantity / batch.itemsPerBox);
           totalLooseItems += batch.quantity % batch.itemsPerBox;
@@ -404,9 +405,12 @@
     };
 
     const findEarliestBatch = (batches) => {
-      return batches.reduce((earliest, batch) => 
-        new Date(batch.expiryDate + '-01') < new Date(earliest.expiryDate + '-01') ? batch : earliest
-      );
+      if (!batches || batches.length === 0) return null;
+      return batches.reduce((earliest, batch) => {
+        if (!batch || !batch.expiryDate) return earliest;
+        if (!earliest || !earliest.expiryDate) return batch;
+        return new Date(batch.expiryDate + '-01') < new Date(earliest.expiryDate + '-01') ? batch : earliest;
+      });
     };
 
 
@@ -869,7 +873,9 @@
             });
             return Object.values(grouped).map(med => ({
               ...med,
-              batches: med.batches.sort((a, b) => {
+              batches: med.batches.filter(b => b).sort((a, b) => {
+                if (!a || !a.expiryDate) return 1;
+                if (!b || !b.expiryDate) return -1;
                 const dateA = new Date(a.expiryDate + '-01');
                 const dateB = new Date(b.expiryDate + '-01');
                 return dateA - dateB;
@@ -1024,7 +1030,7 @@
         else if (getTotalBoxes(med) < med.minLevelBoxes) {
           const currentBoxes = getTotalBoxes(med);
           const baseBoxes = med.minLevelBoxes - currentBoxes;
-          const batchWithBoxes = med.batches.find(b => b.itemsPerBox);
+          const batchWithBoxes = med.batches.find(b => b && b.itemsPerBox);
           const finalQty = batchWithBoxes 
             ? Math.ceil(baseBoxes) * batchWithBoxes.itemsPerBox 
             : baseBoxes;
@@ -1197,8 +1203,9 @@
               
               // Merge batches intelligently - group by batch number and expiry date
               med.batches.forEach(newBatch => {
-                const existingBatch = grouped[med.name].batches.find(b => 
-                  b.expiryDate === newBatch.expiryDate && 
+                if (!newBatch) return; // Skip null/undefined batches
+                const existingBatch = grouped[med.name].batches.find(b =>
+                  b && b.expiryDate === newBatch.expiryDate &&
                   b.batchNumber === newBatch.batchNumber &&
                   b.brand === newBatch.brand
                 );
@@ -1225,7 +1232,9 @@
           // Sort batches by expiry date and return as array
           return Object.values(grouped).map(med => ({
             ...med,
-            batches: med.batches.sort((a, b) => {
+            batches: med.batches.filter(b => b).sort((a, b) => {
+              if (!a || !a.expiryDate) return 1;
+              if (!b || !b.expiryDate) return -1;
               const dateA = new Date(a.expiryDate + '-01');
               const dateB = new Date(b.expiryDate + '-01');
               return dateA - dateB;
@@ -2409,10 +2418,10 @@ Medicana Stock Management System`;
               // Handle cupboard stock removal - if removing from a cupboard, also remove from Medication Stock L1
               if (['Cupboard 1', 'Cupboard 2', 'Cupboard 3'].includes(ui.selectedMed.location)) {
                 const mainStockMed = medications.find(m => m.name === ui.selectedMed.name && m.location === 'Medication Stock L1');
-                if (mainStockMed) {
-                  const mainStockBatch = mainStockMed.batches.find(b => 
-                    b.expiryDate === selectedBatch.expiryDate && 
-                    b.brand === selectedBatch.brand && 
+                if (mainStockMed && mainStockMed.batches) {
+                  const mainStockBatch = mainStockMed.batches.find(b =>
+                    b && b.expiryDate === selectedBatch.expiryDate &&
+                    b.brand === selectedBatch.brand &&
                     b.itemsPerBox === selectedBatch.itemsPerBox
                   );
                   
@@ -2459,11 +2468,13 @@ Medicana Stock Management System`;
         checkLowStockAlert(ui.selectedMed, amount, selectedBatch?.id);
       };
 
-      const checkLowStockAlert = (med, amountRemoved) => {
+      const checkLowStockAlert = (med, amountRemoved, batchId) => {
         const currentTotalQuantity = getTotalQuantity(med);
         const newTotalQuantity = currentTotalQuantity - amountRemoved;
         const currentBoxes = getTotalBoxes(med);
         const newBoxes = med.batches.reduce((sum, batch) => {
+          // Add null check for batch and batch properties
+          if (!batch) return sum;
           const batchQty = batch.id === batchId ? (batch.quantity - amountRemoved) : batch.quantity;
           return sum + (batch.numberOfBoxes || (batch.itemsPerBox ? Math.floor(batchQty / batch.itemsPerBox) : 0));
         }, 0);
