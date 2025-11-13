@@ -2319,7 +2319,19 @@ Medicana Stock Management System`;
             return;
           }
         }
-        const selectedBatch = ui.selectedMed.batches.find(b => b.id === parseInt(adjustmentForm.batchId));
+        console.log('[DEBUG] Looking for batch with ID:', adjustmentForm.batchId, 'type:', typeof adjustmentForm.batchId);
+        console.log('[DEBUG] Available batches:', ui.selectedMed.batches.map(b => ({ id: b.id, idType: typeof b.id, brand: b.brand })));
+
+        // Handle both string and number IDs by comparing as strings
+        const selectedBatch = ui.selectedMed.batches.find(b => String(b.id) === String(adjustmentForm.batchId));
+        console.log('[DEBUG] Found selectedBatch:', selectedBatch);
+
+        if (!selectedBatch) {
+          console.error('[DEBUG] selectedBatch is undefined! batchId:', adjustmentForm.batchId);
+          setAdjustmentForm(prev => ({ ...prev, error: 'Selected batch not found. Please try selecting the batch again.' }));
+          return;
+        }
+
         let amount = parseInt(adjustmentForm.amount);
           if (adjustmentForm.type === 'boxes' && selectedBatch.itemsPerBox) { amount = amount * selectedBatch.itemsPerBox; }
         const updatedMed = { ...ui.selectedMed };
