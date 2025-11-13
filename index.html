@@ -408,21 +408,54 @@
 
 
     const MedicationStockApp = () => {
-      // localStorage helpers
+      // Check if storage is available
+      const [storageAvailable, setStorageAvailable] = useState(true);
+      const [storageWarningShown, setStorageWarningShown] = useState(false);
+
+      // Test storage availability
+      const testStorageAvailable = () => {
+        try {
+          const testKey = '__storage_test__';
+          localStorage.setItem(testKey, 'test');
+          localStorage.removeItem(testKey);
+          return true;
+        } catch (e) {
+          console.warn('localStorage is not available:', e.message);
+          return false;
+        }
+      };
+
+      // localStorage helpers with better error handling
       const storage = {
         load: (key, fallback = null) => {
           try {
             const raw = localStorage.getItem(key);
             return raw ? JSON.parse(raw) : fallback;
           } catch (e) {
+            console.warn(`Failed to load from storage (key: ${key}):`, e.message);
+            if (!storageWarningShown && !storageAvailable) {
+              setStorageWarningShown(true);
+            }
             return fallback;
           }
         },
         save: (key, value) => {
-          try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+          try {
+            localStorage.setItem(key, JSON.stringify(value));
+          } catch (e) {
+            console.warn(`Failed to save to storage (key: ${key}):`, e.message);
+            if (!storageWarningShown) {
+              setStorageWarningShown(true);
+              setStorageAvailable(false);
+            }
+          }
         },
         remove: (key) => {
-          try { localStorage.removeItem(key); } catch (e) {}
+          try {
+            localStorage.removeItem(key);
+          } catch (e) {
+            console.warn(`Failed to remove from storage (key: ${key}):`, e.message);
+          }
         }
       };
       const [auth, setAuth] = useState({ currentUser: '', password: '', isLoggedIn: false, error: '' });
@@ -630,6 +663,14 @@
 
         // Load saved state from localStorage on first mount
       useEffect(() => {
+          // Test if storage is available
+          const isStorageAvailable = testStorageAvailable();
+          setStorageAvailable(isStorageAvailable);
+
+          if (!isStorageAvailable) {
+            console.warn('Storage is blocked. App will work but preferences will not be saved.');
+          }
+
           const savedAuth = storage.load('medicana_auth');
           if (savedAuth && typeof savedAuth === 'object') {
             // Always start logged out on fresh load
@@ -1608,11 +1649,21 @@
             }
           } catch (err) {
             console.error('Failed to load initial data:', err);
-            setAuth(prev => ({ ...prev, error: 'Failed to load data from server.' }));
+            const errorMessage = err.message || 'Failed to load data from server.';
+            setAuth(prev => ({
+              ...prev,
+              error: `Unable to load data: ${errorMessage}. Please check your connection and try again.`
+            }));
             return;
           }
         } catch (e) {
-          setAuth(prev => ({ ...prev, error: 'Network or server error.', password: '' }));
+          console.error('Login error:', e);
+          const errorMessage = e.message || 'Network or server error.';
+          setAuth(prev => ({
+            ...prev,
+            error: `Login failed: ${errorMessage}`,
+            password: ''
+          }));
         }
       };
       const handleLogout = () => {
@@ -2985,6 +3036,11 @@ Medicana Stock Management System`;
                 <h3 className="text-lg sm:text-xl font-semibold text-gray-700">Winchester</h3>
                 <p className="text-xs sm:text-sm text-gray-500 mt-2">Medication Stock Management</p>
               </div>
+                {!storageAvailable && (
+                  <div className="mb-4 p-3 bg-yellow-50 border border-yellow-300 rounded text-xs sm:text-sm text-yellow-800">
+                    <strong>Note:</strong> Browser storage is blocked by tracking prevention. The app will function, but your preferences will not be saved between sessions.
+                  </div>
+                )}
                 {auth.error && (<div className="mb-4 p-3 bg-red-50 border border-red-300 rounded text-xs sm:text-sm text-red-700">{auth.error}</div>)}
               <div>
                 <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Username</label>

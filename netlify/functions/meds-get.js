@@ -265,10 +265,37 @@ exports.handler = async () => {
       })
     };
   } catch (e) {
-    console.error('meds-get error:', e);
+    // Enhanced error logging for debugging
+    console.error('=== meds-get error ===');
+    console.error('Error name:', e.name);
+    console.error('Error message:', e.message);
+    console.error('Error stack:', e.stack);
+
+    // Log specific error details for common database issues
+    if (e.code) {
+      console.error('Error code:', e.code);
+    }
+    if (e.detail) {
+      console.error('Error detail:', e.detail);
+    }
+    if (e.hint) {
+      console.error('Error hint:', e.hint);
+    }
+
+    // Return more informative error message in development
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    const errorMessage = isDevelopment
+      ? `Server error: ${e.message}`
+      : 'Server error. Please try again or contact support.';
+
     return {
       statusCode: 500,
-      body: JSON.stringify({ success: false, message: 'Server error.' })
+      body: JSON.stringify({
+        success: false,
+        message: errorMessage,
+        // Include error code if available for debugging
+        ...(isDevelopment && e.code ? { errorCode: e.code } : {})
+      })
     };
   }
 };
