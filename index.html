@@ -2467,6 +2467,11 @@ Medicana Stock Management System`;
             setMedications(data.medications || []);
             setTransactions(data.transactions || []);
 
+            // Switch to "All" locations view after internal transfer so user can see both source and target
+            if (isInternalTransfer && ui.currentLocation !== 'All') {
+              setUi(prev => ({ ...prev, currentLocation: 'All' }));
+            }
+
             // Use the original selectedBatch parameter (not a new lookup) since the batch may have moved
             checkLowStockAlert(ui.selectedMed, amount, selectedBatch.id);
           } catch (err) {
@@ -2579,6 +2584,11 @@ Medicana Stock Management System`;
           setMedications(data.medications || []);
           setTransactions(data.transactions || []);
           setLocations(data.locations || []);
+
+          // Switch to "All" locations view after receiving transfer so user can see the stock
+          if (adjustmentForm.stockInSource === 'transfer' && ui.currentLocation !== 'All') {
+            setUi(prev => ({ ...prev, currentLocation: 'All' }));
+          }
         } catch (err) {
           console.error('Failed to process stock in:', err);
           setAdjustmentForm(prev => ({ ...prev, error: err.message || 'Failed to process stock in' }));
