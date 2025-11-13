@@ -2373,31 +2373,59 @@ Medicana Stock Management System`;
             }
 
             // Determine if this is an internal transfer or external dispensing
+            console.log('[DEBUG] Checking if transfer is internal...');
+            console.log('[DEBUG] adjustmentForm.location:', adjustmentForm.location);
+            console.log('[DEBUG] locations array length:', locations.length);
+            console.log('[DEBUG] locations array:', locations);
+
             const targetLocationId = getLocationId(adjustmentForm.location);
-            const isInternalTransfer = locations.some(loc => loc.displayName === adjustmentForm.location);
+            // Check if target location exists in locations array AND has a valid ID (string or number)
+            const targetLocation = locations.find(loc => loc.displayName === adjustmentForm.location);
+            console.log('[DEBUG] targetLocation found:', targetLocation);
+
+            const isInternalTransfer = targetLocation && targetLocation.id != null && targetLocation.id !== '';
+            console.log('[DEBUG] isInternalTransfer:', isInternalTransfer);
+            console.log('[DEBUG] targetLocation?.id type:', typeof targetLocation?.id);
+
             const displayAmount = formatQuantityDisplay(amount, selectedBatch.itemsPerBox, ui.selectedMed.unit, adjustmentForm.type, adjustmentForm.type === 'boxes' ? adjustmentForm.amount : null);
             let transactionNote = adjustmentForm.note || (isInternalTransfer ? `Transfer to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}` : `Dispensed to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}`);
             if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
 
             console.log('[DEBUG] Transfer details:', {
               isInternalTransfer,
+              targetLocation,
               targetLocationId,
               targetLocationDisplayName: adjustmentForm.location,
               sourceLocationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
               batchId: selectedBatch.id,
               amount,
-              transactionNote
+              transactionNote,
+              locationsArrayLength: locations.length
             });
 
             if (isInternalTransfer) {
               // Use the dedicated transfer API for internal transfers
               // Server derives medication_id from batch_id - do not send medicationId
               console.log('[DEBUG] Calling transferStock API');
+
+              const sourceLocationId = ui.selectedMed.locationId || getLocationId(ui.selectedMed.location);
+              const finalTargetLocationId = targetLocation.id; // Use the validated location ID
+
+              // Final validation: ensure both IDs are valid (not null, undefined, or empty)
+              if (!sourceLocationId || !finalTargetLocationId || sourceLocationId === '' || finalTargetLocationId === '') {
+                console.error('[ERROR] Invalid location IDs:', { sourceLocationId, finalTargetLocationId });
+                setAdjustmentForm(prev => ({
+                  ...prev,
+                  error: `Transfer failed: Invalid location IDs. Source: ${sourceLocationId}, Target: ${finalTargetLocationId}. Please refresh the page and try again.`
+                }));
+                return;
+              }
+
               const transferPayload = {
                 userId: currentUser.id,
                 batchId: selectedBatch.id,
-                sourceLocationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
-                targetLocationId: targetLocationId,
+                sourceLocationId: sourceLocationId,
+                targetLocationId: finalTargetLocationId,
                 quantity: amount,
                 reason: transactionNote
               };
@@ -2449,8 +2477,13 @@ Medicana Stock Management System`;
             setMedications(data.medications || []);
             setTransactions(data.transactions || []);
 
-            const selectedBatch = ui.selectedMed.batches.find(b => b.id === parseInt(adjustmentForm.batchId));
-            checkLowStockAlert(ui.selectedMed, amount, selectedBatch?.id);
+            // Switch to "All" locations view after internal transfer so user can see both source and target
+            if (isInternalTransfer && ui.currentLocation !== 'All') {
+              setUi(prev => ({ ...prev, currentLocation: 'All' }));
+            }
+
+            // Use the original selectedBatch parameter (not a new lookup) since the batch may have moved
+            checkLowStockAlert(ui.selectedMed, amount, selectedBatch.id);
           } catch (err) {
             console.error('Failed to process stock out:', err);
             setAdjustmentForm(prev => ({ ...prev, error: err.message || 'Failed to process stock out' }));
@@ -2510,18 +2543,33 @@ Medicana Stock Management System`;
             const sourceBatch = sourceMed.batches.find(b => b.id === parseInt(adjustmentForm.batchId));
             if (!sourceBatch) { setAdjustmentForm(prev => ({ ...prev, error: 'Selected batch not found in source department' })); return; }
             if (sourceBatch.quantity < amount) { setAdjustmentForm(prev => ({ ...prev, error: `Cannot transfer ${amount} ${ui.selectedMed.unit}. Only ${sourceBatch.quantity} ${ui.selectedMed.unit} available in source batch.` })); return; }
-            
+
             const displayAmount = formatQuantityDisplay(amount, sourceBatch.itemsPerBox, ui.selectedMed.unit, adjustmentForm.type, adjustmentForm.type === 'boxes' ? adjustmentForm.amount : null);
             let transactionNote = adjustmentForm.note || `Stock received from ${adjustmentForm.sourceDepartment} - Brand: ${sourceBatch.brand}, Expiry: ${formatExpiry(sourceBatch.expiryDate)}`;
             if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
+
+            // Validate location IDs before transfer
+            const sourceLocationId = sourceMed.locationId || getLocationId(adjustmentForm.sourceDepartment);
+            const targetLocationId = ui.selectedMed.locationId || getLocationId(ui.selectedMed.location);
+
+            console.log('[DEBUG] Transfer IN - Location IDs:', { sourceLocationId, targetLocationId });
+
+            if (!sourceLocationId || !targetLocationId || sourceLocationId === '' || targetLocationId === '') {
+              console.error('[ERROR] Invalid location IDs for transfer IN:', { sourceLocationId, targetLocationId });
+              setAdjustmentForm(prev => ({
+                ...prev,
+                error: `Transfer failed: Invalid location IDs. Source: ${sourceLocationId}, Target: ${targetLocationId}. Please refresh the page and try again.`
+              }));
+              return;
+            }
 
             // Use the dedicated transfer API
             // Server derives medication_id from batch_id - do not send medicationId
             await window.api.transferStock({
               userId: currentUser.id,
               batchId: sourceBatch.id,
-              sourceLocationId: sourceMed.locationId || getLocationId(adjustmentForm.sourceDepartment),
-              targetLocationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
+              sourceLocationId: sourceLocationId,
+              targetLocationId: targetLocationId,
               quantity: amount,
               reason: transactionNote
             });
@@ -2546,6 +2594,11 @@ Medicana Stock Management System`;
           setMedications(data.medications || []);
           setTransactions(data.transactions || []);
           setLocations(data.locations || []);
+
+          // Switch to "All" locations view after receiving transfer so user can see the stock
+          if (adjustmentForm.stockInSource === 'transfer' && ui.currentLocation !== 'All') {
+            setUi(prev => ({ ...prev, currentLocation: 'All' }));
+          }
         } catch (err) {
           console.error('Failed to process stock in:', err);
           setAdjustmentForm(prev => ({ ...prev, error: err.message || 'Failed to process stock in' }));
