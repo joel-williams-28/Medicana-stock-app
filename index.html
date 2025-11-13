@@ -2320,11 +2320,18 @@ Medicana Stock Management System`;
           }
         }
         console.log('[DEBUG] Looking for batch with ID:', adjustmentForm.batchId, 'type:', typeof adjustmentForm.batchId);
-        console.log('[DEBUG] Available batches:', ui.selectedMed.batches.map(b => ({ id: b.id, idType: typeof b.id, brand: b.brand })));
+        console.log('[DEBUG] Available batches:', ui.selectedMed.batches.map(b => ({ id: b.id, idType: typeof b.id, brand: b.brand, itemsPerBox: b.itemsPerBox, quantity: b.quantity })));
 
         // Handle both string and number IDs by comparing as strings
         const selectedBatch = ui.selectedMed.batches.find(b => String(b.id) === String(adjustmentForm.batchId));
         console.log('[DEBUG] Found selectedBatch:', selectedBatch);
+        console.log('[DEBUG] selectedBatch details:', selectedBatch ? {
+          id: selectedBatch.id,
+          brand: selectedBatch.brand,
+          itemsPerBox: selectedBatch.itemsPerBox,
+          quantity: selectedBatch.quantity,
+          expiryDate: selectedBatch.expiryDate
+        } : 'UNDEFINED');
 
         if (!selectedBatch) {
           console.error('[DEBUG] selectedBatch is undefined! batchId:', adjustmentForm.batchId);
@@ -2349,6 +2356,9 @@ Medicana Stock Management System`;
       const processStockOut = async (updatedMed, selectedBatch, amount, overrideReason) => {
           console.log('[DEBUG] processStockOut called with:', {
             selectedBatch,
+            selectedBatchType: typeof selectedBatch,
+            selectedBatchId: selectedBatch?.id,
+            selectedBatchItemsPerBox: selectedBatch?.itemsPerBox,
             amount,
             overrideReason
           });
