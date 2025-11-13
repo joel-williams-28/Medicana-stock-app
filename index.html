@@ -2373,10 +2373,20 @@ Medicana Stock Management System`;
             }
 
             // Determine if this is an internal transfer or external dispensing
+            console.log('[DEBUG] Checking if transfer is internal...');
+            console.log('[DEBUG] adjustmentForm.location:', adjustmentForm.location);
+            console.log('[DEBUG] locations array length:', locations.length);
+            console.log('[DEBUG] locations array:', locations);
+
             const targetLocationId = getLocationId(adjustmentForm.location);
             // Check if target location exists in locations array AND has a valid numeric ID
             const targetLocation = locations.find(loc => loc.displayName === adjustmentForm.location);
+            console.log('[DEBUG] targetLocation found:', targetLocation);
+
             const isInternalTransfer = targetLocation && typeof targetLocation.id === 'number';
+            console.log('[DEBUG] isInternalTransfer:', isInternalTransfer);
+            console.log('[DEBUG] targetLocation?.id type:', typeof targetLocation?.id);
+
             const displayAmount = formatQuantityDisplay(amount, selectedBatch.itemsPerBox, ui.selectedMed.unit, adjustmentForm.type, adjustmentForm.type === 'boxes' ? adjustmentForm.amount : null);
             let transactionNote = adjustmentForm.note || (isInternalTransfer ? `Transfer to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}` : `Dispensed to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}`);
             if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
