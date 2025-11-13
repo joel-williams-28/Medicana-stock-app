@@ -2379,11 +2379,11 @@ Medicana Stock Management System`;
             console.log('[DEBUG] locations array:', locations);
 
             const targetLocationId = getLocationId(adjustmentForm.location);
-            // Check if target location exists in locations array AND has a valid numeric ID
+            // Check if target location exists in locations array AND has a valid ID (string or number)
             const targetLocation = locations.find(loc => loc.displayName === adjustmentForm.location);
             console.log('[DEBUG] targetLocation found:', targetLocation);
 
-            const isInternalTransfer = targetLocation && typeof targetLocation.id === 'number';
+            const isInternalTransfer = targetLocation && targetLocation.id != null && targetLocation.id !== '';
             console.log('[DEBUG] isInternalTransfer:', isInternalTransfer);
             console.log('[DEBUG] targetLocation?.id type:', typeof targetLocation?.id);
 
@@ -2411,8 +2411,8 @@ Medicana Stock Management System`;
               const sourceLocationId = ui.selectedMed.locationId || getLocationId(ui.selectedMed.location);
               const finalTargetLocationId = targetLocation.id; // Use the validated location ID
 
-              // Final validation: ensure both IDs are numbers
-              if (typeof sourceLocationId !== 'number' || typeof finalTargetLocationId !== 'number') {
+              // Final validation: ensure both IDs are valid (not null, undefined, or empty)
+              if (!sourceLocationId || !finalTargetLocationId || sourceLocationId === '' || finalTargetLocationId === '') {
                 console.error('[ERROR] Invalid location IDs:', { sourceLocationId, finalTargetLocationId });
                 setAdjustmentForm(prev => ({
                   ...prev,
@@ -2554,7 +2554,7 @@ Medicana Stock Management System`;
 
             console.log('[DEBUG] Transfer IN - Location IDs:', { sourceLocationId, targetLocationId });
 
-            if (typeof sourceLocationId !== 'number' || typeof targetLocationId !== 'number') {
+            if (!sourceLocationId || !targetLocationId || sourceLocationId === '' || targetLocationId === '') {
               console.error('[ERROR] Invalid location IDs for transfer IN:', { sourceLocationId, targetLocationId });
               setAdjustmentForm(prev => ({
                 ...prev,
