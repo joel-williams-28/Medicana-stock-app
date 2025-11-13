@@ -3330,8 +3330,8 @@ Medicana Stock Management System`;
                       )}
                     </div>
                   </div>
-                  
-                  <div className="overflow-x-auto -mx-3 sm:mx-0">
+
+                  <div className="overflow-x-auto">
                     <table className="w-full min-w-[640px]">
                       <thead className="bg-gray-50">
                         <tr>
@@ -3846,15 +3846,11 @@ Medicana Stock Management System`;
               {ui.activeTab === 'newmedication' && (
                 <>
                   <div className="p-3 sm:p-4 border-b border-cyan-100 bg-gradient-to-r from-cyan-50 to-blue-50">
-                    <div className="max-w-2xl mx-auto">
-                      <h2 className="text-2xl font-bold text-gray-800 mb-2">Order New Medication</h2>
-                      <p className="text-gray-600">Request a new medication that is not currently in the stock system.</p>
-                    </div>
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-2">Order New Medication</h2>
+                    <p className="text-sm sm:text-base text-gray-600">Request a new medication that is not currently in the stock system.</p>
                   </div>
-                  <div className="p-3 sm:p-4">
-                    <div className="max-w-2xl mx-auto">
-                      <div className="bg-white rounded-lg shadow-md p-6">
-                      <form onSubmit={(e) => { e.preventDefault(); handleNewMedicationOrder(); }}>
+                  <div className="p-3 sm:p-4 md:p-6">
+                    <form onSubmit={(e) => { e.preventDefault(); handleNewMedicationOrder(); }}>
                         {newMedicationOrderForm.error && (
                           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
                             <p className="text-sm text-red-600">{newMedicationOrderForm.error}</p>
@@ -3971,9 +3967,7 @@ Medicana Stock Management System`;
                           </button>
                         </div>
                       </form>
-                    </div>
                   </div>
-                </div>
                 </>
               )}
             </div>
