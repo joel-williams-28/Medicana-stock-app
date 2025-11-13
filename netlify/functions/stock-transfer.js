@@ -68,6 +68,20 @@ exports.handler = async (event) => {
 
       const medicationId = batchQuery.rows[0].medication_id;
 
+      // Get location display names for clean transaction notes
+      const locationsQuery = await db.query(
+        'SELECT id, display_name FROM locations WHERE id IN ($1, $2)',
+        [sourceLocationId, targetLocationId]
+      );
+
+      const locationMap = {};
+      locationsQuery.rows.forEach(row => {
+        locationMap[row.id] = row.display_name;
+      });
+
+      const sourceLocationName = locationMap[sourceLocationId] || sourceLocationId;
+      const targetLocationName = locationMap[targetLocationId] || targetLocationId;
+
       // Step 1: Check source has enough stock
       const checkSource = await db.query(
         'SELECT on_hand FROM inventory WHERE location_id = $1 AND batch_id = $2',
@@ -106,11 +120,13 @@ exports.handler = async (event) => {
       );
 
       // Step 3: Insert transaction for source (outgoing transfer)
+      // Always construct a clean note with "Transfer to [location]" prefix
+      const outReason = `Transfer to ${targetLocationName}`;
       await db.query(
         `INSERT INTO transactions
          (batch_id, location_id, medication_id, user_id, delta, type, reason)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [batchId, sourceLocationId, medicationId, userId, -quantity, 'out', reason || `Transfer to ${targetLocationId}`]
+        [batchId, sourceLocationId, medicationId, userId, -quantity, 'out', outReason]
       );
 
       // Step 4: Ensure target inventory row exists, then increase stock
@@ -127,11 +143,13 @@ exports.handler = async (event) => {
       );
 
       // Step 5: Insert transaction for target (incoming transfer)
+      // Always construct a clean note with "Transfer from [location]" prefix
+      const inReason = `Transfer from ${sourceLocationName}`;
       await db.query(
         `INSERT INTO transactions
          (batch_id, location_id, medication_id, user_id, delta, type, reason)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [batchId, targetLocationId, medicationId, userId, quantity, 'in', reason || `Transfer from ${sourceLocationId}`]
+        [batchId, targetLocationId, medicationId, userId, quantity, 'in', inReason]
       );
 
       // Commit transaction
