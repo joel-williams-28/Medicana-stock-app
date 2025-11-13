@@ -2178,20 +2178,39 @@ Medicana Stock Management System`;
       };
 
       const handleStockAdjustment = (type) => {
+        console.log('[DEBUG] handleStockAdjustment called with type:', type);
+        console.log('[DEBUG] adjustmentForm state:', {
+          action: adjustmentForm.action,
+          batchId: adjustmentForm.batchId,
+          amount: adjustmentForm.amount,
+          location: adjustmentForm.location,
+          type: adjustmentForm.type,
+          stockOutPurpose: adjustmentForm.stockOutPurpose
+        });
+        console.log('[DEBUG] ui.selectedMed:', ui.selectedMed);
+
         setAdjustmentForm(prev => ({ ...prev, error: '' }));
           if (type === 'in' && ((adjustmentForm.stockInSource === 'delivery' && adjustmentForm.deliveryBatchOption === 'new') || (adjustmentForm.stockInSource === 'transfer' && adjustmentForm.transferBatchOption === 'new'))) {
           processAdjustment(null);
           return;
         }
-        if (!ui.selectedMed || !adjustmentForm.amount || parseInt(adjustmentForm.amount) <= 0) return;
+        if (!ui.selectedMed || !adjustmentForm.amount || parseInt(adjustmentForm.amount) <= 0) {
+          console.log('[DEBUG] Validation failed: missing selectedMed or invalid amount');
+          console.log('[DEBUG] ui.selectedMed:', ui.selectedMed);
+          console.log('[DEBUG] amount:', adjustmentForm.amount);
+          return;
+        }
         if (!adjustmentForm.batchId) {
+          console.log('[DEBUG] Validation failed: no batchId selected');
           setAdjustmentForm(prev => ({ ...prev, error: 'Please select a batch' }));
           return;
         }
         if (type === 'out' && !adjustmentForm.location) {
+          console.log('[DEBUG] Validation failed: no location selected');
           setAdjustmentForm(prev => ({ ...prev, error: 'Please select a location for stock removal' }));
           return;
         }
+        console.log('[DEBUG] All validations passed, proceeding to process adjustment');
         if (type === 'in' && adjustmentForm.stockInSource === 'transfer' && !adjustmentForm.sourceDepartment) {
           setAdjustmentForm(prev => ({ ...prev, error: 'Please select which department the stock is coming from' }));
           return;
@@ -2300,7 +2319,19 @@ Medicana Stock Management System`;
             return;
           }
         }
-        const selectedBatch = ui.selectedMed.batches.find(b => b.id === parseInt(adjustmentForm.batchId));
+        console.log('[DEBUG] Looking for batch with ID:', adjustmentForm.batchId, 'type:', typeof adjustmentForm.batchId);
+        console.log('[DEBUG] Available batches:', ui.selectedMed.batches.map(b => ({ id: b.id, idType: typeof b.id, brand: b.brand })));
+
+        // Handle both string and number IDs by comparing as strings
+        const selectedBatch = ui.selectedMed.batches.find(b => String(b.id) === String(adjustmentForm.batchId));
+        console.log('[DEBUG] Found selectedBatch:', selectedBatch);
+
+        if (!selectedBatch) {
+          console.error('[DEBUG] selectedBatch is undefined! batchId:', adjustmentForm.batchId);
+          setAdjustmentForm(prev => ({ ...prev, error: 'Selected batch not found. Please try selecting the batch again.' }));
+          return;
+        }
+
         let amount = parseInt(adjustmentForm.amount);
           if (adjustmentForm.type === 'boxes' && selectedBatch.itemsPerBox) { amount = amount * selectedBatch.itemsPerBox; }
         const updatedMed = { ...ui.selectedMed };
@@ -2316,11 +2347,18 @@ Medicana Stock Management System`;
       };
 
       const processStockOut = async (updatedMed, selectedBatch, amount, overrideReason) => {
+          console.log('[DEBUG] processStockOut called with:', {
+            selectedBatch,
+            amount,
+            overrideReason
+          });
+
           if (selectedBatch.quantity < amount) { setAdjustmentForm(prev => ({ ...prev, error: `Cannot remove ${amount} ${ui.selectedMed.unit}. Only ${selectedBatch.quantity} ${ui.selectedMed.unit} available in this batch.` })); return; }
-          
+
           try {
             const currentUser = getCurrentUserInfo();
             if (!currentUser || !currentUser.id) {
+              console.log('[DEBUG] User not logged in');
               setAdjustmentForm(prev => ({ ...prev, error: 'User not logged in' }));
               return;
             }
@@ -2332,17 +2370,31 @@ Medicana Stock Management System`;
             let transactionNote = adjustmentForm.note || (isInternalTransfer ? `Transfer to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}` : `Dispensed to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}`);
             if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
 
+            console.log('[DEBUG] Transfer details:', {
+              isInternalTransfer,
+              targetLocationId,
+              targetLocationDisplayName: adjustmentForm.location,
+              sourceLocationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
+              batchId: selectedBatch.id,
+              amount,
+              transactionNote
+            });
+
             if (isInternalTransfer) {
               // Use the dedicated transfer API for internal transfers
               // Server derives medication_id from batch_id - do not send medicationId
-              await window.api.transferStock({
+              console.log('[DEBUG] Calling transferStock API');
+              const transferPayload = {
                 userId: currentUser.id,
                 batchId: selectedBatch.id,
                 sourceLocationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
                 targetLocationId: targetLocationId,
                 quantity: amount,
                 reason: transactionNote
-              });
+              };
+              console.log('[DEBUG] Transfer payload:', transferPayload);
+              await window.api.transferStock(transferPayload);
+              console.log('[DEBUG] transferStock API call completed successfully');
             } else {
               // External dispensing - just remove stock
               // Server derives medication_id from batch_id - do not send medicationId
@@ -3984,60 +4036,56 @@ Medicana Stock Management System`;
                   <h2 className="text-base sm:text-lg font-bold text-gray-800">Adjust Stock</h2>
                   <p className="text-xs text-gray-600 mt-1">Location: {ui.selectedMed.location}</p>
                 </div>
+
+                {/* Tab Navigation */}
+                <div className="border-b border-gray-200 flex-shrink-0">
+                  <div className="flex">
+                    <button
+                      type="button"
+                      onClick={() => setAdjustmentForm(prev => ({ ...prev, action: 'out', stockInSource: 'transfer', transferBatchOption: 'existing', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' }))}
+                      className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                        adjustmentForm.action === 'out'
+                          ? 'border-cyan-500 text-cyan-700 bg-cyan-50'
+                          : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                      }`}
+                    >
+                      Transfer Location
+                    </button>
+                    {getUserRole() !== 'Basic User' && (
+                      <button
+                        type="button"
+                        onClick={() => setAdjustmentForm(prev => ({ ...prev, action: 'in', stockInSource: 'delivery', deliveryBatchOption: 'new', error: '' }))}
+                        className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                          adjustmentForm.action === 'in'
+                            ? 'border-green-500 text-green-700 bg-green-50'
+                            : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                        }`}
+                      >
+                        Stock In (Add)
+                      </button>
+                    )}
+                    {getUserRole() === 'Basic User' && (
+                      <button
+                        type="button"
+                        onClick={() => setAdjustmentForm(prev => ({ ...prev, action: 'in', stockInSource: 'transfer', transferBatchOption: 'existing', error: '' }))}
+                        className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                          adjustmentForm.action === 'in'
+                            ? 'border-green-500 text-green-700 bg-green-50'
+                            : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                        }`}
+                      >
+                        Receive Transfer
+                      </button>
+                    )}
+                  </div>
+                </div>
+
                 <div className="overflow-y-auto px-4 sm:px-6 py-3 sm:py-4 flex-1">
                     {adjustmentForm.error && (<div className="mb-4 p-3 bg-red-50 border border-red-300 rounded text-sm text-red-700">{adjustmentForm.error}</div>)}
                 <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded">
                   <p className="text-sm font-medium text-gray-900 mb-1">{ui.selectedMed.name}</p>
                   <p className="text-lg font-bold text-gray-900">Current Stock: {formatStockDisplay(ui.selectedMed)}</p>
                   <p className="text-xs text-gray-600">Minimum Level: {formatMinLevelDisplay(ui.selectedMed)}</p>
-                </div>
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Action Type</label>
-                  <div className="flex gap-4 mb-4">
-                    <label className="flex items-center cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="adjustmentAction" 
-                        value="out" 
-                        checked={adjustmentForm.action === 'out'} 
-                        onClick={(e) => { 
-                          setAdjustmentForm(prev => ({ ...prev, action: 'out', stockInSource: 'transfer', transferBatchOption: 'existing', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' })); 
-                        }} 
-                        className="mr-2" 
-                      />
-                      Transfer Location
-                    </label>
-                    {getUserRole() !== 'Basic User' && (
-                      <label className="flex items-center cursor-pointer">
-                        <input 
-                          type="radio" 
-                          name="adjustmentAction" 
-                          value="in" 
-                          checked={adjustmentForm.action === 'in'} 
-                          onClick={(e) => { 
-                            setAdjustmentForm(prev => ({ ...prev, action: 'in', stockInSource: 'delivery', deliveryBatchOption: 'new', error: '' })); 
-                          }} 
-                          className="mr-2" 
-                        />
-                        Stock In (Add)
-                      </label>
-                    )}
-                    {getUserRole() === 'Basic User' && (
-                      <label className="flex items-center cursor-pointer">
-                        <input 
-                          type="radio" 
-                          name="adjustmentAction" 
-                          value="in" 
-                          checked={adjustmentForm.action === 'in'} 
-                          onClick={(e) => { 
-                            setAdjustmentForm(prev => ({ ...prev, action: 'in', stockInSource: 'transfer', transferBatchOption: 'existing', error: '' })); 
-                          }} 
-                          className="mr-2" 
-                        />
-                        Receive Transfer
-                      </label>
-                    )}
-                  </div>
                 </div>
 
                 {adjustmentForm.action === 'out' && ui.currentLocation !== 'All' && ui.currentLocation !== 'Medication Stock L1' && (
@@ -4686,43 +4734,41 @@ Medicana Stock Management System`;
                   <h2 className="text-base sm:text-lg font-bold text-gray-800">Quick Stock Adjustment</h2>
                   <p className="text-xs text-gray-600 mt-1">Scanned: {ui.selectedMed.name} - Location: {ui.selectedMed.location}</p>
                 </div>
+
+                {/* Tab Navigation */}
+                <div className="border-b border-gray-200 flex-shrink-0">
+                  <div className="flex">
+                    <button
+                      type="button"
+                      onClick={() => setAdjustmentForm(prev => ({ ...prev, action: 'out', stockInSource: 'transfer', transferBatchOption: 'existing', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' }))}
+                      className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                        adjustmentForm.action === 'out'
+                          ? 'border-cyan-500 text-cyan-700 bg-cyan-50'
+                          : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                      }`}
+                    >
+                      Transfer Location
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdjustmentForm(prev => ({ ...prev, action: 'in', stockInSource: 'delivery', deliveryBatchOption: 'new', error: '' }))}
+                      className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                        adjustmentForm.action === 'in'
+                          ? 'border-green-500 text-green-700 bg-green-50'
+                          : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                      }`}
+                    >
+                      Stock In (Add)
+                    </button>
+                  </div>
+                </div>
+
                 <div className="overflow-y-auto px-4 sm:px-6 py-3 sm:py-4 flex-1">
                     {adjustmentForm.error && (<div className="mb-4 p-3 bg-red-50 border border-red-300 rounded text-sm text-red-700">{adjustmentForm.error}</div>)}
                 <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded">
                   <p className="text-sm font-medium text-gray-900 mb-1">{ui.selectedMed.name}</p>
                   <p className="text-lg font-bold text-gray-900">Current Stock: {formatStockDisplay(ui.selectedMed)}</p>
                   <p className="text-xs text-gray-600">Minimum Level: {formatMinLevelDisplay(ui.selectedMed)}</p>
-                </div>
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Action Type</label>
-                  <div className="flex gap-4 mb-4">
-                    <label className="flex items-center cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="barcodeAdjustmentAction" 
-                        value="out" 
-                        checked={adjustmentForm.action === 'out'} 
-                        onClick={(e) => { 
-                          setAdjustmentForm(prev => ({ ...prev, action: 'out', stockInSource: 'transfer', transferBatchOption: 'existing', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' })); 
-                        }} 
-                        className="mr-2" 
-                      />
-                      Transfer Location
-                    </label>
-                    <label className="flex items-center cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="barcodeAdjustmentAction" 
-                        value="in" 
-                        checked={adjustmentForm.action === 'in'} 
-                        onClick={(e) => { 
-                          setAdjustmentForm(prev => ({ ...prev, action: 'in', stockInSource: 'delivery', deliveryBatchOption: 'new', error: '' })); 
-                        }} 
-                        className="mr-2" 
-                      />
-                      Stock In (Add)
-                    </label>
-                  </div>
                 </div>
 
                 {adjustmentForm.action === 'in' && (
