@@ -213,11 +213,10 @@ exports.handler = async () => {
       } else if (txType === 'out' && row.reason && row.reason.startsWith('Batch removed')) {
         // Batch removal handled by location check in categorizeTransaction
         txType = 'out';
-      } else if (txType === 'in' && row.reason && (row.reason.includes('Transfer from') || row.reason.includes('Transfer to'))) {
-        txType = 'transfer';
-      } else if (txType === 'out' && row.reason && (row.reason.includes('Transfer to') || row.reason.includes('Transfer from'))) {
-        txType = 'transfer';
       }
+      // NOTE: DO NOT convert transfer transactions to 'transfer' type here
+      // The frontend pairing logic needs to distinguish between 'in' and 'out' transactions
+      // to properly match and combine them into single transfer entries
 
       return {
         id: row.id,
