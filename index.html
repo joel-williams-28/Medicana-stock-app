@@ -3106,13 +3106,13 @@ Medicana Stock Management System`;
                       <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'transactions' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-all whitespace-nowrap relative ${ui.activeTab === 'transactions' ? 'border-cyan-500 text-cyan-600 shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Activity Log</button>
                     )}
                     {canAccessTab('lowstock') && (
-                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'lowstock' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors relative whitespace-nowrap ${ui.activeTab === 'lowstock' ? 'border-cyan-500 text-cyan-600 shadow-lg' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
+                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'lowstock' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors relative whitespace-nowrap ${ui.activeTab === 'lowstock' ? 'border-cyan-500 text-cyan-600 shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
                       Low Stock
                         {lowStockMedications.length > 0 && (<span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">{lowStockMedications.length}</span>)}
                     </button>
                     )}
                     {canAccessTab('newmedication') && (
-                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'newmedication' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${ui.activeTab === 'newmedication' ? 'border-cyan-500 text-cyan-600 shadow-lg' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
+                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'newmedication' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'newmedication' ? 'border-cyan-500 text-cyan-600 shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
                       New Medication Order
                     </button>
                     )}
@@ -3544,7 +3544,7 @@ Medicana Stock Management System`;
                 {/* Activity Log Tab */}
               {ui.activeTab === 'transactions' && (
                 <>
-                  <div className="p-4 border-b bg-gray-50 relative z-0">
+                  <div className="p-3 sm:p-4 border-b bg-gray-50">
                     <div className="flex justify-between items-start mb-3">
                       <p className="text-sm font-medium text-gray-700">Filter by Activity Type:</p>
                       <div className="flex gap-2">
@@ -3692,7 +3692,7 @@ Medicana Stock Management System`;
                 {/* Low Stock Tab */}
               {ui.activeTab === 'lowstock' && (
                 <>
-                  <div className="p-4 bg-amber-50 border-b border-amber-200 mt-2">
+                  <div className="p-3 sm:p-4 bg-amber-50 border-b border-amber-200">
                     <div className="flex items-center">
                       <AlertTriangle className="w-5 h-5 text-amber-600 mr-2" />
                       <div className="flex-1">
@@ -3794,7 +3794,7 @@ Medicana Stock Management System`;
 
               {/* New Medication Order Tab */}
               {ui.activeTab === 'newmedication' && (
-                <div className="p-6">
+                <div className="p-3 sm:p-4">
                   <div className="max-w-2xl mx-auto">
                     <div className="bg-gradient-to-r from-cyan-50 to-blue-50 border border-cyan-200 rounded-lg p-6 mb-6">
                       <h2 className="text-2xl font-bold text-gray-800 mb-2">Order New Medication</h2>
