@@ -139,7 +139,7 @@
         : date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
     };
 
-    const getTotalQuantity = (med) => med.batches.reduce((sum, batch) => sum + (batch ? batch.quantity : 0), 0);
+    const getTotalQuantity = (med) => med.batches.reduce((sum, batch) => sum + (batch ? (batch.totalQuantity !== undefined ? batch.totalQuantity : batch.quantity) : 0), 0);
 
     // Get total number of boxes across all batches
     const getTotalBoxes = (med) => {
@@ -170,10 +170,10 @@
           return `0 boxes × ${standardItemsPerBox} ${pluralizeUnit(standardItemsPerBox, med.unit)} per box`;
         }
         if (totalFullBoxes && totalLooseItems) {
-          return `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'} × ${standardItemsPerBox} items per box + ${totalLooseItems} ${pluralizeUnit(totalLooseItems, med.unit)}`;
+          return `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'} × ${standardItemsPerBox} ${standardItemsPerBox === 1 ? 'item' : 'items'} per box + ${totalLooseItems} ${pluralizeUnit(totalLooseItems, med.unit)}`;
         }
         if (totalFullBoxes) {
-          return `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'} × ${standardItemsPerBox} items per box`;
+          return `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'} × ${standardItemsPerBox} ${standardItemsPerBox === 1 ? 'item' : 'items'} per box`;
         }
         // Only loose items
         return `${totalLooseItems} ${pluralizeUnit(totalLooseItems, med.unit)} (from open box)`;
@@ -202,9 +202,9 @@
       if (fullBoxes === 0) {
         return `${looseItems} ${pluralizeUnit(looseItems, unit)} (from open box)`;
       } else if (looseItems === 0) {
-        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} items per box`;
+        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} ${batch.itemsPerBox === 1 ? 'item' : 'items'} per box`;
       } else {
-        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} items per box + ${looseItems} ${pluralizeUnit(looseItems, unit)}`;
+        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} ${batch.itemsPerBox === 1 ? 'item' : 'items'} per box + ${looseItems} ${pluralizeUnit(looseItems, unit)}`;
       }
     };
 
@@ -281,7 +281,7 @@
 
     const formatQuantityDisplay = (quantity, itemsPerBox, unit, inputType = 'boxes', inputAmount = null) => {
       if (inputType === 'boxes' && inputAmount && itemsPerBox) {
-        return `${inputAmount} ${inputAmount === '1' ? 'box' : 'boxes'} × ${itemsPerBox} items per box`;
+        return `${inputAmount} ${inputAmount === '1' ? 'box' : 'boxes'} × ${itemsPerBox} ${itemsPerBox === 1 || itemsPerBox === '1' ? 'item' : 'items'} per box`;
       }
       return `${quantity} ${unit}`;
     };
@@ -3676,9 +3676,9 @@ Medicana Stock Management System`;
                                                     const boxes = Math.floor(qty / itemsPerBox);
                                                     const loose = qty % itemsPerBox;
                                                     if (loose > 0) {
-                                                      return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} items per box + ${loose} ${pluralizeUnit(loose, med.unit)}`;
+                                                      return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} ${itemsPerBox === 1 ? 'item' : 'items'} per box + ${loose} ${pluralizeUnit(loose, med.unit)}`;
                                                     }
-                                                    return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} items per box`;
+                                                    return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} ${itemsPerBox === 1 ? 'item' : 'items'} per box`;
                                                   }
                                                   return `${qty} ${pluralizeUnit(qty, med.unit)}`;
                                                 })()}</p>
@@ -3776,8 +3776,8 @@ Medicana Stock Management System`;
                             ...trans,
                             id: `transfer-${trans.id}-${match.id}`,
                             type: 'transfer',
-                            location: `${sourceLocation} to ${targetLocation}`,
-                            note: `Quantity: ${quantity}${brand ? ` - Brand: ${brand}` : ''}`,
+                            location: sourceLocation,
+                            note: `Transferred from ${sourceLocation} to ${targetLocation}\nQuantity: ${quantity}${brand ? ` - Brand: ${brand}` : ''}`,
                             originalAmount: trans.amount,
                             timestamp: trans.timestamp, // Use earlier timestamp
                             user: trans.user
@@ -3844,7 +3844,7 @@ Medicana Stock Management System`;
                               </div>
                               <div className="text-sm text-gray-600">
                                 <p><span className="font-medium">Location:</span> {trans.location}</p>
-                                {trans.note && <p className="mt-1">{trans.note}</p>}
+                                {trans.note && trans.note.split('\n').map((line, idx) => <p key={idx} className="mt-1">{line}</p>)}
                                 <p className="text-xs mt-1">{trans.user} • {new Date(trans.timestamp).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
                               </div>
                             </div>
