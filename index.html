@@ -408,21 +408,54 @@
 
 
     const MedicationStockApp = () => {
-      // localStorage helpers
+      // Check if storage is available
+      const [storageAvailable, setStorageAvailable] = useState(true);
+      const [storageWarningShown, setStorageWarningShown] = useState(false);
+
+      // Test storage availability
+      const testStorageAvailable = () => {
+        try {
+          const testKey = '__storage_test__';
+          localStorage.setItem(testKey, 'test');
+          localStorage.removeItem(testKey);
+          return true;
+        } catch (e) {
+          console.warn('localStorage is not available:', e.message);
+          return false;
+        }
+      };
+
+      // localStorage helpers with better error handling
       const storage = {
         load: (key, fallback = null) => {
           try {
             const raw = localStorage.getItem(key);
             return raw ? JSON.parse(raw) : fallback;
           } catch (e) {
+            console.warn(`Failed to load from storage (key: ${key}):`, e.message);
+            if (!storageWarningShown && !storageAvailable) {
+              setStorageWarningShown(true);
+            }
             return fallback;
           }
         },
         save: (key, value) => {
-          try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+          try {
+            localStorage.setItem(key, JSON.stringify(value));
+          } catch (e) {
+            console.warn(`Failed to save to storage (key: ${key}):`, e.message);
+            if (!storageWarningShown) {
+              setStorageWarningShown(true);
+              setStorageAvailable(false);
+            }
+          }
         },
         remove: (key) => {
-          try { localStorage.removeItem(key); } catch (e) {}
+          try {
+            localStorage.removeItem(key);
+          } catch (e) {
+            console.warn(`Failed to remove from storage (key: ${key}):`, e.message);
+          }
         }
       };
       const [auth, setAuth] = useState({ currentUser: '', password: '', isLoggedIn: false, error: '' });
@@ -630,6 +663,14 @@
 
         // Load saved state from localStorage on first mount
       useEffect(() => {
+          // Test if storage is available
+          const isStorageAvailable = testStorageAvailable();
+          setStorageAvailable(isStorageAvailable);
+
+          if (!isStorageAvailable) {
+            console.warn('Storage is blocked. App will work but preferences will not be saved.');
+          }
+
           const savedAuth = storage.load('medicana_auth');
           if (savedAuth && typeof savedAuth === 'object') {
             // Always start logged out on fresh load
@@ -1608,11 +1649,21 @@
             }
           } catch (err) {
             console.error('Failed to load initial data:', err);
-            setAuth(prev => ({ ...prev, error: 'Failed to load data from server.' }));
+            const errorMessage = err.message || 'Failed to load data from server.';
+            setAuth(prev => ({
+              ...prev,
+              error: `Unable to load data: ${errorMessage}. Please check your connection and try again.`
+            }));
             return;
           }
         } catch (e) {
-          setAuth(prev => ({ ...prev, error: 'Network or server error.', password: '' }));
+          console.error('Login error:', e);
+          const errorMessage = e.message || 'Network or server error.';
+          setAuth(prev => ({
+            ...prev,
+            error: `Login failed: ${errorMessage}`,
+            password: ''
+          }));
         }
       };
       const handleLogout = () => {
@@ -2985,6 +3036,11 @@ Medicana Stock Management System`;
                 <h3 className="text-lg sm:text-xl font-semibold text-gray-700">Winchester</h3>
                 <p className="text-xs sm:text-sm text-gray-500 mt-2">Medication Stock Management</p>
               </div>
+                {!storageAvailable && (
+                  <div className="mb-4 p-3 bg-yellow-50 border border-yellow-300 rounded text-xs sm:text-sm text-yellow-800">
+                    <strong>Note:</strong> Browser storage is blocked by tracking prevention. The app will function, but your preferences will not be saved between sessions.
+                  </div>
+                )}
                 {auth.error && (<div className="mb-4 p-3 bg-red-50 border border-red-300 rounded text-xs sm:text-sm text-red-700">{auth.error}</div>)}
               <div>
                 <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Username</label>
@@ -3001,11 +3057,11 @@ Medicana Stock Management System`;
       return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-cyan-50">
           {/* Header */}
-          <div className="bg-white text-gray-900 p-3 sm:p-4 shadow-lg border-b-2 border-gray-200 relative">
+          <div className="bg-white text-gray-900 shadow-lg border-b-2 border-gray-200 relative">
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <span className="text-3xl sm:text-4xl md:text-6xl font-black text-slate-500 opacity-50">PROTOTYPE</span>
             </div>
-            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-0 relative z-10">
+            <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-3 sm:py-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-0 relative z-10">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-0">
                 <div className="mr-0 sm:mr-4">
                   <div className="flex items-center gap-2">
@@ -3037,7 +3093,7 @@ Medicana Stock Management System`;
 
           {/* Location Selector */}
           <div className="bg-slate-50 border-b border-gray-200 shadow-sm">
-            <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 sm:py-4">
+            <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-3 sm:py-4">
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
                 <label className="text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">Current Location:</label>
                   <select value={ui.currentLocation} onChange={(e) => setUi(prev => ({ ...prev, currentLocation: e.target.value }))} className="w-full sm:w-auto px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent bg-white font-medium text-gray-900 text-sm">
@@ -3091,7 +3147,7 @@ Medicana Stock Management System`;
           <div className="max-w-7xl mx-auto p-3 sm:p-4 md:p-6">
             <div className="bg-white rounded-lg shadow">
               {/* Tabs */}
-              <div className="border-b border-gray-200 shadow-lg">
+              <div className="border-b border-gray-200 shadow-lg relative z-30">
                 <nav className="flex -mb-px overflow-x-auto scrollbar-hide relative z-10">
                     {canAccessTab('medications') && (
                       <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'medications' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'medications' ? 'border-cyan-500 text-cyan-600 shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Medications List</button>
@@ -3116,7 +3172,7 @@ Medicana Stock Management System`;
                 {/* Medications Tab */}
               {ui.activeTab === 'medications' && (
                 <>
-                  <div className="p-3 sm:p-4 border-b">
+                  <div className="p-3 sm:p-4 md:p-6 border-b">
                     <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 items-stretch sm:items-center mb-3">
                       <div className="relative flex-1 min-w-0">
                         <Search className="absolute left-3 top-3 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
@@ -3274,8 +3330,8 @@ Medicana Stock Management System`;
                       )}
                     </div>
                   </div>
-                  
-                  <div className="overflow-x-auto -mx-3 sm:mx-0">
+
+                  <div className="overflow-x-auto">
                     <table className="w-full min-w-[640px]">
                       <thead className="bg-gray-50">
                         <tr>
@@ -3538,7 +3594,7 @@ Medicana Stock Management System`;
                 {/* Activity Log Tab */}
               {ui.activeTab === 'transactions' && (
                 <>
-                  <div className="p-3 sm:p-4 border-b bg-gray-50">
+                  <div className="p-3 sm:p-4 md:p-6 border-b bg-gray-50 relative z-10">
                     <div className="flex justify-between items-start mb-3">
                       <p className="text-sm font-medium text-gray-700">Filter by Activity Type:</p>
                       <div className="flex gap-2">
@@ -3553,8 +3609,8 @@ Medicana Stock Management System`;
                       ))}
                     </div>
                   </div>
-                  
-                  <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
+
+                  <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-scroll">
                   {(() => {
                         // Compute category once and filter
                         const transactionsWithCategory = filteredTransactions.map(trans => ({
@@ -3686,7 +3742,7 @@ Medicana Stock Management System`;
                 {/* Low Stock Tab */}
               {ui.activeTab === 'lowstock' && (
                 <>
-                  <div className="p-3 sm:p-4 bg-amber-50 border-b border-amber-200">
+                  <div className="p-3 sm:p-4 md:p-6 bg-amber-50 border-b border-amber-200">
                     <div className="flex items-center">
                       <AlertTriangle className="w-5 h-5 text-amber-600 mr-2" />
                       <div className="flex-1">
@@ -3788,15 +3844,13 @@ Medicana Stock Management System`;
 
               {/* New Medication Order Tab */}
               {ui.activeTab === 'newmedication' && (
-                <div className="p-3 sm:p-4">
-                  <div className="max-w-2xl mx-auto">
-                    <div className="bg-gradient-to-r from-cyan-50 to-blue-50 border border-cyan-200 rounded-lg p-6 mb-6">
-                      <h2 className="text-2xl font-bold text-gray-800 mb-2">Order New Medication</h2>
-                      <p className="text-gray-600">Request a new medication that is not currently in the stock system.</p>
-            </div>
-
-                    <div className="bg-white rounded-lg shadow-md p-6">
-                      <form onSubmit={(e) => { e.preventDefault(); handleNewMedicationOrder(); }}>
+                <>
+                  <div className="p-3 sm:p-4 md:p-6 border-b border-cyan-100 bg-gradient-to-r from-cyan-50 to-blue-50">
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-2">Order New Medication</h2>
+                    <p className="text-sm sm:text-base text-gray-600">Request a new medication that is not currently in the stock system.</p>
+                  </div>
+                  <div className="p-3 sm:p-4 md:p-6">
+                    <form onSubmit={(e) => { e.preventDefault(); handleNewMedicationOrder(); }}>
                         {newMedicationOrderForm.error && (
                           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
                             <p className="text-sm text-red-600">{newMedicationOrderForm.error}</p>
@@ -3913,9 +3967,8 @@ Medicana Stock Management System`;
                           </button>
                         </div>
                       </form>
-                    </div>
                   </div>
-                </div>
+                </>
               )}
             </div>
           </div>

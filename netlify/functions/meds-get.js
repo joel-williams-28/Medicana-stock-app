@@ -180,42 +180,42 @@ exports.handler = async () => {
     const txQuery = `
       SELECT
         t.id,
-        b.medication_id,
-        CASE 
+        t.medication_id,
+        CASE
           WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
           ELSE m.name || ' ' || m.strength
         END AS med_name,
-        t.quantity,
+        t.delta,
         t.type,
-        t.notes,
+        t.reason,
         t.location_id,
         l.display_name AS location_name,
         l.group_name AS location_group,
-        t.created_at,
+        t.occurred_at,
         u.username AS user_name
       FROM transactions t
       LEFT JOIN batches b ON b.id = t.batch_id
-      LEFT JOIN medications m ON m.id = b.medication_id
+      LEFT JOIN medications m ON m.id = t.medication_id
       LEFT JOIN locations l ON l.id = t.location_id
       LEFT JOIN users u ON u.id = t.user_id
-      ORDER BY t.created_at DESC
+      ORDER BY t.occurred_at DESC
       LIMIT 200;
     `;
     const txResult = await db.query(txQuery);
 
     const transactions = txResult.rows.map(row => {
-      // Use the type from database, or determine from quantity if type is just 'in'/'out'
+      // Use the type from database, or determine from delta if type is just 'in'/'out'
       let txType = row.type || 'system';
-      
-      // If type is generic 'in' or 'out', check notes to determine specific type
-      if (txType === 'in' && row.notes && row.notes.startsWith('Order fulfilled')) {
+
+      // If type is generic 'in' or 'out', check reason to determine specific type
+      if (txType === 'in' && row.reason && row.reason.startsWith('Order fulfilled')) {
         txType = 'order_fulfilled';
-      } else if (txType === 'out' && row.notes && row.notes.startsWith('Batch removed')) {
+      } else if (txType === 'out' && row.reason && row.reason.startsWith('Batch removed')) {
         // Batch removal handled by location check in categorizeTransaction
         txType = 'out';
-      } else if (txType === 'in' && row.notes && (row.notes.includes('Transfer from') || row.notes.includes('Transfer to'))) {
+      } else if (txType === 'in' && row.reason && (row.reason.includes('Transfer from') || row.reason.includes('Transfer to'))) {
         txType = 'transfer';
-      } else if (txType === 'out' && row.notes && (row.notes.includes('Transfer to') || row.notes.includes('Transfer from'))) {
+      } else if (txType === 'out' && row.reason && (row.reason.includes('Transfer to') || row.reason.includes('Transfer from'))) {
         txType = 'transfer';
       }
 
@@ -224,14 +224,14 @@ exports.handler = async () => {
         medId: row.medication_id || null,
         medName: row.med_name || '',
         type: txType,
-        amount: Math.abs(row.quantity || 0),
+        amount: Math.abs(row.delta || 0),
         user: row.user_name || 'System',
         location: row.location_name || row.location_id || 'System',
         locationGroup: row.location_group || null,
-        timestamp: row.created_at
-          ? row.created_at.toISOString()
+        timestamp: row.occurred_at
+          ? row.occurred_at.toISOString()
           : new Date().toISOString(),
-        note: row.notes || ''
+        note: row.reason || ''
       };
     });
 
@@ -265,10 +265,37 @@ exports.handler = async () => {
       })
     };
   } catch (e) {
-    console.error('meds-get error:', e);
+    // Enhanced error logging for debugging
+    console.error('=== meds-get error ===');
+    console.error('Error name:', e.name);
+    console.error('Error message:', e.message);
+    console.error('Error stack:', e.stack);
+
+    // Log specific error details for common database issues
+    if (e.code) {
+      console.error('Error code:', e.code);
+    }
+    if (e.detail) {
+      console.error('Error detail:', e.detail);
+    }
+    if (e.hint) {
+      console.error('Error hint:', e.hint);
+    }
+
+    // Return more informative error message in development
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    const errorMessage = isDevelopment
+      ? `Server error: ${e.message}`
+      : 'Server error. Please try again or contact support.';
+
     return {
       statusCode: 500,
-      body: JSON.stringify({ success: false, message: 'Server error.' })
+      body: JSON.stringify({
+        success: false,
+        message: errorMessage,
+        // Include error code if available for debugging
+        ...(isDevelopment && e.code ? { errorCode: e.code } : {})
+      })
     };
   }
 };

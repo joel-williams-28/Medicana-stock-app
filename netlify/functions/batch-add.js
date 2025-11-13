@@ -202,10 +202,10 @@ exports.handler = async (event) => {
       // Insert transaction record for delivery (incoming stock)
       const finalReason = transactionNote || `Delivery received - ${finalTotal} units`;
       await db.query(
-        `INSERT INTO transactions 
-         (batch_id, location_id, quantity, type, notes, user_id)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [batchIdResult, locationId, finalTotal, 'in', finalReason, userId]
+        `INSERT INTO transactions
+         (batch_id, location_id, medication_id, user_id, delta, type, reason)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [batchIdResult, locationId, canonicalMedicationId, userId, finalTotal, 'in', finalReason]
       );
 
       // Commit transaction

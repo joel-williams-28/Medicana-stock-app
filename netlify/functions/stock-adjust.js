@@ -85,13 +85,12 @@ exports.handler = async (event) => {
       // Insert transaction record
       // Determine transaction type: positive delta = 'in', negative delta = 'out'
       const transactionType = delta > 0 ? 'in' : 'out';
-      const transactionQuantity = Math.abs(delta);
-      
+
       await db.query(
-        `INSERT INTO transactions 
-         (batch_id, location_id, quantity, type, notes, user_id)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [batchId, locationId, transactionQuantity, transactionType, reason || '', userId]
+        `INSERT INTO transactions
+         (batch_id, location_id, medication_id, user_id, delta, type, reason)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [batchId, locationId, medicationId, userId, delta, transactionType, reason || '']
       );
 
       // Commit transaction

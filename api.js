@@ -8,10 +8,27 @@ window.api = (function () {
   const ADD_BATCH_ENDPOINT  = '/.netlify/functions/batch-add';
   const LOGIN_ENDPOINT      = '/.netlify/functions/login';
 
-  async function fetchAllData() {
-    const res = await fetch(GET_ENDPOINT);
-    if (!res.ok) throw new Error('Failed to load data');
-    return res.json(); // { medications: [...], transactions: [...] }
+  async function fetchAllData(retries = 3) {
+    let lastError;
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const res = await fetch(GET_ENDPOINT);
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          const errorMsg = errorData.message || `Server returned ${res.status}`;
+          throw new Error(`Failed to load data: ${errorMsg}`);
+        }
+        return res.json(); // { medications: [...], transactions: [...] }
+      } catch (err) {
+        lastError = err;
+        console.warn(`fetchAllData attempt ${attempt + 1} failed:`, err.message);
+        if (attempt < retries - 1) {
+          // Wait before retrying (exponential backoff: 1s, 2s, 4s)
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+        }
+      }
+    }
+    throw lastError;
   }
 
   async function adjustStock(payload) {
