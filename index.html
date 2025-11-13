@@ -2467,8 +2467,8 @@ Medicana Stock Management System`;
             setMedications(data.medications || []);
             setTransactions(data.transactions || []);
 
-            const selectedBatch = ui.selectedMed.batches.find(b => b.id === parseInt(adjustmentForm.batchId));
-            checkLowStockAlert(ui.selectedMed, amount, selectedBatch?.id);
+            // Use the original selectedBatch parameter (not a new lookup) since the batch may have moved
+            checkLowStockAlert(ui.selectedMed, amount, selectedBatch.id);
           } catch (err) {
             console.error('Failed to process stock out:', err);
             setAdjustmentForm(prev => ({ ...prev, error: err.message || 'Failed to process stock out' }));
