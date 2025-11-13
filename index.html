@@ -3777,12 +3777,29 @@ Medicana Stock Management System`;
                           const sourceLocation = isTransferOut ? trans.location : match.location;
                           const targetLocation = isTransferOut ? match.location : trans.location;
 
+                          // Format quantity with box information if available
+                          const quantity = trans.amount;
+                          const itemsPerBox = trans.itemsPerBox || match.itemsPerBox;
+                          let quantityText = `${quantity} items`;
+
+                          if (itemsPerBox && quantity >= itemsPerBox) {
+                            const boxes = Math.floor(quantity / itemsPerBox);
+                            const loose = quantity % itemsPerBox;
+                            if (loose > 0) {
+                              quantityText = `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(itemsPerBox)} + ${loose} items`;
+                            } else {
+                              quantityText = `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(itemsPerBox)}`;
+                            }
+                          } else if (itemsPerBox && quantity < itemsPerBox) {
+                            quantityText = `${quantity} items`;
+                          }
+
                           processedTransactions.push({
                             ...trans,
                             id: `transfer-${trans.id}-${match.id}`,
                             type: 'transfer',
                             location: sourceLocation,
-                            note: `Transferred from ${sourceLocation} to ${targetLocation}`,
+                            note: `Transferred ${quantityText} from ${sourceLocation} to ${targetLocation}`,
                             originalAmount: trans.amount,
                             timestamp: trans.timestamp, // Use earlier timestamp
                             user: trans.user

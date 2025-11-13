@@ -192,7 +192,9 @@ exports.handler = async () => {
         l.display_name AS location_name,
         l.group_name AS location_group,
         t.occurred_at,
-        u.username AS user_name
+        u.username AS user_name,
+        b.items_per_box,
+        b.batch_code
       FROM transactions t
       LEFT JOIN batches b ON b.id = t.batch_id
       LEFT JOIN medications m ON m.id = t.medication_id
@@ -230,7 +232,9 @@ exports.handler = async () => {
         timestamp: row.occurred_at
           ? row.occurred_at.toISOString()
           : new Date().toISOString(),
-        note: row.reason || ''
+        note: row.reason || '',
+        itemsPerBox: row.items_per_box || null,
+        batchCode: row.batch_code || null
       };
     });
 
