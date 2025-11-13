@@ -65,13 +65,22 @@ window.api = (function () {
   }
 
   async function transferStock(payload) {
+    console.log('[API] Calling transferStock with payload:', payload);
     const res = await fetch('/.netlify/functions/stock-transfer', {
       method: 'POST',
       headers: { 'Content-Type':'application/json' },
       body: JSON.stringify(payload)
     });
+    console.log('[API] Transfer response status:', res.status);
     const out = await res.json();
-    if (!res.ok || !out.success) throw new Error(out.message || 'Transfer failed');
+    console.log('[API] Transfer response body:', out);
+    if (!res.ok || !out.success) {
+      const errorMsg = out.message || 'Transfer failed';
+      const debugInfo = out.debug ? JSON.stringify(out.debug) : '';
+      const fullError = debugInfo ? `${errorMsg} (Debug: ${debugInfo})` : errorMsg;
+      console.error('[API] Transfer failed:', fullError);
+      throw new Error(fullError);
+    }
     return out;
   }
 
