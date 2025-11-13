@@ -2178,20 +2178,39 @@ Medicana Stock Management System`;
       };
 
       const handleStockAdjustment = (type) => {
+        console.log('[DEBUG] handleStockAdjustment called with type:', type);
+        console.log('[DEBUG] adjustmentForm state:', {
+          action: adjustmentForm.action,
+          batchId: adjustmentForm.batchId,
+          amount: adjustmentForm.amount,
+          location: adjustmentForm.location,
+          type: adjustmentForm.type,
+          stockOutPurpose: adjustmentForm.stockOutPurpose
+        });
+        console.log('[DEBUG] ui.selectedMed:', ui.selectedMed);
+
         setAdjustmentForm(prev => ({ ...prev, error: '' }));
           if (type === 'in' && ((adjustmentForm.stockInSource === 'delivery' && adjustmentForm.deliveryBatchOption === 'new') || (adjustmentForm.stockInSource === 'transfer' && adjustmentForm.transferBatchOption === 'new'))) {
           processAdjustment(null);
           return;
         }
-        if (!ui.selectedMed || !adjustmentForm.amount || parseInt(adjustmentForm.amount) <= 0) return;
+        if (!ui.selectedMed || !adjustmentForm.amount || parseInt(adjustmentForm.amount) <= 0) {
+          console.log('[DEBUG] Validation failed: missing selectedMed or invalid amount');
+          console.log('[DEBUG] ui.selectedMed:', ui.selectedMed);
+          console.log('[DEBUG] amount:', adjustmentForm.amount);
+          return;
+        }
         if (!adjustmentForm.batchId) {
+          console.log('[DEBUG] Validation failed: no batchId selected');
           setAdjustmentForm(prev => ({ ...prev, error: 'Please select a batch' }));
           return;
         }
         if (type === 'out' && !adjustmentForm.location) {
+          console.log('[DEBUG] Validation failed: no location selected');
           setAdjustmentForm(prev => ({ ...prev, error: 'Please select a location for stock removal' }));
           return;
         }
+        console.log('[DEBUG] All validations passed, proceeding to process adjustment');
         if (type === 'in' && adjustmentForm.stockInSource === 'transfer' && !adjustmentForm.sourceDepartment) {
           setAdjustmentForm(prev => ({ ...prev, error: 'Please select which department the stock is coming from' }));
           return;
@@ -2316,11 +2335,18 @@ Medicana Stock Management System`;
       };
 
       const processStockOut = async (updatedMed, selectedBatch, amount, overrideReason) => {
+          console.log('[DEBUG] processStockOut called with:', {
+            selectedBatch,
+            amount,
+            overrideReason
+          });
+
           if (selectedBatch.quantity < amount) { setAdjustmentForm(prev => ({ ...prev, error: `Cannot remove ${amount} ${ui.selectedMed.unit}. Only ${selectedBatch.quantity} ${ui.selectedMed.unit} available in this batch.` })); return; }
-          
+
           try {
             const currentUser = getCurrentUserInfo();
             if (!currentUser || !currentUser.id) {
+              console.log('[DEBUG] User not logged in');
               setAdjustmentForm(prev => ({ ...prev, error: 'User not logged in' }));
               return;
             }
@@ -2332,17 +2358,31 @@ Medicana Stock Management System`;
             let transactionNote = adjustmentForm.note || (isInternalTransfer ? `Transfer to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}` : `Dispensed to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}`);
             if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
 
+            console.log('[DEBUG] Transfer details:', {
+              isInternalTransfer,
+              targetLocationId,
+              targetLocationDisplayName: adjustmentForm.location,
+              sourceLocationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
+              batchId: selectedBatch.id,
+              amount,
+              transactionNote
+            });
+
             if (isInternalTransfer) {
               // Use the dedicated transfer API for internal transfers
               // Server derives medication_id from batch_id - do not send medicationId
-              await window.api.transferStock({
+              console.log('[DEBUG] Calling transferStock API');
+              const transferPayload = {
                 userId: currentUser.id,
                 batchId: selectedBatch.id,
                 sourceLocationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
                 targetLocationId: targetLocationId,
                 quantity: amount,
                 reason: transactionNote
-              });
+              };
+              console.log('[DEBUG] Transfer payload:', transferPayload);
+              await window.api.transferStock(transferPayload);
+              console.log('[DEBUG] transferStock API call completed successfully');
             } else {
               // External dispensing - just remove stock
               // Server derives medication_id from batch_id - do not send medicationId
