@@ -3147,7 +3147,7 @@ Medicana Stock Management System`;
           <div className="max-w-7xl mx-auto p-3 sm:p-4 md:p-6">
             <div className="bg-white rounded-lg shadow">
               {/* Tabs */}
-              <div className="border-b border-gray-200 shadow-lg">
+              <div className="border-b border-gray-200 shadow-lg relative z-30">
                 <nav className="flex -mb-px overflow-x-auto scrollbar-hide relative z-10">
                     {canAccessTab('medications') && (
                       <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'medications' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'medications' ? 'border-cyan-500 text-cyan-600 shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Medications List</button>
@@ -3594,7 +3594,7 @@ Medicana Stock Management System`;
                 {/* Activity Log Tab */}
               {ui.activeTab === 'transactions' && (
                 <>
-                  <div className="p-3 sm:p-4 border-b bg-gray-50">
+                  <div className="p-3 sm:p-4 border-b bg-gray-50 relative z-10">
                     <div className="flex justify-between items-start mb-3">
                       <p className="text-sm font-medium text-gray-700">Filter by Activity Type:</p>
                       <div className="flex gap-2">
@@ -3844,14 +3844,16 @@ Medicana Stock Management System`;
 
               {/* New Medication Order Tab */}
               {ui.activeTab === 'newmedication' && (
-                <div className="p-3 sm:p-4">
-                  <div className="max-w-2xl mx-auto">
-                    <div className="bg-gradient-to-r from-cyan-50 to-blue-50 border border-cyan-200 rounded-lg p-6 mb-6">
+                <>
+                  <div className="p-3 sm:p-4 border-b border-cyan-100 bg-gradient-to-r from-cyan-50 to-blue-50">
+                    <div className="max-w-2xl mx-auto">
                       <h2 className="text-2xl font-bold text-gray-800 mb-2">Order New Medication</h2>
                       <p className="text-gray-600">Request a new medication that is not currently in the stock system.</p>
-            </div>
-
-                    <div className="bg-white rounded-lg shadow-md p-6">
+                    </div>
+                  </div>
+                  <div className="p-3 sm:p-4">
+                    <div className="max-w-2xl mx-auto">
+                      <div className="bg-white rounded-lg shadow-md p-6">
                       <form onSubmit={(e) => { e.preventDefault(); handleNewMedicationOrder(); }}>
                         {newMedicationOrderForm.error && (
                           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -3972,6 +3974,7 @@ Medicana Stock Management System`;
                     </div>
                   </div>
                 </div>
+                </>
               )}
             </div>
           </div>
