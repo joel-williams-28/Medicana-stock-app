@@ -107,10 +107,10 @@ exports.handler = async (event) => {
 
       // Step 3: Insert transaction for source (outgoing transfer)
       await db.query(
-        `INSERT INTO transactions 
-         (batch_id, location_id, quantity, type, notes, user_id)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [batchId, sourceLocationId, quantity, 'out', reason || `Transfer to ${targetLocationId}`, userId]
+        `INSERT INTO transactions
+         (batch_id, location_id, medication_id, user_id, delta, type, reason)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [batchId, sourceLocationId, medicationId, userId, -quantity, 'out', reason || `Transfer to ${targetLocationId}`]
       );
 
       // Step 4: Ensure target inventory row exists, then increase stock
@@ -128,10 +128,10 @@ exports.handler = async (event) => {
 
       // Step 5: Insert transaction for target (incoming transfer)
       await db.query(
-        `INSERT INTO transactions 
-         (batch_id, location_id, quantity, type, notes, user_id)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [batchId, targetLocationId, quantity, 'in', reason || `Transfer from ${sourceLocationId}`, userId]
+        `INSERT INTO transactions
+         (batch_id, location_id, medication_id, user_id, delta, type, reason)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [batchId, targetLocationId, medicationId, userId, quantity, 'in', reason || `Transfer from ${sourceLocationId}`]
       );
 
       // Commit transaction
