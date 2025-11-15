@@ -1543,11 +1543,6 @@
       const startCameraScanner = async () => {
         console.log('[Camera Scanner] Starting camera scanner...');
 
-        // Show debugging info on screen temporarily
-        const showDebug = (msg) => {
-          console.log('[Camera Scanner]', msg);
-        };
-
         setCameraScanner({
           isOpen: true,
           isScanning: false,
@@ -1558,66 +1553,72 @@
 
         // Wait for DOM to render the video element
         setTimeout(async () => {
+          let tempStream = null;
           try {
-            showDebug('Step 1: Checking if Html5Qrcode library is loaded...');
-
+            console.log('[Camera Scanner] Step 1: Checking library...');
             if (typeof Html5Qrcode === 'undefined') {
-              console.error('[Camera Scanner] Html5Qrcode not found!');
               throw new Error('Barcode scanner library not loaded. Please refresh the page.');
             }
-            showDebug('✓ Html5Qrcode library loaded');
 
             // Check if DOM element exists
             const element = document.getElementById("barcode-scanner-video");
             if (!element) {
-              console.error('[Camera Scanner] DOM element barcode-scanner-video not found!');
               throw new Error('Scanner element not ready. Please try again.');
             }
-            showDebug('✓ Scanner element found in DOM');
 
-            // IMPORTANT: Request camera permissions first by calling getCameras()
-            // This triggers the browser's permission dialog
-            showDebug('Step 2: Requesting camera access (permission dialog should appear now)...');
+            // CRITICAL FIX: Use native getUserMedia API to FORCE permission dialog
+            // This is the only reliable way to trigger the permission popup
+            console.log('[Camera Scanner] Step 2: Requesting camera permission via getUserMedia...');
+            console.log('[Camera Scanner] >>> PERMISSION DIALOG SHOULD APPEAR NOW <<<');
 
-            const devices = await Html5Qrcode.getCameras();
-            showDebug(`✓ Got ${devices?.length || 0} camera(s)`);
-            console.log('[Camera Scanner] Cameras found:', devices);
+            // Request camera access with native browser API - this ALWAYS shows the permission dialog
+            tempStream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: 'environment' }
+            });
 
-            if (!devices || devices.length === 0) {
+            console.log('[Camera Scanner] ✓ Permission granted! Got camera stream');
+
+            // Stop the temporary stream - we just needed it to get permission
+            tempStream.getTracks().forEach(track => track.stop());
+            console.log('[Camera Scanner] Stopped temporary stream');
+
+            // Now get the list of cameras (permission already granted)
+            console.log('[Camera Scanner] Step 3: Getting camera list...');
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const cameras = devices.filter(device => device.kind === 'videoinput');
+            console.log('[Camera Scanner] Found cameras:', cameras);
+
+            if (!cameras || cameras.length === 0) {
               throw new Error('No cameras found on this device.');
             }
 
-            // Find the back camera (environment) or use the first available camera
-            let cameraId = devices[0].id;
-            for (let device of devices) {
-              if (device.label && device.label.toLowerCase().includes('back')) {
-                cameraId = device.id;
-                showDebug(`✓ Found back camera: ${device.label}`);
+            // Find the back camera or use the first available
+            let cameraId = cameras[0].deviceId;
+            for (let camera of cameras) {
+              if (camera.label && camera.label.toLowerCase().includes('back')) {
+                cameraId = camera.deviceId;
+                console.log('[Camera Scanner] ✓ Using back camera:', camera.label);
                 break;
               }
             }
-            if (!cameraId) {
-              showDebug(`Using camera: ${devices[0].label || 'Default camera'}`);
-            }
 
-            // Initialize scanner instance if not already created
+            // Initialize scanner instance
             if (!cameraScannerRef.current) {
-              showDebug('Step 3: Creating scanner instance...');
+              console.log('[Camera Scanner] Step 4: Creating Html5Qrcode scanner...');
               cameraScannerRef.current = new Html5Qrcode("barcode-scanner-video");
             }
 
             const scanner = cameraScannerRef.current;
-            showDebug('✓ Scanner instance ready');
 
-            // Configuration for barcode formats
+            // Configuration for barcode scanning
             const config = {
               fps: 10,
               qrbox: { width: 250, height: 250 },
               aspectRatio: 1.0
             };
 
-            showDebug('Step 4: Starting camera stream...');
-            // Start scanning with the selected camera ID
+            console.log('[Camera Scanner] Step 5: Starting barcode scanner with camera...');
+            // Start scanning (permission already granted, so this should work)
             await scanner.start(
               cameraId,
               config,
@@ -1626,23 +1627,26 @@
                 handleBarcodeDetected(decodedText);
               },
               (errorMessage) => {
-                // Error callback - fires continuously when no barcode in view
-                // This is normal, we only care about successful scans
+                // Error callback - fires when no barcode in view (normal, ignore)
               }
             );
 
-            showDebug('✓ Camera started successfully!');
+            console.log('[Camera Scanner] ✓ Camera scanner started successfully!');
             setCameraScanner(prev => ({ ...prev, isScanning: true, error: '' }));
           } catch (err) {
-            console.error('[Camera Scanner] ❌ Failed:', err);
-            console.error('[Camera Scanner] Error type:', err.name);
+            // Clean up temporary stream if it exists
+            if (tempStream) {
+              tempStream.getTracks().forEach(track => track.stop());
+            }
+
+            console.error('[Camera Scanner] ❌ Error:', err);
+            console.error('[Camera Scanner] Error name:', err.name);
             console.error('[Camera Scanner] Error message:', err.message);
-            console.error('[Camera Scanner] Full error object:', err);
 
             let errorMessage = '';
 
             if (err.name === 'NotAllowedError' || err.message.includes('Permission denied')) {
-              errorMessage = 'Camera permission denied. Please allow camera access in your browser settings and try again.';
+              errorMessage = 'Camera permission denied. Please click "Allow" when your browser asks for camera access, then try again.';
             } else if (err.name === 'NotFoundError' || err.message.includes('No cameras found')) {
               errorMessage = 'No camera found on this device. Please use manual barcode entry.';
             } else if (err.name === 'NotSupportedError' || err.message.includes('secure')) {
