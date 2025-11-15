@@ -29,6 +29,8 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <!-- Barcode Scanner Libraries -->
     <!-- Infrared scanners work as keyboard input, no library needed -->
+    <!-- html5-qrcode: Mobile camera barcode scanner supporting 1D (EAN-13, Code 128, etc.) and 2D (QR, Data Matrix) codes -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
   <script type="text/babel">
       const { useState, useEffect, useRef } = React;
@@ -481,13 +483,23 @@
         timeoutId: null,
         lastScanTime: 0
       });
-      
+
       // Search input barcode detection state
       const [searchBarcodeDetection, setSearchBarcodeDetection] = useState({
         lastKeyTime: 0,
         inputSpeed: 1000, // Initialize with high value to prevent false triggers
         timeoutId: null
       });
+
+      // Camera barcode scanner state
+      const [cameraScanner, setCameraScanner] = useState({
+        isOpen: false,
+        isScanning: false,
+        error: '',
+        lastScannedCode: '',
+        lastScanTime: 0
+      });
+      const cameraScannerRef = useRef(null); // Reference to Html5Qrcode instance
       const [medicationFilters, setMedicationFilters] = useState({
         types: [],
         locations: [],
@@ -1519,6 +1531,178 @@
           error: '',
           isSubmitting: false
         });
+      };
+
+      // Camera Barcode Scanner Functions
+      // ===================================
+      // Library: html5-qrcode (https://github.com/mebjas/html5-qrcode)
+      // Supports: 1D barcodes (EAN-13, Code 128, etc.) and 2D barcodes (QR Code, Data Matrix, etc.)
+      // Browser requirement: HTTPS (already required in production)
+      // Mobile support: Optimized for iOS Safari and Android Chrome
+
+      const startCameraScanner = async () => {
+        console.log('[Camera Scanner] Starting camera scanner...');
+
+        setCameraScanner({
+          isOpen: true,
+          isScanning: false,
+          error: '',
+          lastScannedCode: '',
+          lastScanTime: 0
+        });
+
+        // Wait for DOM to render the video element
+        setTimeout(async () => {
+          let tempStream = null;
+          try {
+            console.log('[Camera Scanner] Step 1: Checking library...');
+            if (typeof Html5Qrcode === 'undefined') {
+              throw new Error('Barcode scanner library not loaded. Please refresh the page.');
+            }
+
+            // Check if DOM element exists
+            const element = document.getElementById("barcode-scanner-video");
+            if (!element) {
+              throw new Error('Scanner element not ready. Please try again.');
+            }
+
+            // CRITICAL FIX: Use native getUserMedia API to FORCE permission dialog
+            // This is the only reliable way to trigger the permission popup
+            console.log('[Camera Scanner] Step 2: Requesting camera permission via getUserMedia...');
+            console.log('[Camera Scanner] >>> PERMISSION DIALOG SHOULD APPEAR NOW <<<');
+
+            // Request camera access with native browser API - this ALWAYS shows the permission dialog
+            tempStream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: 'environment' }
+            });
+
+            console.log('[Camera Scanner] ✓ Permission granted! Got camera stream');
+
+            // Stop the temporary stream - we just needed it to get permission
+            tempStream.getTracks().forEach(track => track.stop());
+            console.log('[Camera Scanner] Stopped temporary stream');
+
+            // Now get the list of cameras (permission already granted)
+            console.log('[Camera Scanner] Step 3: Getting camera list...');
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const cameras = devices.filter(device => device.kind === 'videoinput');
+            console.log('[Camera Scanner] Found cameras:', cameras);
+
+            if (!cameras || cameras.length === 0) {
+              throw new Error('No cameras found on this device.');
+            }
+
+            // Find the back camera or use the first available
+            let cameraId = cameras[0].deviceId;
+            for (let camera of cameras) {
+              if (camera.label && camera.label.toLowerCase().includes('back')) {
+                cameraId = camera.deviceId;
+                console.log('[Camera Scanner] ✓ Using back camera:', camera.label);
+                break;
+              }
+            }
+
+            // Initialize scanner instance
+            if (!cameraScannerRef.current) {
+              console.log('[Camera Scanner] Step 4: Creating Html5Qrcode scanner...');
+              cameraScannerRef.current = new Html5Qrcode("barcode-scanner-video");
+            }
+
+            const scanner = cameraScannerRef.current;
+
+            // Configuration for barcode scanning
+            const config = {
+              fps: 10,
+              qrbox: { width: 250, height: 250 },
+              aspectRatio: 1.0
+            };
+
+            console.log('[Camera Scanner] Step 5: Starting barcode scanner with camera...');
+            // Start scanning (permission already granted, so this should work)
+            await scanner.start(
+              cameraId,
+              config,
+              (decodedText, decodedResult) => {
+                console.log('[Camera Scanner] ✓ Barcode detected:', decodedText);
+                handleBarcodeDetected(decodedText);
+              },
+              (errorMessage) => {
+                // Error callback - fires when no barcode in view (normal, ignore)
+              }
+            );
+
+            console.log('[Camera Scanner] ✓ Camera scanner started successfully!');
+            setCameraScanner(prev => ({ ...prev, isScanning: true, error: '' }));
+          } catch (err) {
+            // Clean up temporary stream if it exists
+            if (tempStream) {
+              tempStream.getTracks().forEach(track => track.stop());
+            }
+
+            console.error('[Camera Scanner] ❌ Error:', err);
+            console.error('[Camera Scanner] Error name:', err.name);
+            console.error('[Camera Scanner] Error message:', err.message);
+
+            let errorMessage = '';
+
+            if (err.name === 'NotAllowedError' || err.message.includes('Permission denied')) {
+              errorMessage = 'Camera permission denied. Please click "Allow" when your browser asks for camera access, then try again.';
+            } else if (err.name === 'NotFoundError' || err.message.includes('No cameras found')) {
+              errorMessage = 'No camera found on this device. Please use manual barcode entry.';
+            } else if (err.name === 'NotSupportedError' || err.message.includes('secure')) {
+              errorMessage = 'Camera access requires HTTPS. Please ensure you are accessing the site via https:// (not http://)';
+            } else if (err.message.includes('not loaded')) {
+              errorMessage = err.message;
+            } else if (err.message.includes('not ready')) {
+              errorMessage = err.message;
+            } else {
+              errorMessage = `Failed to start camera: ${err.message || err.name || 'Unknown error'}. Please try manual entry.`;
+            }
+
+            setCameraScanner(prev => ({ ...prev, error: errorMessage, isScanning: false }));
+          }
+        }, 300);
+      };
+
+      const stopCameraScanner = async () => {
+        try {
+          if (cameraScannerRef.current && cameraScannerRef.current.isScanning) {
+            await cameraScannerRef.current.stop();
+          }
+        } catch (err) {
+          console.error('Error stopping camera scanner:', err);
+        } finally {
+          setCameraScanner({
+            isOpen: false,
+            isScanning: false,
+            error: '',
+            lastScannedCode: '',
+            lastScanTime: 0
+          });
+        }
+      };
+
+      const handleBarcodeDetected = (barcode) => {
+        const now = Date.now();
+
+        // Prevent duplicate scans of the same barcode within 2 seconds
+        if (cameraScanner.lastScannedCode === barcode && (now - cameraScanner.lastScanTime) < 2000) {
+          return;
+        }
+
+        // Update last scanned code and time
+        setCameraScanner(prev => ({
+          ...prev,
+          lastScannedCode: barcode,
+          lastScanTime: now
+        }));
+
+        // Stop the scanner
+        stopCameraScanner();
+
+        // Populate the barcode field and trigger lookup
+        setBarcodeNewMedForm(prev => ({ ...prev, barcode, error: '' }));
+        handleBarcodeLookup(barcode);
       };
 
       // Handle existing batch selection
@@ -3324,14 +3508,14 @@ Medicana Stock Management System`;
                           )}
                       </div>
                       <div className="flex gap-2 sm:gap-3 flex-shrink-0">
-                        <button 
+                        <button
                           onClick={(e) => {
                             setGlobalBarcodeScanner(prev => ({ ...prev, isActive: !prev.isActive }));
                             e.currentTarget.blur(); // Remove focus from button to prevent barcode scanner from triggering it
                           }}
                           className={`px-3 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2 ${
-                            globalBarcodeScanner.isActive 
-                              ? 'bg-blue-500 text-white hover:bg-blue-600' 
+                            globalBarcodeScanner.isActive
+                              ? 'bg-blue-500 text-white hover:bg-blue-600'
                               : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
                           }`}
                           title={globalBarcodeScanner.isActive ? "Global scanner is ON - scan barcodes from anywhere" : "Global scanner is OFF - click to enable"}
@@ -3341,11 +3525,33 @@ Medicana Stock Management System`;
                           <span className="sm:hidden">Scan</span>
                         </button>
                           {getUserRole() !== 'Basic User' && (
-                            <button onClick={() => { if (ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') { alert('Please select a specific location (Cupboard 1, 2, or 3) from the dropdown above before adding stock.'); } else { setModals(prev => ({ ...prev, showAddMedication: true })); } }} className="bg-cyan-500 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-cyan-600 transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2">
-                              <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
-                              <span className="hidden sm:inline">Add New Stock</span>
-                              <span className="sm:hidden">Add</span>
-                            </button>
+                            <>
+                              <button
+                                onClick={() => {
+                                  if (ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') {
+                                    alert('Please select a specific location (Cupboard 1, 2, or 3) from the dropdown above before adding stock.');
+                                  } else {
+                                    // Open barcode modal first, then immediately start camera
+                                    setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
+                                    // Start camera after a small delay to ensure modal is rendered
+                                    setTimeout(() => {
+                                      startCameraScanner();
+                                    }, 200);
+                                  }
+                                }}
+                                className="bg-green-500 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-green-600 transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2"
+                                title="Scan barcode with camera"
+                              >
+                                <Camera className="w-3 h-3 sm:w-4 sm:h-4" />
+                                <span className="hidden sm:inline">Scan Barcode</span>
+                                <span className="sm:hidden">Scan</span>
+                              </button>
+                              <button onClick={() => { if (ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') { alert('Please select a specific location (Cupboard 1, 2, or 3) from the dropdown above before adding stock.'); } else { setModals(prev => ({ ...prev, showAddMedication: true })); } }} className="bg-cyan-500 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-cyan-600 transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2">
+                                <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+                                <span className="hidden sm:inline">Add New Stock</span>
+                                <span className="sm:hidden">Add</span>
+                              </button>
+                            </>
                           )}
                       </div>
                     </div>
@@ -5618,60 +5824,71 @@ Medicana Stock Management System`;
                         
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
-                          <input
-                            type="text"
-                            id="barcodeInput"
-                            value={barcodeNewMedForm.barcode}
-                            onChange={(e) => {
-                              const barcode = e.target.value;
-                              setBarcodeNewMedForm(prev => ({ ...prev, barcode, error: '' }));
-                              // Clear any existing timeout
-                              if (barcodeLookupTimeoutRef.current) {
-                                clearTimeout(barcodeLookupTimeoutRef.current);
-                                barcodeLookupTimeoutRef.current = null;
-                              }
-                              // Trigger lookup when barcode changes (debounced for typing)
-                              if (barcode.trim()) {
-                                barcodeLookupTimeoutRef.current = setTimeout(() => {
-                                  handleBarcodeLookup(barcode);
-                                  barcodeLookupTimeoutRef.current = null;
-                                }, 500);
-                              } else {
-                                handleBarcodeLookup('');
-                              }
-                            }}
-                            onKeyDown={(e) => {
-                              // Handle Enter key (barcode scanners typically send Enter after scan)
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                // Clear any pending debounced timeout
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              id="barcodeInput"
+                              value={barcodeNewMedForm.barcode}
+                              onChange={(e) => {
+                                const barcode = e.target.value;
+                                setBarcodeNewMedForm(prev => ({ ...prev, barcode, error: '' }));
+                                // Clear any existing timeout
                                 if (barcodeLookupTimeoutRef.current) {
                                   clearTimeout(barcodeLookupTimeoutRef.current);
                                   barcodeLookupTimeoutRef.current = null;
                                 }
-                                // Trigger immediate lookup
+                                // Trigger lookup when barcode changes (debounced for typing)
+                                if (barcode.trim()) {
+                                  barcodeLookupTimeoutRef.current = setTimeout(() => {
+                                    handleBarcodeLookup(barcode);
+                                    barcodeLookupTimeoutRef.current = null;
+                                  }, 500);
+                                } else {
+                                  handleBarcodeLookup('');
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                // Handle Enter key (barcode scanners typically send Enter after scan)
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  // Clear any pending debounced timeout
+                                  if (barcodeLookupTimeoutRef.current) {
+                                    clearTimeout(barcodeLookupTimeoutRef.current);
+                                    barcodeLookupTimeoutRef.current = null;
+                                  }
+                                  // Trigger immediate lookup
+                                  const barcode = e.target.value.trim();
+                                  if (barcode) {
+                                    handleBarcodeLookup(barcode);
+                                  }
+                                }
+                              }}
+                              onBlur={(e) => {
+                                // Clear any pending timeout
+                                if (barcodeLookupTimeoutRef.current) {
+                                  clearTimeout(barcodeLookupTimeoutRef.current);
+                                  barcodeLookupTimeoutRef.current = null;
+                                }
+                                // Also trigger lookup on blur to ensure it runs if user tabs away
                                 const barcode = e.target.value.trim();
                                 if (barcode) {
                                   handleBarcodeLookup(barcode);
                                 }
-                              }
-                            }}
-                            onBlur={(e) => {
-                              // Clear any pending timeout
-                              if (barcodeLookupTimeoutRef.current) {
-                                clearTimeout(barcodeLookupTimeoutRef.current);
-                                barcodeLookupTimeoutRef.current = null;
-                              }
-                              // Also trigger lookup on blur to ensure it runs if user tabs away
-                              const barcode = e.target.value.trim();
-                              if (barcode) {
-                                handleBarcodeLookup(barcode);
-                              }
-                            }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                            placeholder="Scan or enter barcode"
-                            autoComplete="off"
-                          />
+                              }}
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              placeholder="Scan or enter barcode"
+                              autoComplete="off"
+                            />
+                            <button
+                              type="button"
+                              onClick={startCameraScanner}
+                              className="px-3 py-2 bg-cyan-500 text-white rounded-md hover:bg-cyan-600 transition-colors flex items-center gap-1 text-sm font-medium whitespace-nowrap"
+                              title="Scan barcode with camera"
+                            >
+                              <Camera className="w-4 h-4" />
+                              <span className="hidden sm:inline">Scan</span>
+                            </button>
+                          </div>
                           {barcodeNewMedForm.medicationLocked && (
                             <p className="text-xs text-green-700 mt-1">✓ Medication found — details auto-filled.</p>
                           )}
@@ -7495,6 +7712,103 @@ Medicana Stock Management System`;
                         Log Out Now
                       </button>
                     </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Camera Barcode Scanner Modal */}
+            {cameraScanner.isOpen && (
+              <div className="fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center p-0" style={{zIndex: 10001}}>
+                <div className="w-full h-full flex flex-col">
+                  {/* Header */}
+                  <div className="bg-gray-900 text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
+                    <h2 className="text-lg font-semibold">Scan Barcode</h2>
+                    <button
+                      onClick={stopCameraScanner}
+                      className="p-2 hover:bg-gray-800 rounded-full transition-colors"
+                      title="Close scanner"
+                    >
+                      <X className="w-6 h-6" />
+                    </button>
+                  </div>
+
+                  {/* Scanner Content */}
+                  <div className="flex-1 flex flex-col items-center justify-center p-4 relative">
+                    {/* Error Message */}
+                    {cameraScanner.error && (
+                      <div className="absolute top-4 left-4 right-4 bg-red-600 text-white p-4 rounded-lg shadow-lg z-10">
+                        <div className="flex items-start gap-3">
+                          <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">{cameraScanner.error}</p>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            onClick={stopCameraScanner}
+                            className="px-4 py-2 bg-white text-red-600 rounded-md hover:bg-gray-100 transition-colors text-sm font-medium"
+                          >
+                            Close & Enter Manually
+                          </button>
+                          <button
+                            onClick={() => {
+                              stopCameraScanner();
+                              setTimeout(startCameraScanner, 100);
+                            }}
+                            className="px-4 py-2 bg-red-700 text-white rounded-md hover:bg-red-800 transition-colors text-sm font-medium"
+                          >
+                            Try Again
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Video Container */}
+                    <div className="w-full max-w-md relative">
+                      <div
+                        id="barcode-scanner-video"
+                        className="w-full rounded-lg overflow-hidden shadow-2xl"
+                        style={{minHeight: '300px'}}
+                      />
+
+                      {/* Instructions */}
+                      {cameraScanner.isScanning && !cameraScanner.error && (
+                        <div className="mt-4 text-center">
+                          <div className="bg-white bg-opacity-90 text-gray-800 px-4 py-3 rounded-lg inline-block">
+                            <p className="text-sm font-medium">Position the barcode within the frame</p>
+                            <p className="text-xs text-gray-600 mt-1">Scanner will automatically detect codes</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Loading State */}
+                      {!cameraScanner.isScanning && !cameraScanner.error && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-50 rounded-lg">
+                          <div className="text-white text-center">
+                            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 border-t-cyan-500 mb-3"></div>
+                            <p className="text-sm font-medium">Starting camera...</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bottom Instructions */}
+                    <div className="mt-6 text-center">
+                      <p className="text-white text-sm opacity-75">
+                        Supports 1D barcodes (EAN, Code 128, UPC) and 2D codes (QR, Data Matrix)
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Footer with Cancel Button */}
+                  <div className="bg-gray-900 px-4 py-3 flex-shrink-0">
+                    <button
+                      onClick={stopCameraScanner}
+                      className="w-full bg-gray-700 text-white py-3 rounded-lg hover:bg-gray-600 transition-colors font-medium"
+                    >
+                      Cancel & Enter Manually
+                    </button>
                   </div>
                 </div>
               </div>
