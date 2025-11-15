@@ -150,6 +150,11 @@
       }, 0);
     };
 
+    // Helper function to format "item(s) per box" text
+    const formatItemsPerBox = (count) => {
+      return count === 1 ? '1 item per box' : `${count} items per box`;
+    };
+
     const formatStockDisplay = (med) => {
       let totalFullBoxes = 0;
       let totalLooseItems = 0;
@@ -169,13 +174,13 @@
       // If we have itemsPerBox info, always show the × format
       if (standardItemsPerBox) {
         if (totalFullBoxes === 0 && totalLooseItems === 0) {
-          return `0 boxes × ${standardItemsPerBox} ${pluralizeUnit(standardItemsPerBox, med.unit)} per box`;
+          return `0 boxes × ${formatItemsPerBox(standardItemsPerBox)}`;
         }
         if (totalFullBoxes && totalLooseItems) {
-          return `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'} × ${standardItemsPerBox} items per box + ${totalLooseItems} ${pluralizeUnit(totalLooseItems, med.unit)}`;
+          return `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(standardItemsPerBox)} + ${totalLooseItems} ${pluralizeUnit(totalLooseItems, med.unit)}`;
         }
         if (totalFullBoxes) {
-          return `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'} × ${standardItemsPerBox} items per box`;
+          return `${totalFullBoxes} ${totalFullBoxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(standardItemsPerBox)}`;
         }
         // Only loose items
         return `${totalLooseItems} ${pluralizeUnit(totalLooseItems, med.unit)} (from open box)`;
@@ -204,9 +209,9 @@
       if (fullBoxes === 0) {
         return `${looseItems} ${pluralizeUnit(looseItems, unit)} (from open box)`;
       } else if (looseItems === 0) {
-        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} items per box`;
+        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(batch.itemsPerBox)}`;
       } else {
-        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} items per box + ${looseItems} ${pluralizeUnit(looseItems, unit)}`;
+        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(batch.itemsPerBox)} + ${looseItems} ${pluralizeUnit(looseItems, unit)}`;
       }
     };
 
@@ -283,7 +288,7 @@
 
     const formatQuantityDisplay = (quantity, itemsPerBox, unit, inputType = 'boxes', inputAmount = null) => {
       if (inputType === 'boxes' && inputAmount && itemsPerBox) {
-        return `${inputAmount} ${inputAmount === '1' ? 'box' : 'boxes'} × ${itemsPerBox} items per box`;
+        return `${inputAmount} ${inputAmount === '1' ? 'box' : 'boxes'} × ${formatItemsPerBox(itemsPerBox)}`;
       }
       return `${quantity} ${unit}`;
     };
@@ -1226,12 +1231,19 @@
                   // Same batch exists - add this location and combine quantities
                   existingBatch.locations.push({ location: med.location, quantity: newBatch.quantity });
                   existingBatch.totalQuantity += newBatch.quantity;
+                  // Update quantity and numberOfBoxes to reflect the total across all locations
+                  existingBatch.quantity = existingBatch.totalQuantity;
+                  if (existingBatch.itemsPerBox) {
+                    existingBatch.numberOfBoxes = Math.floor(existingBatch.totalQuantity / existingBatch.itemsPerBox);
+                  }
                 } else {
                   // New batch - add it
                   grouped[med.name].batches.push({
                     ...newBatch,
                     locations: [{ location: med.location, quantity: newBatch.quantity }],
-                    totalQuantity: newBatch.quantity
+                    totalQuantity: newBatch.quantity,
+                    // Ensure quantity matches totalQuantity for display functions
+                    quantity: newBatch.quantity
                   });
                 }
               });
@@ -3834,9 +3846,9 @@ Medicana Stock Management System`;
                                                       if (fullBoxes === 0) {
                                                         return `${looseItems} ${pluralizeUnit(looseItems, med.unit)} (from open box)`;
                                                       } else if (looseItems === 0) {
-                                                        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} items per box`;
+                                                        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(batch.itemsPerBox)}`;
                                                       } else {
-                                                        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${batch.itemsPerBox} items per box + ${looseItems} ${pluralizeUnit(looseItems, med.unit)}`;
+                                                        return `${fullBoxes} ${fullBoxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(batch.itemsPerBox)} + ${looseItems} ${pluralizeUnit(looseItems, med.unit)}`;
                                                       }
                                                     };
                                                     return (
@@ -3882,9 +3894,9 @@ Medicana Stock Management System`;
                                                     const boxes = Math.floor(qty / itemsPerBox);
                                                     const loose = qty % itemsPerBox;
                                                     if (loose > 0) {
-                                                      return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} items per box + ${loose} ${pluralizeUnit(loose, med.unit)}`;
+                                                      return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(itemsPerBox)} + ${loose} ${pluralizeUnit(loose, med.unit)}`;
                                                     }
-                                                    return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} items per box`;
+                                                    return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(itemsPerBox)}`;
                                                   }
                                                   return `${qty} ${pluralizeUnit(qty, med.unit)}`;
                                                 })()}</p>
@@ -3970,20 +3982,30 @@ Medicana Stock Management System`;
                           // Combine into single transfer entry
                           const sourceLocation = isTransferOut ? trans.location : match.location;
                           const targetLocation = isTransferOut ? match.location : trans.location;
-                          const transferNote = trans.note || match.note;
-                          
-                          // Extract quantity and brand from note
-                          const quantityMatch = transferNote.match(/(\d+.*?)(?:\s-\s|$)/);
-                          const brandMatch = transferNote.match(/Brand:\s*([^-]+)/);
-                          const quantity = quantityMatch ? quantityMatch[1].trim() : trans.amount;
-                          const brand = brandMatch ? brandMatch[1].trim() : '';
-                          
+
+                          // Format quantity with box information if available
+                          const quantity = trans.amount;
+                          const itemsPerBox = trans.itemsPerBox || match.itemsPerBox;
+                          let quantityText = `${quantity} items`;
+
+                          if (itemsPerBox && quantity >= itemsPerBox) {
+                            const boxes = Math.floor(quantity / itemsPerBox);
+                            const loose = quantity % itemsPerBox;
+                            if (loose > 0) {
+                              quantityText = `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(itemsPerBox)} + ${loose} items`;
+                            } else {
+                              quantityText = `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(itemsPerBox)}`;
+                            }
+                          } else if (itemsPerBox && quantity < itemsPerBox) {
+                            quantityText = `${quantity} items`;
+                          }
+
                           processedTransactions.push({
                             ...trans,
                             id: `transfer-${trans.id}-${match.id}`,
                             type: 'transfer',
-                            location: `${sourceLocation} to ${targetLocation}`,
-                            note: `Quantity: ${quantity}${brand ? ` - Brand: ${brand}` : ''}`,
+                            location: sourceLocation,
+                            note: `Transferred ${quantityText} from ${sourceLocation} to ${targetLocation}`,
                             originalAmount: trans.amount,
                             timestamp: trans.timestamp, // Use earlier timestamp
                             user: trans.user
@@ -6592,7 +6614,7 @@ Medicana Stock Management System`;
                           const batchWithBoxes = med.batches.find(b => b.itemsPerBox);
                           if (batchWithBoxes) {
                             const boxes = Math.ceil(qty / batchWithBoxes.itemsPerBox);
-                            return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${batchWithBoxes.itemsPerBox} items per box`;
+                            return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(batchWithBoxes.itemsPerBox)}`;
                           }
                           return `${qty} ${med.unit}`;
                         };
@@ -7003,7 +7025,7 @@ Medicana Stock Management System`;
                                             const boxes = med.recommendation.suggestedOrderQty;
                                             const itemsPerBox = med.standardItemsPerBox;
                                             if (itemsPerBox && boxes > 0) {
-                                              return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} items per box`;
+                                              return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(itemsPerBox)}`;
                                             }
                                             return `${boxes} ${boxes === 1 ? 'box' : 'boxes'}`;
                                           })()}
@@ -7265,9 +7287,9 @@ Medicana Stock Management System`;
                             const boxes = Math.floor(qty / itemsPerBox);
                             const loose = qty % itemsPerBox;
                             if (loose > 0) {
-                              return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} items per box + ${loose} ${pluralizeUnit(loose, fulfilOrderForm.med.unit)}`;
+                              return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(itemsPerBox)} + ${loose} ${pluralizeUnit(loose, fulfilOrderForm.med.unit)}`;
                             }
-                            return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${itemsPerBox} items per box`;
+                            return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(itemsPerBox)}`;
                           }
                           return `${qty} ${pluralizeUnit(qty, fulfilOrderForm.med.unit)}`;
                         })()}</span></div>
