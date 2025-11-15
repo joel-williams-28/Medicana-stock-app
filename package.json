@@ -19,6 +19,7 @@
   "homepage": "https://github.com/joel-williams-28/Medicana-stock-app#readme",
   "dependencies": {
     "bcryptjs": "^3.0.2",
+    "html5-qrcode": "^2.3.8",
     "pg": "^8.16.3"
   }
 }
