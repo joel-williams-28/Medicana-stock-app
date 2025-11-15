@@ -1542,6 +1542,12 @@
 
       const startCameraScanner = async () => {
         console.log('[Camera Scanner] Starting camera scanner...');
+
+        // Show debugging info on screen temporarily
+        const showDebug = (msg) => {
+          console.log('[Camera Scanner]', msg);
+        };
+
         setCameraScanner({
           isOpen: true,
           isScanning: false,
@@ -1553,12 +1559,13 @@
         // Wait for DOM to render the video element
         setTimeout(async () => {
           try {
-            console.log('[Camera Scanner] Checking if Html5Qrcode is available...');
+            showDebug('Step 1: Checking if Html5Qrcode library is loaded...');
+
             if (typeof Html5Qrcode === 'undefined') {
               console.error('[Camera Scanner] Html5Qrcode not found!');
               throw new Error('Barcode scanner library not loaded. Please refresh the page.');
             }
-            console.log('[Camera Scanner] Html5Qrcode library loaded successfully');
+            showDebug('✓ Html5Qrcode library loaded');
 
             // Check if DOM element exists
             const element = document.getElementById("barcode-scanner-video");
@@ -1566,12 +1573,14 @@
               console.error('[Camera Scanner] DOM element barcode-scanner-video not found!');
               throw new Error('Scanner element not ready. Please try again.');
             }
-            console.log('[Camera Scanner] DOM element found:', element);
+            showDebug('✓ Scanner element found in DOM');
 
             // IMPORTANT: Request camera permissions first by calling getCameras()
             // This triggers the browser's permission dialog
-            console.log('[Camera Scanner] Requesting camera permissions...');
+            showDebug('Step 2: Requesting camera access (permission dialog should appear now)...');
+
             const devices = await Html5Qrcode.getCameras();
+            showDebug(`✓ Got ${devices?.length || 0} camera(s)`);
             console.log('[Camera Scanner] Cameras found:', devices);
 
             if (!devices || devices.length === 0) {
@@ -1583,70 +1592,72 @@
             for (let device of devices) {
               if (device.label && device.label.toLowerCase().includes('back')) {
                 cameraId = device.id;
-                console.log('[Camera Scanner] Found back camera:', device.label);
+                showDebug(`✓ Found back camera: ${device.label}`);
                 break;
               }
             }
-            console.log('[Camera Scanner] Using camera ID:', cameraId);
+            if (!cameraId) {
+              showDebug(`Using camera: ${devices[0].label || 'Default camera'}`);
+            }
 
             // Initialize scanner instance if not already created
             if (!cameraScannerRef.current) {
-              console.log('[Camera Scanner] Creating new Html5Qrcode instance...');
+              showDebug('Step 3: Creating scanner instance...');
               cameraScannerRef.current = new Html5Qrcode("barcode-scanner-video");
             }
 
             const scanner = cameraScannerRef.current;
-            console.log('[Camera Scanner] Scanner instance ready');
+            showDebug('✓ Scanner instance ready');
 
             // Configuration for barcode formats
-            // Supports both 1D and 2D barcodes
             const config = {
-              fps: 10, // Frames per second (balanced for performance and battery)
-              qrbox: { width: 250, height: 250 }, // Scan area size
-              aspectRatio: 1.0 // Square scan box
+              fps: 10,
+              qrbox: { width: 250, height: 250 },
+              aspectRatio: 1.0
             };
 
-            console.log('[Camera Scanner] Starting scanner with camera ID and config...');
+            showDebug('Step 4: Starting camera stream...');
             // Start scanning with the selected camera ID
             await scanner.start(
               cameraId,
               config,
               (decodedText, decodedResult) => {
-                // Success callback - barcode detected
-                console.log('[Camera Scanner] Barcode detected:', decodedText);
+                console.log('[Camera Scanner] ✓ Barcode detected:', decodedText);
                 handleBarcodeDetected(decodedText);
               },
               (errorMessage) => {
-                // Error callback - can be ignored (fires continuously when no barcode in view)
-                // We only care about successful scans
+                // Error callback - fires continuously when no barcode in view
+                // This is normal, we only care about successful scans
               }
             );
 
-            console.log('[Camera Scanner] Scanner started successfully!');
+            showDebug('✓ Camera started successfully!');
             setCameraScanner(prev => ({ ...prev, isScanning: true, error: '' }));
           } catch (err) {
-            console.error('[Camera Scanner] Failed to start camera scanner:', err);
-            console.error('[Camera Scanner] Error name:', err.name);
+            console.error('[Camera Scanner] ❌ Failed:', err);
+            console.error('[Camera Scanner] Error type:', err.name);
             console.error('[Camera Scanner] Error message:', err.message);
-            console.error('[Camera Scanner] Full error:', err);
+            console.error('[Camera Scanner] Full error object:', err);
 
-            let errorMessage = 'Failed to access camera. ';
+            let errorMessage = '';
 
             if (err.name === 'NotAllowedError' || err.message.includes('Permission denied')) {
-              errorMessage += 'Please allow camera access in your browser settings and try again.';
+              errorMessage = 'Camera permission denied. Please allow camera access in your browser settings and try again.';
             } else if (err.name === 'NotFoundError' || err.message.includes('No cameras found')) {
-              errorMessage += 'No camera found on this device.';
+              errorMessage = 'No camera found on this device. Please use manual barcode entry.';
+            } else if (err.name === 'NotSupportedError' || err.message.includes('secure')) {
+              errorMessage = 'Camera access requires HTTPS. Please ensure you are accessing the site via https:// (not http://)';
             } else if (err.message.includes('not loaded')) {
-              errorMessage += err.message;
+              errorMessage = err.message;
             } else if (err.message.includes('not ready')) {
-              errorMessage += err.message;
+              errorMessage = err.message;
             } else {
-              errorMessage += `Error: ${err.message || 'Unknown error'}. Please try manual entry instead.`;
+              errorMessage = `Failed to start camera: ${err.message || err.name || 'Unknown error'}. Please try manual entry.`;
             }
 
             setCameraScanner(prev => ({ ...prev, error: errorMessage, isScanning: false }));
           }
-        }, 300); // Increased delay to 300ms to ensure DOM is ready
+        }, 300);
       };
 
       const stopCameraScanner = async () => {
