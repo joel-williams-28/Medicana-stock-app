@@ -1568,6 +1568,27 @@
             }
             console.log('[Camera Scanner] DOM element found:', element);
 
+            // IMPORTANT: Request camera permissions first by calling getCameras()
+            // This triggers the browser's permission dialog
+            console.log('[Camera Scanner] Requesting camera permissions...');
+            const devices = await Html5Qrcode.getCameras();
+            console.log('[Camera Scanner] Cameras found:', devices);
+
+            if (!devices || devices.length === 0) {
+              throw new Error('No cameras found on this device.');
+            }
+
+            // Find the back camera (environment) or use the first available camera
+            let cameraId = devices[0].id;
+            for (let device of devices) {
+              if (device.label && device.label.toLowerCase().includes('back')) {
+                cameraId = device.id;
+                console.log('[Camera Scanner] Found back camera:', device.label);
+                break;
+              }
+            }
+            console.log('[Camera Scanner] Using camera ID:', cameraId);
+
             // Initialize scanner instance if not already created
             if (!cameraScannerRef.current) {
               console.log('[Camera Scanner] Creating new Html5Qrcode instance...');
@@ -1575,20 +1596,20 @@
             }
 
             const scanner = cameraScannerRef.current;
-            console.log('[Camera Scanner] Scanner instance ready:', scanner);
+            console.log('[Camera Scanner] Scanner instance ready');
 
             // Configuration for barcode formats
             // Supports both 1D and 2D barcodes
             const config = {
               fps: 10, // Frames per second (balanced for performance and battery)
-              qrbox: { width: 250, height: 250 } // Scan area size
-              // Note: Removed formatsToSupport - library will auto-detect all formats
+              qrbox: { width: 250, height: 250 }, // Scan area size
+              aspectRatio: 1.0 // Square scan box
             };
 
-            console.log('[Camera Scanner] Starting scanner with config:', config);
-            // Start scanning with back camera (preferred for mobile)
+            console.log('[Camera Scanner] Starting scanner with camera ID and config...');
+            // Start scanning with the selected camera ID
             await scanner.start(
-              { facingMode: "environment" }, // Use back camera on mobile
+              cameraId,
               config,
               (decodedText, decodedResult) => {
                 // Success callback - barcode detected
@@ -1613,7 +1634,7 @@
 
             if (err.name === 'NotAllowedError' || err.message.includes('Permission denied')) {
               errorMessage += 'Please allow camera access in your browser settings and try again.';
-            } else if (err.name === 'NotFoundError') {
+            } else if (err.name === 'NotFoundError' || err.message.includes('No cameras found')) {
               errorMessage += 'No camera found on this device.';
             } else if (err.message.includes('not loaded')) {
               errorMessage += err.message;
