@@ -228,8 +228,9 @@ function parseNonParenthesizedGs1(input: string): {
           foundSeparator = true;
           break;
         }
-        // Check if we've hit another known AI
-        if (isKnownAI(input, endPos)) {
+        // Only check for next AI if we've moved at least 1 character forward
+        // This prevents false positives when data contains digits that look like AIs
+        if (endPos > pos && isKnownAI(input, endPos)) {
           break;
         }
         endPos++;
