@@ -12,7 +12,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { 
+    const {
       medicationId,
       existingBatchId, // If provided, use this batch's metadata
       batchNumber, // For new batch creation
@@ -26,7 +26,8 @@ exports.handler = async (event) => {
       locationId,
       userId,
       note,
-      reason // Alias for note (for consistency with frontend)
+      reason, // Alias for note (for consistency with frontend)
+      serial // GS1 serial number (AI 21) from 2D medicine pack barcodes
     } = JSON.parse(event.body || '{}');
     
     // Use reason if provided, otherwise fall back to note
@@ -71,7 +72,7 @@ exports.handler = async (event) => {
       if (existingBatchId) {
         // Use existing batch - fetch its canonical metadata
         const existingBatch = await db.query(
-          `SELECT id, medication_id, expiry_date, brand, items_per_box, batch_code
+          `SELECT id, medication_id, expiry_date, brand, items_per_box, batch_code, serial
            FROM batches
            WHERE id = $1`,
           [existingBatchId]
@@ -101,7 +102,7 @@ exports.handler = async (event) => {
         if (batchCodeToUse && batchCodeToUse.trim()) {
           // Check if batch_code already exists
           const existingBatch = await db.query(
-            `SELECT id, medication_id, expiry_date, brand, items_per_box
+            `SELECT id, medication_id, expiry_date, brand, items_per_box, serial
              FROM batches
              WHERE batch_code = $1`,
             [batchCodeToUse.trim()]
@@ -139,10 +140,10 @@ exports.handler = async (event) => {
             }
 
             const insertBatch = await db.query(
-              `INSERT INTO batches (medication_id, batch_code, expiry_date, brand, items_per_box)
-               VALUES ($1, $2, $3, $4, $5)
+              `INSERT INTO batches (medication_id, batch_code, expiry_date, brand, items_per_box, serial)
+               VALUES ($1, $2, $3, $4, $5, $6)
                RETURNING id, medication_id`,
-              [medicationId, batchCodeToUse.trim(), expiryDate, brand || '', itemsPerBox || null]
+              [medicationId, batchCodeToUse.trim(), expiryDate, brand || '', itemsPerBox || null, serial || null]
             );
             batchIdResult = insertBatch.rows[0].id;
             canonicalMedicationId = insertBatch.rows[0].medication_id;
@@ -171,10 +172,10 @@ exports.handler = async (event) => {
           }
 
           const insertBatch = await db.query(
-            `INSERT INTO batches (medication_id, batch_code, expiry_date, brand, items_per_box)
-             VALUES ($1, $2, $3, $4, $5)
+            `INSERT INTO batches (medication_id, batch_code, expiry_date, brand, items_per_box, serial)
+             VALUES ($1, $2, $3, $4, $5, $6)
              RETURNING id, medication_id`,
-            [medicationId, `BATCH-${Date.now()}`, expiryDate, brand || '', itemsPerBox || null]
+            [medicationId, `BATCH-${Date.now()}`, expiryDate, brand || '', itemsPerBox || null, serial || null]
           );
           batchIdResult = insertBatch.rows[0].id;
           canonicalMedicationId = insertBatch.rows[0].medication_id;
