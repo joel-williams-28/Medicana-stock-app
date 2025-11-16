@@ -107,18 +107,15 @@ function parseNonParenthesizedGs1(input) {
       pos += aiDef.fixedLength;
       console.log('[GS1 Parser] Fixed-length value:', value);
     } else {
-      // Variable-length AI: read until separator (|) or next known AI
+      // Variable-length AI: read until separator (|) or end of string
+      // Do NOT try to detect next AI in the middle - only trust separators
       let endPos = pos;
       let foundSeparator = false;
 
       while (endPos < input.length) {
         if (input[endPos] === '|') {
-          // Found separator
+          // Found separator - this is the definitive boundary
           foundSeparator = true;
-          break;
-        }
-        // Check if we've hit another known AI
-        if (isKnownAI(input, endPos)) {
           break;
         }
         endPos++;
@@ -145,6 +142,34 @@ function parseNonParenthesizedGs1(input) {
   return result;
 }
 
+/**
+ * Normalizes raw GS1 barcode strings by handling control characters.
+ *
+ * Real-world barcode scanners may include:
+ * - ASCII 29 (0x1D): GS1 Group Separator
+ * - Other control characters (0x00-0x1F, 0x7F)
+ * - Leading/trailing whitespace
+ *
+ * This function replaces all control characters with a standard separator (|)
+ * for consistent parsing.
+ *
+ * @param {string} raw - Raw barcode string from scanner
+ * @returns {string} Normalized string with control characters replaced
+ */
+function normalizeGs1Raw(raw) {
+  // Replace all control characters (ASCII 0x00-0x1F and 0x7F) with separator
+  // This includes ASCII 29 (GS1 group separator) and any other non-printable characters
+  const CONTROL_CHARS = /[\x00-\x1F\x7F]/g;
+
+  // Replace control chars with | and trim whitespace
+  let normalized = raw.replace(CONTROL_CHARS, '|').trim();
+
+  // Remove leading and trailing | characters (can occur if barcode starts/ends with control char)
+  normalized = normalized.replace(/^\|+|\|+$/g, '');
+
+  return normalized;
+}
+
 function parseGs1Data(raw) {
   const result = {
     raw,
@@ -156,11 +181,12 @@ function parseGs1Data(raw) {
     return result;
   }
 
-  // GS1 Group Separator character (ASCII 29)
-  const GS = String.fromCharCode(29);
+  // Normalize the input: replace all control characters with separator
+  let normalized = normalizeGs1Raw(raw);
 
-  // Normalize the input: replace GS with a temporary marker for easier parsing
-  let normalized = raw.replace(new RegExp(GS, 'g'), '|');
+  console.log('[GS1 Parser] Raw input:', raw);
+  console.log('[GS1 Parser] Normalized:', normalized);
+  console.log('[GS1 Parser] Normalized char codes:', Array.from(normalized).map(ch => ch.charCodeAt(0)));
 
   // Check if this looks like a GS1 barcode
   // Look for common AI patterns: (01), (10), (17), (21), (30), etc.
@@ -169,12 +195,17 @@ function parseGs1Data(raw) {
   // Non-parenthesized format: starts with 01 followed by 14 digits
   const hasGtinPrefix = /^01\d{14}/.test(normalized);
 
+  console.log('[GS1 Parser] Has parentheses?', hasParentheses);
+  console.log('[GS1 Parser] Has GTIN prefix?', hasGtinPrefix);
+
   if (!hasParentheses && !hasGtinPrefix) {
     // Doesn't look like GS1 - treat as regular barcode
+    console.log('[GS1 Parser] Not recognized as GS1 format');
     return result;
   }
 
   result.isGs1 = true;
+  console.log('[GS1 Parser] Recognized as GS1 format');
 
   try {
     // Parse parenthesized format: (01)12345...(17)260430(10)BATCH
@@ -198,6 +229,14 @@ function parseGs1Data(raw) {
     if (result.expiryDateRaw && result.expiryDateRaw.length === 6) {
       result.expiryDate = parseYYMMDD(result.expiryDateRaw);
     }
+
+    console.log('[GS1 Parser] Extracted fields:', {
+      gtin: result.gtin,
+      batch: result.batch,
+      expiryDateRaw: result.expiryDateRaw,
+      expiryDate: result.expiryDate,
+      serial: result.serial
+    });
 
   } catch (error) {
     // If parsing fails, we still return isGs1: true but with partial data
