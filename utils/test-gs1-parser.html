@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GS1 Parser Test Suite</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #0c2753;
+            border-bottom: 3px solid #06B6D4;
+            padding-bottom: 10px;
+        }
+        .test-case {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-case h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .input {
+            background-color: #f0f9ff;
+            border-left: 4px solid #06B6D4;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        .output {
+            background-color: #f0fdf4;
+            border-left: 4px solid #10b981;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .expected {
+            background-color: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .pass {
+            color: #10b981;
+            font-weight: bold;
+        }
+        .fail {
+            color: #ef4444;
+            font-weight: bold;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .status.pass {
+            background-color: #d1fae5;
+            color: #065f46;
+        }
+        .status.fail {
+            background-color: #fee2e2;
+            color: #991b1b;
+        }
+        pre {
+            background-color: #1f2937;
+            color: #f3f4f6;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+        .summary {
+            background: linear-gradient(135deg, #0c2753 0%, #06B6D4 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .summary h2 {
+            margin: 0 0 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 GS1 DataMatrix Parser - Test Suite</h1>
+
+    <div class="summary">
+        <h2>Test Results</h2>
+        <p id="test-summary">Running tests...</p>
+    </div>
+
+    <div id="test-results"></div>
+
+    <script src="./parseGs1Data.js"></script>
+    <script>
+        // Test cases
+        const testCases = [
+            {
+                name: "Full GS1 DataMatrix with all fields (parenthesized)",
+                input: "(01)05012345678901(17)260430(10)LOT12345(21)SN987654",
+                expected: {
+                    isGs1: true,
+                    gtin: "05012345678901",
+                    expiryDateRaw: "260430",
+                    batch: "LOT12345",
+                    serial: "SN987654",
+                    expiryMonth: "04",
+                    expiryYear: "2026"
+                }
+            },
+            {
+                name: "GS1 without serial number",
+                input: "(01)03401234567893(17)251231(10)BATCH-A1",
+                expected: {
+                    isGs1: true,
+                    gtin: "03401234567893",
+                    expiryDateRaw: "251231",
+                    batch: "BATCH-A1",
+                    expiryMonth: "12",
+                    expiryYear: "2025"
+                }
+            },
+            {
+                name: "Non-parenthesized with GS separator",
+                input: "0105012345678901" + String.fromCharCode(29) + "17260430" + String.fromCharCode(29) + "10LOT999",
+                expected: {
+                    isGs1: true,
+                    gtin: "05012345678901",
+                    expiryDateRaw: "260430",
+                    batch: "LOT999",
+                    expiryMonth: "04",
+                    expiryYear: "2026"
+                }
+            },
+            {
+                name: "Standard EAN-13 barcode (not GS1)",
+                input: "5012345678900",
+                expected: {
+                    isGs1: false
+                }
+            },
+            {
+                name: "Minimal GS1 (GTIN and expiry only)",
+                input: "(01)08712345678906(17)270815",
+                expected: {
+                    isGs1: true,
+                    gtin: "08712345678906",
+                    expiryDateRaw: "270815",
+                    expiryMonth: "08",
+                    expiryYear: "2027"
+                }
+            },
+            {
+                name: "GS1 with invalid expiry date (graceful handling)",
+                input: "(01)05012345678901(17)261332(10)BATCH123",
+                expected: {
+                    isGs1: true,
+                    gtin: "05012345678901",
+                    expiryDateRaw: "261332",
+                    batch: "BATCH123",
+                    expiryMonth: "",
+                    expiryYear: ""
+                }
+            }
+        ];
+
+        function runTests() {
+            let passed = 0;
+            let failed = 0;
+            const resultsHtml = [];
+
+            testCases.forEach((testCase, index) => {
+                const result = window.parseGs1Data(testCase.input);
+                const dateFormat = window.formatDateForMonthYear(result.expiryDate);
+
+                // Check assertions
+                const checks = [];
+                let testPassed = true;
+
+                if (testCase.expected.isGs1 !== undefined) {
+                    const pass = result.isGs1 === testCase.expected.isGs1;
+                    checks.push({ field: 'isGs1', expected: testCase.expected.isGs1, actual: result.isGs1, pass });
+                    testPassed = testPassed && pass;
+                }
+
+                if (testCase.expected.isGs1 && result.isGs1) {
+                    if (testCase.expected.gtin !== undefined) {
+                        const pass = result.gtin === testCase.expected.gtin;
+                        checks.push({ field: 'gtin', expected: testCase.expected.gtin, actual: result.gtin, pass });
+                        testPassed = testPassed && pass;
+                    }
+
+                    if (testCase.expected.expiryDateRaw !== undefined) {
+                        const pass = result.expiryDateRaw === testCase.expected.expiryDateRaw;
+                        checks.push({ field: 'expiryDateRaw', expected: testCase.expected.expiryDateRaw, actual: result.expiryDateRaw, pass });
+                        testPassed = testPassed && pass;
+                    }
+
+                    if (testCase.expected.batch !== undefined) {
+                        const pass = result.batch === testCase.expected.batch;
+                        checks.push({ field: 'batch', expected: testCase.expected.batch, actual: result.batch, pass });
+                        testPassed = testPassed && pass;
+                    }
+
+                    if (testCase.expected.serial !== undefined) {
+                        const pass = result.serial === testCase.expected.serial;
+                        checks.push({ field: 'serial', expected: testCase.expected.serial, actual: result.serial, pass });
+                        testPassed = testPassed && pass;
+                    }
+
+                    if (testCase.expected.expiryMonth !== undefined) {
+                        const pass = dateFormat.month === testCase.expected.expiryMonth;
+                        checks.push({ field: 'expiryMonth', expected: testCase.expected.expiryMonth, actual: dateFormat.month, pass });
+                        testPassed = testPassed && pass;
+                    }
+
+                    if (testCase.expected.expiryYear !== undefined) {
+                        const pass = String(dateFormat.year || '') === String(testCase.expected.expiryYear);
+                        checks.push({ field: 'expiryYear', expected: testCase.expected.expiryYear, actual: String(dateFormat.year || ''), pass });
+                        testPassed = testPassed && pass;
+                    }
+                }
+
+                if (testPassed) {
+                    passed++;
+                } else {
+                    failed++;
+                }
+
+                // Generate HTML for this test case
+                let checksHtml = checks.map(check => `
+                    <div>
+                        <strong>${check.field}:</strong>
+                        <span class="${check.pass ? 'pass' : 'fail'}">
+                            ${check.pass ? '✓' : '✗'}
+                        </span>
+                        Expected: <code>${JSON.stringify(check.expected)}</code>,
+                        Got: <code>${JSON.stringify(check.actual)}</code>
+                    </div>
+                `).join('');
+
+                resultsHtml.push(`
+                    <div class="test-case">
+                        <h3>
+                            Test ${index + 1}: ${testCase.name}
+                            <span class="status ${testPassed ? 'pass' : 'fail'}">
+                                ${testPassed ? 'PASS ✓' : 'FAIL ✗'}
+                            </span>
+                        </h3>
+
+                        <div class="input">
+                            <strong>Input:</strong><br>
+                            <code>${escapeHtml(testCase.input)}</code>
+                        </div>
+
+                        <div class="output">
+                            <strong>Parsed Output:</strong>
+                            <pre>${JSON.stringify(result, null, 2)}</pre>
+                        </div>
+
+                        <div class="expected">
+                            <strong>Expected Values:</strong>
+                            <pre>${JSON.stringify(testCase.expected, null, 2)}</pre>
+                        </div>
+
+                        <div>
+                            <strong>Field Checks:</strong>
+                            ${checksHtml}
+                        </div>
+                    </div>
+                `);
+            });
+
+            // Update summary
+            const total = passed + failed;
+            const passRate = ((passed / total) * 100).toFixed(1);
+            document.getElementById('test-summary').innerHTML = `
+                <strong>${passed} / ${total} tests passed (${passRate}%)</strong><br>
+                ${failed > 0 ? `<span style="color: #fca5a5;">${failed} test(s) failed</span>` : '<span style="color: #86efac;">All tests passed!</span>'}
+            `;
+
+            // Update results
+            document.getElementById('test-results').innerHTML = resultsHtml.join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Run tests on load
+        window.addEventListener('load', runTests);
+    </script>
+</body>
+</html>
