@@ -163,7 +163,14 @@ function normalizeGs1Raw(raw) {
   // Replace all control characters (ASCII 0x00-0x1F and 0x7F) with separator
   // This includes ASCII 29 (GS1 group separator) and any other non-printable characters
   const CONTROL_CHARS = /[\x00-\x1F\x7F]/g;
-  return raw.replace(CONTROL_CHARS, '|').trim();
+
+  // Replace control chars with | and trim whitespace
+  let normalized = raw.replace(CONTROL_CHARS, '|').trim();
+
+  // Remove leading and trailing | characters (can occur if barcode starts/ends with control char)
+  normalized = normalized.replace(/^\|+|\|+$/g, '');
+
+  return normalized;
 }
 
 function parseGs1Data(raw) {
@@ -180,6 +187,10 @@ function parseGs1Data(raw) {
   // Normalize the input: replace all control characters with separator
   let normalized = normalizeGs1Raw(raw);
 
+  console.log('[GS1 Parser] Raw input:', raw);
+  console.log('[GS1 Parser] Normalized:', normalized);
+  console.log('[GS1 Parser] Normalized char codes:', Array.from(normalized).map(ch => ch.charCodeAt(0)));
+
   // Check if this looks like a GS1 barcode
   // Look for common AI patterns: (01), (10), (17), (21), (30), etc.
   const hasParentheses = /\(0[0-9]\)|\(1[0-7]\)|\(2[0-1]\)|\(3[0-9]\)/.test(normalized);
@@ -187,12 +198,17 @@ function parseGs1Data(raw) {
   // Non-parenthesized format: starts with 01 followed by 14 digits
   const hasGtinPrefix = /^01\d{14}/.test(normalized);
 
+  console.log('[GS1 Parser] Has parentheses?', hasParentheses);
+  console.log('[GS1 Parser] Has GTIN prefix?', hasGtinPrefix);
+
   if (!hasParentheses && !hasGtinPrefix) {
     // Doesn't look like GS1 - treat as regular barcode
+    console.log('[GS1 Parser] Not recognized as GS1 format');
     return result;
   }
 
   result.isGs1 = true;
+  console.log('[GS1 Parser] Recognized as GS1 format');
 
   try {
     // Parse parenthesized format: (01)12345...(17)260430(10)BATCH
@@ -216,6 +232,14 @@ function parseGs1Data(raw) {
     if (result.expiryDateRaw && result.expiryDateRaw.length === 6) {
       result.expiryDate = parseYYMMDD(result.expiryDateRaw);
     }
+
+    console.log('[GS1 Parser] Extracted fields:', {
+      gtin: result.gtin,
+      batch: result.batch,
+      expiryDateRaw: result.expiryDateRaw,
+      expiryDate: result.expiryDate,
+      serial: result.serial
+    });
 
   } catch (error) {
     // If parsing fails, we still return isGs1: true but with partial data
