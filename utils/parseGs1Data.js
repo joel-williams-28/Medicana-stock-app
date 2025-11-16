@@ -36,6 +36,115 @@
  * // Returns: { gtin: "05012345678901", expiryDateRaw: "260430",
  * //           expiryDate: Date(2026-04-30), batch: "LOT123", isGs1: true }
  */
+/**
+ * GS1 Application Identifier definitions
+ * Maps AI codes to their properties (fixed vs variable length)
+ */
+const GS1_AI_DEFINITIONS = {
+  '01': { fixedLength: 14, name: 'GTIN' },
+  '17': { fixedLength: 6, name: 'Expiry Date' },
+  '10': { name: 'Batch/Lot' }, // Variable length
+  '21': { name: 'Serial Number' }, // Variable length
+  '11': { fixedLength: 6, name: 'Production Date' },
+  '30': { name: 'Variable Count' }, // Variable length (up to 8)
+};
+
+/**
+ * Parse non-parenthesized GS1 string (raw DataMatrix format)
+ *
+ * This parser sequentially reads through the string, identifying AIs
+ * and extracting their values based on fixed-length or separator-delimited rules.
+ *
+ * @param {string} input - Normalized GS1 string (with | instead of GS character)
+ * @returns {Object} Extracted GS1 fields
+ */
+function parseNonParenthesizedGs1(input) {
+  const result = {};
+  let pos = 0;
+
+  // Helper to check if we're at a known AI
+  const isKnownAI = (str, position) => {
+    // Check 2-digit AIs (most common)
+    const twoDigit = str.substring(position, position + 2);
+    if (GS1_AI_DEFINITIONS[twoDigit]) {
+      return twoDigit;
+    }
+    // Check 3-digit AIs (like 310, 392, etc.) - not common for medicines
+    const threeDigit = str.substring(position, position + 3);
+    if (GS1_AI_DEFINITIONS[threeDigit]) {
+      return threeDigit;
+    }
+    // Check 4-digit AIs
+    const fourDigit = str.substring(position, position + 4);
+    if (GS1_AI_DEFINITIONS[fourDigit]) {
+      return fourDigit;
+    }
+    return null;
+  };
+
+  console.log('[GS1 Parser] Parsing non-parenthesized GS1:', input);
+
+  while (pos < input.length) {
+    const ai = isKnownAI(input, pos);
+
+    if (!ai) {
+      // Unknown AI or end of recognized data - stop parsing
+      console.log('[GS1 Parser] Unknown AI at position', pos, '- stopping');
+      break;
+    }
+
+    const aiDef = GS1_AI_DEFINITIONS[ai];
+    pos += ai.length; // Move past the AI code
+
+    console.log('[GS1 Parser] Found AI', ai, '(' + aiDef.name + ') at position', pos);
+
+    // Extract value based on fixed-length or separator-delimited
+    let value;
+
+    if (aiDef.fixedLength) {
+      // Fixed-length AI: extract exact number of characters
+      value = input.substring(pos, pos + aiDef.fixedLength);
+      pos += aiDef.fixedLength;
+      console.log('[GS1 Parser] Fixed-length value:', value);
+    } else {
+      // Variable-length AI: read until separator (|) or next known AI
+      let endPos = pos;
+      let foundSeparator = false;
+
+      while (endPos < input.length) {
+        if (input[endPos] === '|') {
+          // Found separator
+          foundSeparator = true;
+          break;
+        }
+        // Check if we've hit another known AI
+        if (isKnownAI(input, endPos)) {
+          break;
+        }
+        endPos++;
+      }
+
+      value = input.substring(pos, endPos);
+      pos = foundSeparator ? endPos + 1 : endPos; // Skip separator if found
+      console.log('[GS1 Parser] Variable-length value:', value, '(separator found:', foundSeparator + ')');
+    }
+
+    // Store the value
+    if (ai === '01') {
+      result.gtin = value;
+    } else if (ai === '17') {
+      result.expiryDateRaw = value;
+    } else if (ai === '10') {
+      result.batch = value.trim();
+    } else if (ai === '21') {
+      result.serial = value.trim();
+    }
+  }
+
+  console.log('[GS1 Parser] Parsing complete:', result);
+  return result;
+}
+
 function parseGs1Data(raw) {
   const result = {
     raw,
@@ -75,31 +184,14 @@ function parseGs1Data(raw) {
       result.batch = extractAI(normalized, '10');
       result.serial = extractAI(normalized, '21');
     }
-    // Parse non-parenthesized format with separators
+    // Parse non-parenthesized format (raw GS1 DataMatrix)
     else if (hasGtinPrefix) {
-      // GTIN is always first, 14 digits after AI '01'
-      result.gtin = normalized.substring(2, 16);
-
-      // Find other AIs after GTIN
-      let remaining = normalized.substring(16);
-
-      // Look for AI 17 (expiry) - 6 digits
-      const expiryMatch = remaining.match(/17(\d{6})/);
-      if (expiryMatch) {
-        result.expiryDateRaw = expiryMatch[1];
-      }
-
-      // Look for AI 10 (batch) - variable length, terminated by | or next AI
-      const batchMatch = remaining.match(/10([^|]*?)(?:\||$|(?=\d{2}))/);
-      if (batchMatch) {
-        result.batch = batchMatch[1].trim();
-      }
-
-      // Look for AI 21 (serial) - variable length, terminated by | or end
-      const serialMatch = remaining.match(/21([^|]*?)(?:\||$)/);
-      if (serialMatch) {
-        result.serial = serialMatch[1].trim();
-      }
+      // Use sequential parser for non-parenthesized format
+      const parsed = parseNonParenthesizedGs1(normalized);
+      result.gtin = parsed.gtin;
+      result.expiryDateRaw = parsed.expiryDateRaw;
+      result.batch = parsed.batch;
+      result.serial = parsed.serial;
     }
 
     // Parse expiry date from YYMMDD format

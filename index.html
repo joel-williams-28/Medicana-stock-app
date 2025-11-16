@@ -646,6 +646,7 @@
           minLevelBoxes: '',
           brand: '',
           batchNumber: '',
+          serial: '', // GS1 serial number (AI 21) from 2D medicine pack barcodes
           existingBatchId: null, // If user selects an existing batch
           existingBatches: [], // List of existing batches for the medication
           batchLocked: false, // Batch integrity safeguard — do not remove. When true, brand/expiry/itemsPerBox are locked
@@ -1536,6 +1537,7 @@
           minLevelBoxes: '',
           brand: '',
           batchNumber: '',
+          serial: '', // GS1 serial number
           existingBatchId: null,
           existingBatches: [],
           batchLocked: false,
@@ -1697,21 +1699,126 @@
       };
 
       /**
-       * Camera barcode detection callback - handles both 1D and 2D barcodes
+       * Generic barcode scan handler (1D barcodes / fallback)
        *
-       * For GS1 DataMatrix codes (common on medicine packaging):
-       * - Parses Application Identifiers (AIs) to extract GTIN, batch, expiry, serial
-       * - Auto-populates batch and expiry fields in the new medication modal
-       * - Uses GTIN for product lookup instead of full GS1 string
+       * Handles standard 1D barcodes or any codes that don't contain GS1 data.
+       * Opens the "new medication from barcode" modal, which handles both:
+       * - Creating a new medication (if barcode not found)
+       * - Adding stock to an existing medication (if barcode found)
        *
-       * For standard 1D barcodes:
-       * - Uses barcode as-is for lookup (existing behavior)
+       * @param {string} barcode - The raw barcode string
+       */
+      const handleGenericBarcodeScan = (barcode) => {
+        console.log('[Generic Scan] Processing 1D barcode:', barcode);
+
+        // Pre-fill barcode field and trigger lookup
+        setBarcodeNewMedForm(prev => ({
+          ...prev,
+          barcode,
+          error: ''
+        }));
+
+        // Open the barcode modal (will show medication details if found, or new med form)
+        setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
+
+        // Trigger medication lookup
+        handleBarcodeLookup(barcode);
+      };
+
+      /**
+       * Medicine pack scan handler (GS1 2D barcodes)
+       *
+       * Handles GS1 DataMatrix codes found on medication packaging.
+       * These codes contain structured data (GTIN, batch, expiry, serial).
+       *
+       * Smart behavior:
+       * - Uses GTIN for medication lookup instead of full GS1 string
+       * - Pre-fills batch number and expiry date from GS1 data
+       * - If medication exists: opens modal in "add batch" mode with fields locked
+       * - If medication doesn't exist: opens modal in "create medication + batch" mode
+       *
+       * @param {object} parsedGs1 - Parsed GS1 data from parseGs1Data()
+       */
+      const handleMedicinePackScan = (parsedGs1) => {
+        console.log('[GS1 Pack Scan] Processing 2D medicine pack:', parsedGs1);
+
+        // Use GTIN for lookup, fallback to raw string if GTIN missing
+        const lookupBarcode = parsedGs1.gtin || parsedGs1.raw;
+
+        // Format expiry date for the form (MM and YYYY fields)
+        const dateFormat = window.formatDateForMonthYear(parsedGs1.expiryDate);
+
+        // Pre-fill the form with GS1 data
+        setBarcodeNewMedForm(prev => ({
+          ...prev,
+          barcode: lookupBarcode,
+          batchNumber: parsedGs1.batch || prev.batchNumber,
+          serial: parsedGs1.serial || prev.serial,
+          expiryMonth: dateFormat.month || prev.expiryMonth,
+          expiryYear: dateFormat.year ? String(dateFormat.year) : prev.expiryYear,
+          error: ''
+        }));
+
+        // Open the barcode modal (will adapt based on whether medication is found)
+        setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
+
+        // Trigger medication lookup using GTIN
+        // If found: modal shows medication details + batch fields pre-filled
+        // If not found: modal shows new medication form + batch fields pre-filled
+        handleBarcodeLookup(lookupBarcode);
+      };
+
+      /**
+       * Centralized scan detection handler
+       *
+       * This is the single entry point for all camera barcode scans.
+       * Automatically detects whether a barcode is GS1-encoded or a simple 1D code,
+       * then routes to the appropriate handler.
+       *
+       * Architecture:
+       * - Scanner component is "dumb" - it just reports the raw decoded value
+       * - This handler contains all the intelligence for GS1 detection and routing
+       * - User never has to choose "1D vs 2D" - it's automatic
+       *
+       * @param {string} rawValue - Raw barcode string from scanner library
+       */
+      const handleScanDetected = (rawValue) => {
+        console.log('[Scan Detected] Raw value:', rawValue);
+
+        // Parse the barcode to check if it's GS1-encoded
+        const parsed = window.parseGs1Data(rawValue);
+
+        console.log('[Scan Detected] Parse result:', parsed);
+
+        // Decision logic: GS1 with batch/expiry data → treat as medicine pack
+        // Otherwise → treat as generic barcode
+        if (parsed.isGs1 && (parsed.batch || parsed.expiryDateRaw)) {
+          // GS1 2D medicine pack with structured data
+          handleMedicinePackScan(parsed);
+        } else {
+          // Simple 1D barcode or GS1 without batch data (treat as generic)
+          handleGenericBarcodeScan(rawValue);
+        }
+      };
+
+      /**
+       * Camera barcode detection callback (simplified)
+       *
+       * This is the callback invoked by the html5-qrcode scanner library.
+       * It handles:
+       * - Duplicate scan prevention
+       * - Scanner state management (stop scanning after detection)
+       * - Delegating to the centralized handler
+       *
+       * The scanner is now a "dumb" component - it just decodes and reports.
+       * All intelligence about GS1 vs 1D is in handleScanDetected.
        */
       const handleBarcodeDetected = (barcode) => {
         const now = Date.now();
 
         // Prevent duplicate scans of the same barcode within 2 seconds
         if (cameraScanner.lastScannedCode === barcode && (now - cameraScanner.lastScanTime) < 2000) {
+          console.log('[Scanner] Ignoring duplicate scan');
           return;
         }
 
@@ -1722,37 +1829,11 @@
           lastScanTime: now
         }));
 
-        // Stop the scanner
+        // Stop the scanner (release camera)
         stopCameraScanner();
 
-        // Parse GS1 DataMatrix codes for medication packaging
-        // These contain GTIN (product code), batch number, expiry date, and serial number
-        const gs1Data = window.parseGs1Data(barcode);
-
-        console.log('GS1 parse result:', gs1Data);
-
-        if (gs1Data.isGs1) {
-          // GS1 DataMatrix code detected - extract and populate fields
-          const lookupBarcode = gs1Data.gtin || barcode; // Use GTIN for lookup, fallback to raw
-          const dateFormat = window.formatDateForMonthYear(gs1Data.expiryDate);
-
-          // Populate the barcode field with GTIN and pre-fill batch/expiry from GS1 data
-          setBarcodeNewMedForm(prev => ({
-            ...prev,
-            barcode: lookupBarcode,
-            batchNumber: gs1Data.batch || prev.batchNumber,
-            expiryMonth: dateFormat.month || prev.expiryMonth,
-            expiryYear: dateFormat.year ? String(dateFormat.year) : prev.expiryYear,
-            error: ''
-          }));
-
-          // Trigger medication lookup using GTIN
-          handleBarcodeLookup(lookupBarcode);
-        } else {
-          // Standard 1D barcode - use existing behavior
-          setBarcodeNewMedForm(prev => ({ ...prev, barcode, error: '' }));
-          handleBarcodeLookup(barcode);
-        }
+        // Delegate to centralized scan handler
+        handleScanDetected(barcode);
       };
 
       // Handle existing batch selection
@@ -1922,27 +2003,28 @@
 
 
         /**
-         * Global barcode scan handler - works with both hardware scanners and manual entry
+         * Hardware barcode scanner handler (infrared/Bluetooth scanners)
          *
-         * For GS1 DataMatrix codes (2D medicine barcodes):
-         * - Extracts GTIN, batch, expiry from the GS1 string
-         * - Uses GTIN to find the medication in the system
-         * - Auto-populates batch and expiry fields in the appropriate modal
+         * This handler is invoked when the global hardware scanner detects a barcode
+         * via keyboard emulation (rapid keystroke detection).
          *
-         * For standard 1D barcodes:
-         * - Uses barcode as-is for medication lookup (existing behavior)
+         * Unlike the camera scanner which always opens the "new medication" modal,
+         * the hardware scanner has different behavior based on scan context:
+         * - If medication found: Opens stock adjustment modal (for quick stock operations)
+         * - If medication not found: Opens new medication modal
+         *
+         * GS1 codes are automatically detected and batch/expiry data is pre-filled.
          *
          * Supported AIs: (01) GTIN, (10) Batch, (17) Expiry YYMMDD, (21) Serial
          */
         const handleBarcodeScanned = (barcode) => {
-            console.log('Scanned barcode:', barcode);
-          console.log('Available medications:', medications.map(med => ({ id: med.id, name: med.name, barcode: med.barcode })));
+          console.log('[Hardware Scan] Scanned barcode:', barcode);
 
           // Parse GS1 DataMatrix codes for medication packaging
           const gs1Data = window.parseGs1Data(barcode);
-          console.log('GS1 parse result:', gs1Data);
+          console.log('[Hardware Scan] GS1 parse result:', gs1Data);
 
-          // Use GTIN for lookup if GS1, otherwise use the original barcode
+          // Determine lookup barcode and extract GS1 fields if present
           let lookupBarcode = barcode.trim().replace(/\s+/g, '');
           let batchNumber = '';
           let expiryMonth = '';
@@ -1953,24 +2035,18 @@
             lookupBarcode = gs1Data.gtin || lookupBarcode;
             batchNumber = gs1Data.batch || '';
             const dateFormat = window.formatDateForMonthYear(gs1Data.expiryDate);
-            expiryMonth = dateFormat.month;
+            expiryMonth = dateFormat.month || '';
             expiryYear = dateFormat.year ? String(dateFormat.year) : '';
-            console.log('Using GS1 GTIN for lookup:', lookupBarcode);
-            console.log('Extracted batch:', batchNumber, 'expiry:', expiryMonth, '/', expiryYear);
+            console.log('[Hardware Scan] Using GS1 GTIN for lookup:', lookupBarcode);
+            console.log('[Hardware Scan] Extracted batch:', batchNumber, 'expiry:', expiryMonth, '/', expiryYear);
           }
 
           // Clean the barcode (remove any whitespace or special characters)
           const cleanBarcode = lookupBarcode.trim().replace(/\s+/g, '');
-          console.log('Cleaned barcode:', cleanBarcode);
+          console.log('[Hardware Scan] Cleaned barcode:', cleanBarcode);
 
           // Try to find medication by barcode (exact match first)
           let foundMedication = medications.find(med => med.barcode === cleanBarcode);
-          console.log('Found medication:', foundMedication);
-
-          // Debug: If no medication found, show all barcodes in console
-          if (!foundMedication) {
-            console.log('Available barcodes:', medications.map(med => `${med.name}: ${med.barcode}`).filter(info => info.includes(': ')));
-          }
 
           // If not found by exact barcode, try other methods
           if (!foundMedication) {
@@ -1981,6 +2057,9 @@
           }
 
           if (foundMedication) {
+            // Medication found → Open stock adjustment modal (quick stock operations workflow)
+            console.log('[Hardware Scan] Medication found, opening stock adjustment modal');
+
             setUi(prev => ({
               ...prev,
               selectedMed: foundMedication,
@@ -1997,13 +2076,13 @@
             // Populate deliveryForm with GS1 data if available (for stock-in with new batch)
             setDeliveryForm({
               brand: '',
-              expiryMonth: expiryMonth || '',
-              expiryYear: expiryYear || '',
+              expiryMonth: expiryMonth,
+              expiryYear: expiryYear,
               quantityType: defaultQuantityType,
               boxQuantity: '',
               itemsPerBox: '',
               individualQuantity: '',
-              batchNumber: batchNumber || ''
+              batchNumber: batchNumber
             });
 
             // Scroll to the medication in the list
@@ -2015,15 +2094,17 @@
             }, 100);
 
           } else {
-            // Show new medication modal for unrecognized barcode
+            // Medication not found → Open new medication modal
+            console.log('[Hardware Scan] Medication not found, opening new medication modal');
+
             const defaultLocation = (ui.currentLocation !== 'All' && !isGroupName(ui.currentLocation, locations)) ? ui.currentLocation : 'Cupboard 1';
             setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
             setBarcodeNewMedForm(prev => ({
               ...prev,
               barcode: cleanBarcode,
-              batchNumber: batchNumber || prev.batchNumber,
-              expiryMonth: expiryMonth || prev.expiryMonth,
-              expiryYear: expiryYear || prev.expiryYear,
+              batchNumber: batchNumber,
+              expiryMonth: expiryMonth,
+              expiryYear: expiryYear,
               location: defaultLocation,
               strengthType: 'value' // Always default to 'value' for new barcode scans
             }));
@@ -2407,6 +2488,7 @@ Medicana Stock Management System`;
               itemsPerBox: itemsPerBox, // Required for backend to calculate total quantity
               quantityBoxes: boxQuantity,
               quantityIndividuals: 0,
+              serial: barcodeNewMedForm.serial || null, // GS1 serial number (if scanned from 2D barcode)
               reason: 'Delivery (existing batch)'
             });
           } else {
@@ -2422,6 +2504,7 @@ Medicana Stock Management System`;
               itemsPerBox: itemsPerBox,
               quantityBoxes: boxQuantity,
               quantityIndividuals: 0,
+              serial: barcodeNewMedForm.serial || null, // GS1 serial number (if scanned from 2D barcode)
               reason: 'Delivery'
             });
           }
