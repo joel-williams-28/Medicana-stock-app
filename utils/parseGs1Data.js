@@ -145,6 +145,27 @@ function parseNonParenthesizedGs1(input) {
   return result;
 }
 
+/**
+ * Normalizes raw GS1 barcode strings by handling control characters.
+ *
+ * Real-world barcode scanners may include:
+ * - ASCII 29 (0x1D): GS1 Group Separator
+ * - Other control characters (0x00-0x1F, 0x7F)
+ * - Leading/trailing whitespace
+ *
+ * This function replaces all control characters with a standard separator (|)
+ * for consistent parsing.
+ *
+ * @param {string} raw - Raw barcode string from scanner
+ * @returns {string} Normalized string with control characters replaced
+ */
+function normalizeGs1Raw(raw) {
+  // Replace all control characters (ASCII 0x00-0x1F and 0x7F) with separator
+  // This includes ASCII 29 (GS1 group separator) and any other non-printable characters
+  const CONTROL_CHARS = /[\x00-\x1F\x7F]/g;
+  return raw.replace(CONTROL_CHARS, '|').trim();
+}
+
 function parseGs1Data(raw) {
   const result = {
     raw,
@@ -156,11 +177,8 @@ function parseGs1Data(raw) {
     return result;
   }
 
-  // GS1 Group Separator character (ASCII 29)
-  const GS = String.fromCharCode(29);
-
-  // Normalize the input: replace GS with a temporary marker for easier parsing
-  let normalized = raw.replace(new RegExp(GS, 'g'), '|');
+  // Normalize the input: replace all control characters with separator
+  let normalized = normalizeGs1Raw(raw);
 
   // Check if this looks like a GS1 barcode
   // Look for common AI patterns: (01), (10), (17), (21), (30), etc.

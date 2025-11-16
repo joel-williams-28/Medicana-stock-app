@@ -1783,7 +1783,10 @@
        * @param {string} rawValue - Raw barcode string from scanner library
        */
       const handleScanDetected = (rawValue) => {
-        console.log('[Scan Detected] Raw value:', rawValue);
+        // Log raw scanner output with character codes for debugging
+        console.log('[SCAN RAW]', rawValue);
+        console.log('[SCAN RAW CODES]', Array.from(rawValue).map(ch => ch.charCodeAt(0)));
+        console.log('[SCAN RAW LENGTH]', rawValue.length);
 
         // Parse the barcode to check if it's GS1-encoded
         const parsed = window.parseGs1Data(rawValue);
@@ -2018,7 +2021,10 @@
          * Supported AIs: (01) GTIN, (10) Batch, (17) Expiry YYMMDD, (21) Serial
          */
         const handleBarcodeScanned = (barcode) => {
-          console.log('[Hardware Scan] Scanned barcode:', barcode);
+          // Log raw scanner output with character codes for debugging
+          console.log('[SCAN RAW]', barcode);
+          console.log('[SCAN RAW CODES]', Array.from(barcode).map(ch => ch.charCodeAt(0)));
+          console.log('[SCAN RAW LENGTH]', barcode.length);
 
           // Parse GS1 DataMatrix codes for medication packaging
           const gs1Data = window.parseGs1Data(barcode);
