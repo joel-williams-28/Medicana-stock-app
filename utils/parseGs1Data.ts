@@ -218,19 +218,15 @@ function parseNonParenthesizedGs1(input: string): {
       pos += aiDef.fixedLength;
       console.log('[GS1 Parser] Fixed-length value:', value);
     } else {
-      // Variable-length AI: read until separator (|) or next known AI
+      // Variable-length AI: read until separator (|) or end of string
+      // Do NOT try to detect next AI in the middle - only trust separators
       let endPos = pos;
       let foundSeparator = false;
 
       while (endPos < input.length) {
         if (input[endPos] === '|') {
-          // Found separator
+          // Found separator - this is the definitive boundary
           foundSeparator = true;
-          break;
-        }
-        // Only check for next AI if we've moved at least 1 character forward
-        // This prevents false positives when data contains digits that look like AIs
-        if (endPos > pos && isKnownAI(input, endPos)) {
           break;
         }
         endPos++;
