@@ -1517,6 +1517,95 @@
         }
       };
 
+      // Batch number lookup handler - called when batch number is available but no barcode
+      const handleBatchLookup = async (batchNumber) => {
+        console.log('handleBatchLookup called with:', batchNumber);
+        if (!batchNumber || !batchNumber.trim()) {
+          return;
+        }
+
+        try {
+          console.log('Calling window.api.checkBatch with:', batchNumber.trim());
+          if (!window.api || !window.api.checkBatch) {
+            console.error('window.api.checkBatch is not available');
+            throw new Error('Batch lookup API is not available');
+          }
+          const result = await window.api.checkBatch(batchNumber.trim());
+          console.log('Batch lookup result:', result);
+
+          if (result.exists && result.batch) {
+            const batch = result.batch;
+            // Prefill and lock medication fields based on batch information
+            // The batch contains medicationDisplayId (name + strength)
+
+            // Parse medication display ID to extract name and strength
+            let name = batch.medicationDisplayId || '';
+            let strength = '';
+
+            // Try to extract strength from display ID
+            // Format is typically "Name Strength" (e.g., "Paracetamol 500mg")
+            const lastSpaceIndex = name.lastIndexOf(' ');
+            if (lastSpaceIndex > 0) {
+              const potentialStrength = name.substring(lastSpaceIndex + 1);
+              // Check if it looks like a strength (contains numbers)
+              if (/\d/.test(potentialStrength)) {
+                strength = potentialStrength;
+                name = name.substring(0, lastSpaceIndex);
+              }
+            }
+
+            // Convert expiry date from batch to month/year
+            let expiryMonth = '';
+            let expiryYear = '';
+            if (batch.expiryDate) {
+              // expiryDate is in YYYY-MM format
+              const [year, month] = batch.expiryDate.split('-');
+              expiryMonth = month || '';
+              expiryYear = year || '';
+            }
+
+            setBarcodeNewMedForm(prev => ({
+              ...prev,
+              medicationId: batch.medicationId,
+              medicationLocked: true,
+              name: name,
+              strength: strength || '',
+              strengthType: strength ? 'value' : 'na',
+              itemsPerBox: batch.itemsPerBox ? String(batch.itemsPerBox) : prev.itemsPerBox,
+              brand: batch.brand || prev.brand,
+              expiryMonth: expiryMonth || prev.expiryMonth,
+              expiryYear: expiryYear || prev.expiryYear,
+              // Note: we don't have existingBatches from batch lookup
+              // Could be enhanced in future to fetch all batches for this medication
+              existingBatches: [],
+              existingBatchId: null
+            }));
+
+            console.log('[Batch Lookup] Successfully populated form with batch data');
+          } else {
+            // Batch not found - leave fields unlocked for manual entry
+            console.log('[Batch Lookup] Batch not found in database');
+            setBarcodeNewMedForm(prev => ({
+              ...prev,
+              medicationId: null,
+              medicationLocked: false,
+              existingBatches: [],
+              existingBatchId: null
+            }));
+          }
+        } catch (err) {
+          console.error('Failed to lookup batch:', err);
+          // On error, allow manual entry
+          setBarcodeNewMedForm(prev => ({
+            ...prev,
+            medicationId: null,
+            medicationLocked: false,
+            existingBatches: [],
+            existingBatchId: null
+          }));
+        }
+      };
+
       // Reset barcode new medication form to initial state
       const resetBarcodeNewMedForm = () => {
         setBarcodeNewMedForm({
@@ -1762,10 +1851,20 @@
         // Open the barcode modal (will adapt based on whether medication is found)
         setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
 
-        // Trigger medication lookup using GTIN
-        // If found: modal shows medication details + batch fields pre-filled
-        // If not found: modal shows new medication form + batch fields pre-filled
-        handleBarcodeLookup(lookupBarcode);
+        // Trigger medication lookup
+        // Priority: 1) Barcode/GTIN lookup, 2) Batch number lookup, 3) Manual entry
+        if (lookupBarcode && lookupBarcode.trim()) {
+          // If we have a barcode/GTIN, use that for lookup
+          console.log('[GS1 Pack Scan] Using barcode lookup:', lookupBarcode);
+          handleBarcodeLookup(lookupBarcode);
+        } else if (parsedGs1.batch && parsedGs1.batch.trim()) {
+          // No barcode, but we have a batch number - try batch lookup
+          console.log('[GS1 Pack Scan] No barcode available, using batch lookup:', parsedGs1.batch);
+          handleBatchLookup(parsedGs1.batch);
+        } else {
+          // No barcode or batch - manual entry mode
+          console.log('[GS1 Pack Scan] No barcode or batch available, manual entry mode');
+        }
       };
 
       /**
