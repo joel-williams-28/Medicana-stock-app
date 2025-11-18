@@ -198,14 +198,20 @@ function parseGs1Data(raw) {
   console.log('[GS1 Parser] Has parentheses?', hasParentheses);
   console.log('[GS1 Parser] Has GTIN prefix?', hasGtinPrefix);
 
-  if (!hasParentheses && !hasGtinPrefix) {
-    // Doesn't look like GS1 - treat as regular barcode
-    console.log('[GS1 Parser] Not recognized as GS1 format');
+  // Check for alternative date formats (MM YYYY)
+  const mmyyyyPattern = /(\d{1,2})\s+(\d{4})/;
+  const hasMMYYYY = mmyyyyPattern.test(normalized);
+
+  console.log('[GS1 Parser] Has MM YYYY date pattern?', hasMMYYYY);
+
+  if (!hasParentheses && !hasGtinPrefix && !hasMMYYYY) {
+    // Doesn't look like GS1 or alternative barcode format - treat as regular barcode
+    console.log('[GS1 Parser] Not recognized as GS1 or alternative barcode format');
     return result;
   }
 
   result.isGs1 = true;
-  console.log('[GS1 Parser] Recognized as GS1 format');
+  console.log('[GS1 Parser] Recognized as GS1 or alternative barcode format');
 
   try {
     // Parse parenthesized format: (01)12345...(17)260430(10)BATCH
@@ -224,9 +230,41 @@ function parseGs1Data(raw) {
       result.batch = parsed.batch;
       result.serial = parsed.serial;
     }
+    // Parse alternative format with MM YYYY date pattern
+    else if (hasMMYYYY) {
+      console.log('[GS1 Parser] Parsing alternative format with MM YYYY date');
 
-    // Parse expiry date from YYMMDD format
-    if (result.expiryDateRaw && result.expiryDateRaw.length === 6) {
+      // Extract MM YYYY date
+      const match = normalized.match(/(\d{1,2})\s+(\d{4})/);
+      if (match) {
+        const dateStr = match[0]; // e.g., "04 2026"
+        result.expiryDate = parseMMYYYY(dateStr);
+
+        // Store raw date in a readable format
+        result.expiryDateRaw = dateStr;
+
+        // Extract batch/product code (everything before the date, separated by |)
+        const beforeDate = normalized.substring(0, match.index).trim();
+
+        // Split by | to get individual parts
+        const parts = beforeDate.split('|').filter(p => p.trim().length > 0);
+
+        if (parts.length > 0) {
+          // First part is usually the product code/batch
+          result.batch = parts[0].trim();
+          console.log('[GS1 Parser] Extracted batch/product code:', result.batch);
+        }
+
+        // If there are additional parts, could be serial or other identifiers
+        if (parts.length > 1) {
+          result.serial = parts.slice(1).join(' ').trim();
+          console.log('[GS1 Parser] Extracted additional identifiers:', result.serial);
+        }
+      }
+    }
+
+    // Parse expiry date from YYMMDD format if not already parsed
+    if (!result.expiryDate && result.expiryDateRaw && result.expiryDateRaw.length === 6) {
       result.expiryDate = parseYYMMDD(result.expiryDateRaw);
     }
 
@@ -318,6 +356,45 @@ function parseYYMMDD(yymmdd) {
     console.warn(`Invalid date constructed from YYMMDD: ${yymmdd}`);
     return null;
   }
+
+  return date;
+}
+
+/**
+ * Parses alternative date formats commonly found on medicine packaging.
+ * Supports formats like "MM YYYY" (e.g., "04 2026" for April 2026).
+ *
+ * @param {string} dateStr - Date string in MM YYYY format
+ * @returns {Date|null} Date object set to last day of the month, or null if parsing fails
+ */
+function parseMMYYYY(dateStr) {
+  // Match MM YYYY format (with optional separator)
+  const match = dateStr.match(/^(\d{1,2})\s*(\d{4})$/);
+
+  if (!match) {
+    return null;
+  }
+
+  const mm = parseInt(match[1], 10);
+  const yyyy = parseInt(match[2], 10);
+
+  // Validate month
+  if (mm < 1 || mm > 12) {
+    console.warn(`Invalid month in MM YYYY date: ${mm}`);
+    return null;
+  }
+
+  // Validate year (reasonable range)
+  if (yyyy < 2000 || yyyy > 2099) {
+    console.warn(`Invalid year in MM YYYY date: ${yyyy}`);
+    return null;
+  }
+
+  // For expiry dates in MM YYYY format, use the last day of the month
+  // This is standard practice when day is not specified
+  const date = new Date(yyyy, mm, 0); // Day 0 = last day of previous month, so mm gives us last day of mm-1
+
+  console.log(`[GS1 Parser] Parsed MM YYYY date: ${dateStr} -> ${date.toISOString()}`);
 
   return date;
 }
