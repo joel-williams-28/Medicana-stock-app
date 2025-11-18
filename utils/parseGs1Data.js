@@ -260,6 +260,11 @@ function parseGs1Data(raw) {
           result.serial = parts.slice(1).join(' ').trim();
           console.log('[GS1 Parser] Extracted additional identifiers:', result.serial);
         }
+
+        // Clear the raw field since this isn't actually a barcode identifier
+        // The application uses gtin || raw for barcode lookup, and we have neither
+        result.raw = '';
+        console.log('[GS1 Parser] Cleared raw field (no actual barcode identifier in alternative format)');
       }
     }
 
