@@ -29,14 +29,15 @@ exports.handler = async (event) => {
     // Check if batch_code exists globally (it's the unique key for batch metadata)
     // Also get medication display ID for frontend matching
     const result = await db.query(
-      `SELECT 
-         b.id, 
-         b.medication_id, 
-         b.expiry_date, 
-         b.brand, 
-         b.items_per_box, 
+      `SELECT
+         b.id,
+         b.medication_id,
+         b.expiry_date,
+         b.brand,
+         b.items_per_box,
          b.batch_code,
-         CASE 
+         m.form,
+         CASE
            WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
            ELSE m.name || ' ' || m.strength
          END AS medication_display_id
@@ -61,7 +62,8 @@ exports.handler = async (event) => {
             expiryDate: batch.expiry_date ? new Date(batch.expiry_date).toISOString().slice(0, 7) : null, // YYYY-MM format
             expiryDateFull: batch.expiry_date ? batch.expiry_date.toISOString() : null,
             brand: batch.brand || '',
-            itemsPerBox: batch.items_per_box || null
+            itemsPerBox: batch.items_per_box || null,
+            form: batch.form || 'tablet' // Medication type/form
           }
         })
       };
