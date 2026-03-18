@@ -4,51 +4,30 @@
 const db = require('./_db');
 
 exports.handler = async (event) => {
-  if (event.httpMethod !== 'POST') {
-    return { 
-      statusCode: 405, 
-      body: JSON.stringify({ success: false, message: 'Method not allowed' }) 
-    };
-  }
+  if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
-    const { 
-      userId, 
-      batchId, 
-      sourceLocationId, 
-      targetLocationId, 
-      quantity, 
-      reason 
+    const {
+      userId,
+      batchId,
+      sourceLocationId,
+      targetLocationId,
+      quantity,
+      reason
     } = JSON.parse(event.body || '{}');
 
-    // Validate required fields (medicationId is no longer required from client)
     if (!userId || !batchId || !sourceLocationId || !targetLocationId || !quantity) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ 
-          success: false, 
-          message: 'Missing or invalid fields',
-          debug: { userId, batchId, sourceLocationId, targetLocationId, quantity }
-        })
-      };
+      return db.fail(400, 'Missing or invalid fields');
     }
 
     if (typeof quantity !== 'number' || quantity <= 0 || !Number.isInteger(quantity)) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ 
-          success: false, 
-          message: 'Quantity must be a positive integer',
-          debug: { quantity, type: typeof quantity }
-        })
-      };
+      return db.fail(400, 'Quantity must be a positive integer');
     }
 
-    // Begin transaction
     await db.query('BEGIN');
 
     try {
-      // Security: Derive medication_id from batch_id (do not trust client-provided medicationId)
+      // Security: Derive medication_id from batch_id
       const batchQuery = await db.query(
         'SELECT medication_id FROM batches WHERE id = $1',
         [batchId]
@@ -56,14 +35,7 @@ exports.handler = async (event) => {
 
       if (batchQuery.rows.length === 0) {
         await db.query('ROLLBACK');
-        return {
-          statusCode: 400,
-          body: JSON.stringify({ 
-            success: false, 
-            message: 'Batch not found',
-            debug: { batchId }
-          })
-        };
+        return db.fail(400, 'Batch not found');
       }
 
       const medicationId = batchQuery.rows[0].medication_id;
@@ -75,14 +47,12 @@ exports.handler = async (event) => {
       );
 
       const locationMap = {};
-      locationsQuery.rows.forEach(row => {
-        locationMap[row.id] = row.display_name;
-      });
+      locationsQuery.rows.forEach(row => { locationMap[row.id] = row.display_name; });
 
       const sourceLocationName = locationMap[sourceLocationId] || sourceLocationId;
       const targetLocationName = locationMap[targetLocationId] || targetLocationId;
 
-      // Step 1: Check source has enough stock
+      // Check source has enough stock
       const checkSource = await db.query(
         'SELECT on_hand FROM inventory WHERE location_id = $1 AND batch_id = $2',
         [sourceLocationId, batchId]
@@ -90,46 +60,29 @@ exports.handler = async (event) => {
 
       if (checkSource.rows.length === 0) {
         await db.query('ROLLBACK');
-        return {
-          statusCode: 400,
-          body: JSON.stringify({ 
-            success: false, 
-            message: 'Source location does not have this batch in inventory',
-            debug: { sourceLocationId, batchId }
-          })
-        };
+        return db.fail(400, 'Source location does not have this batch in inventory');
       }
 
-      const sourceStock = checkSource.rows[0].on_hand;
-      if (sourceStock < quantity) {
+      if (checkSource.rows[0].on_hand < quantity) {
         await db.query('ROLLBACK');
-        return {
-          statusCode: 400,
-          body: JSON.stringify({ 
-            success: false, 
-            message: 'Not enough stock at source',
-            debug: { available: sourceStock, requested: quantity }
-          })
-        };
+        return db.fail(400, 'Not enough stock at source');
       }
 
-      // Step 2: Decrease stock at source
+      // Decrease stock at source
       await db.query(
         'UPDATE inventory SET on_hand = on_hand - $1 WHERE location_id = $2 AND batch_id = $3',
         [quantity, sourceLocationId, batchId]
       );
 
-      // Step 3: Insert transaction for source (outgoing transfer)
-      // Always construct a clean note with "Transfer to [location]" prefix
-      const outReason = `Transfer to ${targetLocationName}`;
+      // Record outgoing transaction
       await db.query(
         `INSERT INTO transactions
          (batch_id, location_id, medication_id, user_id, delta, type, reason)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [batchId, sourceLocationId, medicationId, userId, -quantity, 'out', outReason]
+        [batchId, sourceLocationId, medicationId, userId, -quantity, 'out', `Transfer to ${targetLocationName}`]
       );
 
-      // Step 4: Ensure target inventory row exists, then increase stock
+      // Ensure target inventory row exists, then increase stock
       await db.query(
         `INSERT INTO inventory (location_id, batch_id, on_hand)
          VALUES ($1, $2, 0)
@@ -142,32 +95,21 @@ exports.handler = async (event) => {
         [quantity, targetLocationId, batchId]
       );
 
-      // Step 5: Insert transaction for target (incoming transfer)
-      // Always construct a clean note with "Transfer from [location]" prefix
-      const inReason = `Transfer from ${sourceLocationName}`;
+      // Record incoming transaction
       await db.query(
         `INSERT INTO transactions
          (batch_id, location_id, medication_id, user_id, delta, type, reason)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [batchId, targetLocationId, medicationId, userId, quantity, 'in', inReason]
+        [batchId, targetLocationId, medicationId, userId, quantity, 'in', `Transfer from ${sourceLocationName}`]
       );
 
-      // Commit transaction
       await db.query('COMMIT');
-
-      return {
-        statusCode: 200,
-        body: JSON.stringify({ success: true })
-      };
+      return db.ok();
     } catch (err) {
       await db.query('ROLLBACK');
       throw err;
     }
   } catch (e) {
-    console.error('stock-transfer error:', e);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ success: false, message: 'Server error.' })
-    };
+    return db.serverError('stock-transfer', e);
   }
 };

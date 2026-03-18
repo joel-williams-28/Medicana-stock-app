@@ -1,33 +1,19 @@
 // netlify/functions/batch-check.js
 // Checks if a batch_code exists and returns its canonical details
-// Batch integrity safeguard — do not remove.
-
+// Batch integrity safeguard -- do not remove.
 const db = require('./_db');
 
 exports.handler = async (event) => {
-  if (event.httpMethod !== 'POST') {
-    return { 
-      statusCode: 405, 
-      body: JSON.stringify({ success: false, message: 'Method not allowed' }) 
-    };
-  }
+  if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
     const { batchCode } = JSON.parse(event.body || '{}');
 
     if (!batchCode || !batchCode.trim()) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ 
-          success: false, 
-          message: 'batchCode is required' 
-        })
-      };
+      return db.fail(400, 'batchCode is required');
     }
 
-    // Batch integrity safeguard — do not remove.
-    // Check if batch_code exists globally (it's the unique key for batch metadata)
-    // Also get medication display ID for frontend matching
+    // Batch integrity safeguard -- do not remove.
     const result = await db.query(
       `SELECT
          b.id,
@@ -47,43 +33,26 @@ exports.handler = async (event) => {
       [batchCode.trim()]
     );
 
-    if (result.rows.length > 0) {
-      const batch = result.rows[0];
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          success: true,
-          exists: true,
-          batch: {
-            id: batch.id,
-            medicationId: batch.medication_id, // Internal ID (for reference)
-            medicationDisplayId: batch.medication_display_id || null, // Display ID for frontend matching
-            batchCode: batch.batch_code,
-            expiryDate: batch.expiry_date ? new Date(batch.expiry_date).toISOString().slice(0, 7) : null, // YYYY-MM format
-            expiryDateFull: batch.expiry_date ? batch.expiry_date.toISOString() : null,
-            brand: batch.brand || '',
-            itemsPerBox: batch.items_per_box || null,
-            form: batch.form || 'tablet' // Medication type/form
-          }
-        })
-      };
-    } else {
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          success: true,
-          exists: false,
-          batch: null
-        })
-      };
+    if (result.rows.length === 0) {
+      return db.ok({ exists: false, batch: null });
     }
+
+    const batch = result.rows[0];
+    return db.ok({
+      exists: true,
+      batch: {
+        id: batch.id,
+        medicationId: batch.medication_id,
+        medicationDisplayId: batch.medication_display_id || null,
+        batchCode: batch.batch_code,
+        expiryDate: batch.expiry_date ? new Date(batch.expiry_date).toISOString().slice(0, 7) : null,
+        expiryDateFull: batch.expiry_date ? batch.expiry_date.toISOString() : null,
+        brand: batch.brand || '',
+        itemsPerBox: batch.items_per_box || null,
+        form: batch.form || 'tablet'
+      }
+    });
   } catch (e) {
-    console.error('batch-check error:', e);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ success: false, message: 'Server error.' })
-    };
+    return db.serverError('batch-check', e);
   }
 };
-
-

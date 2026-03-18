@@ -4,28 +4,15 @@
 const db = require('./_db');
 
 exports.handler = async (event) => {
-  if (event.httpMethod !== 'POST') {
-    return { 
-      statusCode: 405, 
-      body: JSON.stringify({ success: false, message: 'Method not allowed' }) 
-    };
-  }
+  if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
     const { userId, locationId, batchId, delta, reason } = JSON.parse(event.body || '{}');
 
-    // Validate required fields (medicationId is no longer required from client)
     if (!userId || !locationId || !batchId || delta === undefined || delta === null) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ 
-          success: false, 
-          message: 'Missing required fields: userId, locationId, batchId, delta' 
-        })
-      };
+      return db.fail(400, 'Missing required fields: userId, locationId, batchId, delta');
     }
 
-    // Begin transaction
     await db.query('BEGIN');
 
     try {
@@ -37,13 +24,7 @@ exports.handler = async (event) => {
 
       if (batchQuery.rows.length === 0) {
         await db.query('ROLLBACK');
-        return {
-          statusCode: 400,
-          body: JSON.stringify({ 
-            success: false, 
-            message: 'Batch not found' 
-          })
-        };
+        return db.fail(400, 'Batch not found');
       }
 
       const medicationId = batchQuery.rows[0].medication_id;
@@ -55,25 +36,14 @@ exports.handler = async (event) => {
       );
 
       if (checkInv.rows.length === 0) {
-        // Insert new inventory row
         await db.query(
           'INSERT INTO inventory (location_id, batch_id, on_hand) VALUES ($1, $2, $3)',
           [locationId, batchId, delta]
         );
       } else {
-        // Update existing inventory
-        const newQuantity = checkInv.rows[0].on_hand + delta;
-        
-        // Prevent negative stock
-        if (newQuantity < 0) {
+        if (checkInv.rows[0].on_hand + delta < 0) {
           await db.query('ROLLBACK');
-          return {
-            statusCode: 400,
-            body: JSON.stringify({ 
-              success: false, 
-              message: 'Insufficient stock. Cannot reduce below zero.' 
-            })
-          };
+          return db.fail(400, 'Insufficient stock. Cannot reduce below zero.');
         }
 
         await db.query(
@@ -83,9 +53,7 @@ exports.handler = async (event) => {
       }
 
       // Insert transaction record
-      // Determine transaction type: positive delta = 'in', negative delta = 'out'
       const transactionType = delta > 0 ? 'in' : 'out';
-
       await db.query(
         `INSERT INTO transactions
          (batch_id, location_id, medication_id, user_id, delta, type, reason)
@@ -93,22 +61,13 @@ exports.handler = async (event) => {
         [batchId, locationId, medicationId, userId, delta, transactionType, reason || '']
       );
 
-      // Commit transaction
       await db.query('COMMIT');
-
-      return {
-        statusCode: 200,
-        body: JSON.stringify({ success: true })
-      };
+      return db.ok();
     } catch (err) {
       await db.query('ROLLBACK');
       throw err;
     }
   } catch (e) {
-    console.error('stock-adjust error:', e);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ success: false, message: 'Server error.' })
-    };
+    return db.serverError('stock-adjust', e);
   }
 };

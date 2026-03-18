@@ -3,55 +3,23 @@
 const db = require('./_db');
 
 exports.handler = async (event) => {
-  if (event.httpMethod !== 'POST') {
-    return { 
-      statusCode: 405, 
-      body: JSON.stringify({ success: false, message: 'Method not allowed' }) 
-    };
-  }
+  if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
     const { medicationId, isActive } = JSON.parse(event.body || '{}');
 
     if (!medicationId) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ 
-          success: false, 
-          message: 'Missing required field: medicationId' 
-        })
-      };
+      return db.fail(400, 'Missing required field: medicationId');
     }
 
     if (typeof isActive !== 'boolean') {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ 
-          success: false, 
-          message: 'Missing or invalid field: isActive (must be boolean)' 
-        })
-      };
+      return db.fail(400, 'Missing or invalid field: isActive (must be boolean)');
     }
 
-    // Update medication is_active status
-    const query = `
-      UPDATE medications 
-      SET is_active = $1
-      WHERE id = $2
-    `;
+    await db.query('UPDATE medications SET is_active = $1 WHERE id = $2', [isActive, medicationId]);
 
-    await db.query(query, [isActive, medicationId]);
-
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ success: true })
-    };
+    return db.ok();
   } catch (e) {
-    console.error('medication-set-active error:', e);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ success: false, message: 'Server error.' })
-    };
+    return db.serverError('medication-set-active', e);
   }
 };
-

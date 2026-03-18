@@ -3,27 +3,15 @@
 const db = require('./_db');
 
 exports.handler = async (event) => {
-  if (event.httpMethod !== 'POST') {
-    return { 
-      statusCode: 405, 
-      body: JSON.stringify({ success: false, message: 'Method not allowed' }) 
-    };
-  }
+  if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
     const { barcode } = JSON.parse(event.body || '{}');
 
     if (!barcode || !barcode.trim()) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ 
-          success: false, 
-          message: 'Barcode is required' 
-        })
-      };
+      return db.fail(400, 'Barcode is required');
     }
 
-    // Find medication by barcode
     const medResult = await db.query(
       `SELECT id, name, strength, form, standard_items_per_box, barcode
        FROM medications
@@ -32,24 +20,14 @@ exports.handler = async (event) => {
     );
 
     if (medResult.rows.length === 0) {
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          success: true,
-          found: false
-        })
-      };
+      return db.ok({ found: false });
     }
 
     const medication = medResult.rows[0];
-    
-    // Get strength_raw (e.g., "500mg" or "4mg/mL")
-    // The strength field contains the raw strength value
-    const strengthRaw = medication.strength && medication.strength !== 'N/A' 
-      ? medication.strength 
+    const strengthRaw = medication.strength && medication.strength !== 'N/A'
+      ? medication.strength
       : null;
 
-    // Get existing batches for this medication
     const batchesResult = await db.query(
       `SELECT id, batch_code, expiry_date, brand, items_per_box
        FROM batches
@@ -61,35 +39,26 @@ exports.handler = async (event) => {
     const existingBatches = batchesResult.rows.map(batch => ({
       id: batch.id,
       batchCode: batch.batch_code || '',
-      expiryDate: batch.expiry_date 
-        ? new Date(batch.expiry_date).toISOString().slice(0, 10) // YYYY-MM-DD format
+      expiryDate: batch.expiry_date
+        ? new Date(batch.expiry_date).toISOString().slice(0, 10)
         : null,
       itemsPerBox: batch.items_per_box || null,
       brand: batch.brand || ''
     }));
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        success: true,
-        found: true,
-        medication: {
-          id: medication.id,
-          name: medication.name,
-          strength_raw: strengthRaw,
-          type: medication.form || 'Tablet',
-          standard_items_per_box: medication.standard_items_per_box || null,
-          barcode: medication.barcode
-        },
-        existingBatches
-      })
-    };
+    return db.ok({
+      found: true,
+      medication: {
+        id: medication.id,
+        name: medication.name,
+        strength_raw: strengthRaw,
+        type: medication.form || 'Tablet',
+        standard_items_per_box: medication.standard_items_per_box || null,
+        barcode: medication.barcode
+      },
+      existingBatches
+    });
   } catch (e) {
-    console.error('barcode-lookup error:', e);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ success: false, message: 'Server error.' })
-    };
+    return db.serverError('barcode-lookup', e);
   }
 };
-

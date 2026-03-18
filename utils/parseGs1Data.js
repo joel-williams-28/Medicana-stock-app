@@ -9,33 +9,15 @@
  * - (17): Expiry date in YYMMDD format
  * - (10): Batch/lot number (variable length)
  * - (21): Serial number (variable length)
- *
- * Future expansion: Add support for AI (30) quantity, (310n) net weight, etc.
  */
 
-/**
- * Parses a GS1-encoded barcode string and extracts common Application Identifiers.
- *
- * Handles multiple GS1 formats:
- * - Parenthesized: (01)05012345678901(17)260430(10)B123(21)X999
- * - Non-parenthesized with group separator (ASCII 29/0x1D)
- * - Mixed formats with various separators
- *
- * @param {string} raw - The raw decoded barcode string
- * @returns {Object} ParsedGs1Data object with extracted fields
- * @property {string} [gtin] - 14-digit GTIN product code
- * @property {string} [expiryDateRaw] - Raw expiry date (YYMMDD format)
- * @property {Date|null} [expiryDate] - Parsed JavaScript Date object
- * @property {string} [batch] - Batch/lot number
- * @property {string} [serial] - Serial number
- * @property {string} raw - Original input string
- * @property {boolean} isGs1 - Whether the string appears to be GS1-encoded
- *
- * @example
- * const result = parseGs1Data("(01)05012345678901(17)260430(10)LOT123");
- * // Returns: { gtin: "05012345678901", expiryDateRaw: "260430",
- * //           expiryDate: Date(2026-04-30), batch: "LOT123", isGs1: true }
- */
+// Set to true for detailed parse logging (useful during development/debugging)
+const GS1_DEBUG = false;
+
+function gs1Log(...args) {
+  if (GS1_DEBUG) console.log('[GS1 Parser]', ...args);
+}
+
 /**
  * GS1 Application Identifier definitions
  * Maps AI codes to their properties (fixed vs variable length)
@@ -43,17 +25,17 @@
 const GS1_AI_DEFINITIONS = {
   '01': { fixedLength: 14, name: 'GTIN' },
   '17': { fixedLength: 6, name: 'Expiry Date' },
-  '10': { name: 'Batch/Lot' }, // Variable length
-  '21': { name: 'Serial Number' }, // Variable length
+  '10': { name: 'Batch/Lot' },
+  '21': { name: 'Serial Number' },
   '11': { fixedLength: 6, name: 'Production Date' },
-  '30': { name: 'Variable Count' }, // Variable length (up to 8)
+  '30': { name: 'Variable Count' },
 };
 
 /**
  * Parse non-parenthesized GS1 string (raw DataMatrix format)
  *
- * This parser sequentially reads through the string, identifying AIs
- * and extracting their values based on fixed-length or separator-delimited rules.
+ * Sequentially reads through the string, identifying AIs and extracting
+ * their values based on fixed-length or separator-delimited rules.
  *
  * @param {string} input - Normalized GS1 string (with | instead of GS character)
  * @returns {Object} Extracted GS1 fields
@@ -62,210 +44,122 @@ function parseNonParenthesizedGs1(input) {
   const result = {};
   let pos = 0;
 
-  // Helper to check if we're at a known AI
   const isKnownAI = (str, position) => {
-    // Check 2-digit AIs (most common)
-    const twoDigit = str.substring(position, position + 2);
-    if (GS1_AI_DEFINITIONS[twoDigit]) {
-      return twoDigit;
-    }
-    // Check 3-digit AIs (like 310, 392, etc.) - not common for medicines
-    const threeDigit = str.substring(position, position + 3);
-    if (GS1_AI_DEFINITIONS[threeDigit]) {
-      return threeDigit;
-    }
-    // Check 4-digit AIs
-    const fourDigit = str.substring(position, position + 4);
-    if (GS1_AI_DEFINITIONS[fourDigit]) {
-      return fourDigit;
+    for (const len of [2, 3, 4]) {
+      const candidate = str.substring(position, position + len);
+      if (GS1_AI_DEFINITIONS[candidate]) return candidate;
     }
     return null;
   };
 
-  console.log('[GS1 Parser] Parsing non-parenthesized GS1:', input);
+  gs1Log('Parsing non-parenthesized GS1:', input);
 
   while (pos < input.length) {
     const ai = isKnownAI(input, pos);
-
     if (!ai) {
-      // Unknown AI or end of recognized data - stop parsing
-      console.log('[GS1 Parser] Unknown AI at position', pos, '- stopping');
+      gs1Log('Unknown AI at position', pos, '- stopping');
       break;
     }
 
     const aiDef = GS1_AI_DEFINITIONS[ai];
-    pos += ai.length; // Move past the AI code
+    pos += ai.length;
 
-    console.log('[GS1 Parser] Found AI', ai, '(' + aiDef.name + ') at position', pos);
+    gs1Log('Found AI', ai, '(' + aiDef.name + ') at position', pos);
 
-    // Extract value based on fixed-length or separator-delimited
     let value;
-
     if (aiDef.fixedLength) {
-      // Fixed-length AI: extract exact number of characters
       value = input.substring(pos, pos + aiDef.fixedLength);
       pos += aiDef.fixedLength;
-      console.log('[GS1 Parser] Fixed-length value:', value);
     } else {
-      // Variable-length AI: read until separator (|) or end of string
-      // Do NOT try to detect next AI in the middle - only trust separators
+      // Variable-length: read until separator (|) or end of string
       let endPos = pos;
       let foundSeparator = false;
-
       while (endPos < input.length) {
-        if (input[endPos] === '|') {
-          // Found separator - this is the definitive boundary
-          foundSeparator = true;
-          break;
-        }
+        if (input[endPos] === '|') { foundSeparator = true; break; }
         endPos++;
       }
-
       value = input.substring(pos, endPos);
-      pos = foundSeparator ? endPos + 1 : endPos; // Skip separator if found
-      console.log('[GS1 Parser] Variable-length value:', value, '(separator found:', foundSeparator + ')');
+      pos = foundSeparator ? endPos + 1 : endPos;
     }
 
-    // Store the value
-    if (ai === '01') {
-      result.gtin = value;
-    } else if (ai === '17') {
-      result.expiryDateRaw = value;
-    } else if (ai === '10') {
-      result.batch = value.trim();
-    } else if (ai === '21') {
-      result.serial = value.trim();
-    }
+    if (ai === '01') result.gtin = value;
+    else if (ai === '17') result.expiryDateRaw = value;
+    else if (ai === '10') result.batch = value.trim();
+    else if (ai === '21') result.serial = value.trim();
   }
 
-  console.log('[GS1 Parser] Parsing complete:', result);
+  gs1Log('Parsing complete:', result);
   return result;
 }
 
 /**
- * Normalizes raw GS1 barcode strings by handling control characters.
- *
- * Real-world barcode scanners may include:
- * - ASCII 29 (0x1D): GS1 Group Separator
- * - Other control characters (0x00-0x1F, 0x7F)
- * - Leading/trailing whitespace
- *
- * This function replaces all control characters with a standard separator (|)
- * for consistent parsing.
+ * Normalizes raw GS1 barcode strings by replacing control characters
+ * (ASCII 0x00-0x1F, 0x7F) with a standard separator (|).
  *
  * @param {string} raw - Raw barcode string from scanner
  * @returns {string} Normalized string with control characters replaced
  */
 function normalizeGs1Raw(raw) {
-  // Replace all control characters (ASCII 0x00-0x1F and 0x7F) with separator
-  // This includes ASCII 29 (GS1 group separator) and any other non-printable characters
-  const CONTROL_CHARS = /[\x00-\x1F\x7F]/g;
-
-  // Replace control chars with | and trim whitespace
-  let normalized = raw.replace(CONTROL_CHARS, '|').trim();
-
-  // Remove leading and trailing | characters (can occur if barcode starts/ends with control char)
-  normalized = normalized.replace(/^\|+|\|+$/g, '');
-
-  return normalized;
+  return raw
+    .replace(/[\x00-\x1F\x7F]/g, '|')
+    .trim()
+    .replace(/^\|+|\|+$/g, '');
 }
 
+/**
+ * Parses a GS1-encoded barcode string and extracts common Application Identifiers.
+ *
+ * @param {string} raw - The raw decoded barcode string
+ * @returns {Object} ParsedGs1Data with extracted fields (gtin, batch, serial, expiryDate, etc.)
+ */
 function parseGs1Data(raw) {
-  const result = {
-    raw,
-    isGs1: false,
-    expiryDate: null
-  };
+  const result = { raw, isGs1: false, expiryDate: null };
 
-  if (!raw || raw.length === 0) {
-    return result;
-  }
+  if (!raw || raw.length === 0) return result;
 
-  // Normalize the input: replace all control characters with separator
-  let normalized = normalizeGs1Raw(raw);
+  const normalized = normalizeGs1Raw(raw);
 
-  console.log('[GS1 Parser] Raw input:', raw);
-  console.log('[GS1 Parser] Normalized:', normalized);
-  console.log('[GS1 Parser] Normalized char codes:', Array.from(normalized).map(ch => ch.charCodeAt(0)));
+  gs1Log('Raw input:', raw);
+  gs1Log('Normalized:', normalized);
 
-  // Check if this looks like a GS1 barcode
-  // Look for common AI patterns: (01), (10), (17), (21), (30), etc.
+  // Detect format
   const hasParentheses = /\(0[0-9]\)|\(1[0-7]\)|\(2[0-1]\)|\(3[0-9]\)/.test(normalized);
-
-  // Non-parenthesized format: starts with 01 followed by 14 digits
   const hasGtinPrefix = /^01\d{14}/.test(normalized);
-
-  console.log('[GS1 Parser] Has parentheses?', hasParentheses);
-  console.log('[GS1 Parser] Has GTIN prefix?', hasGtinPrefix);
-
-  // Check for alternative date formats (MM YYYY)
-  const mmyyyyPattern = /(\d{1,2})\s+(\d{4})/;
-  const hasMMYYYY = mmyyyyPattern.test(normalized);
-
-  console.log('[GS1 Parser] Has MM YYYY date pattern?', hasMMYYYY);
+  const mmyyyyMatch = normalized.match(/(\d{1,2})\s+(\d{4})/);
+  const hasMMYYYY = !!mmyyyyMatch;
 
   if (!hasParentheses && !hasGtinPrefix && !hasMMYYYY) {
-    // Doesn't look like GS1 or alternative barcode format - treat as regular barcode
-    console.log('[GS1 Parser] Not recognized as GS1 or alternative barcode format');
+    gs1Log('Not recognized as GS1 or alternative barcode format');
     return result;
   }
 
   result.isGs1 = true;
-  console.log('[GS1 Parser] Recognized as GS1 or alternative barcode format');
 
   try {
-    // Parse parenthesized format: (01)12345...(17)260430(10)BATCH
     if (hasParentheses) {
       result.gtin = extractAI(normalized, '01', 14);
       result.expiryDateRaw = extractAI(normalized, '17', 6);
       result.batch = extractAI(normalized, '10');
       result.serial = extractAI(normalized, '21');
-    }
-    // Parse non-parenthesized format (raw GS1 DataMatrix)
-    else if (hasGtinPrefix) {
-      // Use sequential parser for non-parenthesized format
+    } else if (hasGtinPrefix) {
       const parsed = parseNonParenthesizedGs1(normalized);
       result.gtin = parsed.gtin;
       result.expiryDateRaw = parsed.expiryDateRaw;
       result.batch = parsed.batch;
       result.serial = parsed.serial;
-    }
-    // Parse alternative format with MM YYYY date pattern
-    else if (hasMMYYYY) {
-      console.log('[GS1 Parser] Parsing alternative format with MM YYYY date');
+    } else if (hasMMYYYY) {
+      gs1Log('Parsing alternative format with MM YYYY date');
+      result.expiryDate = parseMMYYYY(mmyyyyMatch[0]);
+      result.expiryDateRaw = mmyyyyMatch[0];
 
-      // Extract MM YYYY date
-      const match = normalized.match(/(\d{1,2})\s+(\d{4})/);
-      if (match) {
-        const dateStr = match[0]; // e.g., "04 2026"
-        result.expiryDate = parseMMYYYY(dateStr);
+      const beforeDate = normalized.substring(0, mmyyyyMatch.index).trim();
+      const parts = beforeDate.split('|').filter(p => p.trim().length > 0);
 
-        // Store raw date in a readable format
-        result.expiryDateRaw = dateStr;
+      if (parts.length > 0) result.batch = parts[0].trim();
+      if (parts.length > 1) result.serial = parts.slice(1).join(' ').trim();
 
-        // Extract batch/product code (everything before the date, separated by |)
-        const beforeDate = normalized.substring(0, match.index).trim();
-
-        // Split by | to get individual parts
-        const parts = beforeDate.split('|').filter(p => p.trim().length > 0);
-
-        if (parts.length > 0) {
-          // First part is usually the product code/batch
-          result.batch = parts[0].trim();
-          console.log('[GS1 Parser] Extracted batch/product code:', result.batch);
-        }
-
-        // If there are additional parts, could be serial or other identifiers
-        if (parts.length > 1) {
-          result.serial = parts.slice(1).join(' ').trim();
-          console.log('[GS1 Parser] Extracted additional identifiers:', result.serial);
-        }
-
-        // Clear the raw field since this isn't actually a barcode identifier
-        // The application uses gtin || raw for barcode lookup, and we have neither
-        result.raw = '';
-        console.log('[GS1 Parser] Cleared raw field (no actual barcode identifier in alternative format)');
-      }
+      // Clear raw field - no actual barcode identifier in alternative format
+      result.raw = '';
     }
 
     // Parse expiry date from YYMMDD format if not already parsed
@@ -273,16 +167,14 @@ function parseGs1Data(raw) {
       result.expiryDate = parseYYMMDD(result.expiryDateRaw);
     }
 
-    console.log('[GS1 Parser] Extracted fields:', {
+    gs1Log('Extracted fields:', {
       gtin: result.gtin,
       batch: result.batch,
       expiryDateRaw: result.expiryDateRaw,
       expiryDate: result.expiryDate,
       serial: result.serial
     });
-
   } catch (error) {
-    // If parsing fails, we still return isGs1: true but with partial data
     console.warn('GS1 parsing encountered an error:', error);
   }
 
@@ -294,71 +186,44 @@ function parseGs1Data(raw) {
  *
  * @param {string} input - The GS1 string to parse
  * @param {string} ai - The Application Identifier (e.g., "01", "17", "10")
- * @param {number} [fixedLength] - Fixed length for this AI (optional). If not provided, extracts until next AI or separator.
+ * @param {number} [fixedLength] - Fixed length for this AI (optional)
  * @returns {string|undefined} The extracted value, or undefined if not found
  */
 function extractAI(input, ai, fixedLength) {
-  // Match (AI) followed by the value
-  const aiPattern = `\\(${ai}\\)`;
-  const regex = new RegExp(aiPattern + '([^(|]+)');
+  const regex = new RegExp(`\\(${ai}\\)([^(|]+)`);
   const match = input.match(regex);
-
-  if (!match) {
-    return undefined;
-  }
+  if (!match) return undefined;
 
   let value = match[1];
-
-  // If fixed length is specified, extract exactly that many characters
   if (fixedLength !== undefined) {
     value = value.substring(0, fixedLength);
   } else {
-    // Variable length: trim and remove trailing separators
     value = value.replace(/\|+$/, '').trim();
   }
-
   return value || undefined;
 }
 
 /**
  * Parses a GS1 expiry date in YYMMDD format to a JavaScript Date.
- *
- * Assumes 20xx for the year (e.g., 26 -> 2026, 99 -> 2099).
- * Performs basic validation on month and day values.
+ * Assumes 20xx for the year.
  *
  * @param {string} yymmdd - 6-digit date string (e.g., "260430" for April 30, 2026)
  * @returns {Date|null} Date object, or null if parsing fails
  */
 function parseYYMMDD(yymmdd) {
-  if (yymmdd.length !== 6) {
-    return null;
-  }
+  if (yymmdd.length !== 6) return null;
 
   const yy = parseInt(yymmdd.substring(0, 2), 10);
   const mm = parseInt(yymmdd.substring(2, 4), 10);
   const dd = parseInt(yymmdd.substring(4, 6), 10);
 
-  // Basic validation
-  if (mm < 1 || mm > 12) {
-    console.warn(`Invalid month in GS1 expiry date: ${mm}`);
-    return null;
-  }
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
 
-  if (dd < 1 || dd > 31) {
-    console.warn(`Invalid day in GS1 expiry date: ${dd}`);
-    return null;
-  }
-
-  // Assume 20xx for year (2000-2099)
   const year = 2000 + yy;
-
-  // Create date object
-  // Note: JavaScript Date month is 0-indexed
   const date = new Date(year, mm - 1, dd);
 
   // Verify the date is valid (handles Feb 30, etc.)
   if (date.getFullYear() !== year || date.getMonth() !== mm - 1 || date.getDate() !== dd) {
-    console.warn(`Invalid date constructed from YYMMDD: ${yymmdd}`);
     return null;
   }
 
@@ -366,77 +231,48 @@ function parseYYMMDD(yymmdd) {
 }
 
 /**
- * Parses alternative date formats commonly found on medicine packaging.
- * Supports formats like "MM YYYY" (e.g., "04 2026" for April 2026).
+ * Parses alternative date formats like "MM YYYY" (e.g., "04 2026").
+ * Returns last day of the month (standard for expiry dates without a day).
  *
  * @param {string} dateStr - Date string in MM YYYY format
  * @returns {Date|null} Date object set to last day of the month, or null if parsing fails
  */
 function parseMMYYYY(dateStr) {
-  // Match MM YYYY format (with optional separator)
   const match = dateStr.match(/^(\d{1,2})\s*(\d{4})$/);
-
-  if (!match) {
-    return null;
-  }
+  if (!match) return null;
 
   const mm = parseInt(match[1], 10);
   const yyyy = parseInt(match[2], 10);
 
-  // Validate month
-  if (mm < 1 || mm > 12) {
-    console.warn(`Invalid month in MM YYYY date: ${mm}`);
-    return null;
-  }
+  if (mm < 1 || mm > 12 || yyyy < 2000 || yyyy > 2099) return null;
 
-  // Validate year (reasonable range)
-  if (yyyy < 2000 || yyyy > 2099) {
-    console.warn(`Invalid year in MM YYYY date: ${yyyy}`);
-    return null;
-  }
-
-  // For expiry dates in MM YYYY format, use the last day of the month
-  // This is standard practice when day is not specified
-  const date = new Date(yyyy, mm, 0); // Day 0 = last day of previous month, so mm gives us last day of mm-1
-
-  console.log(`[GS1 Parser] Parsed MM YYYY date: ${dateStr} -> ${date.toISOString()}`);
-
-  return date;
+  // Day 0 of next month = last day of this month
+  return new Date(yyyy, mm, 0);
 }
 
 /**
  * Formats a Date object to YYYY-MM-DD string for HTML date inputs.
- *
- * @param {Date|null|undefined} date - JavaScript Date object
- * @returns {string} ISO date string (YYYY-MM-DD) or empty string if invalid
  */
 function formatDateForInput(date) {
-  if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
-    return '';
-  }
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
 
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
-
   return `${year}-${month}-${day}`;
 }
 
 /**
  * Formats a Date object to separate month and year strings.
- *
- * @param {Date|null|undefined} date - JavaScript Date object
- * @returns {Object} Object with month (MM) and year (YYYY) strings
  */
 function formatDateForMonthYear(date) {
   if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
     return { month: '', year: '' };
   }
-
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = date.getFullYear();
-
-  return { month, year };
+  return {
+    month: String(date.getMonth() + 1).padStart(2, '0'),
+    year: date.getFullYear()
+  };
 }
 
 // Make functions available globally for use in the HTML file

@@ -2,13 +2,10 @@
 // Creates a new medication order request in the database
 const db = require('./_db');
 
+const VALID_URGENCIES = ['urgent', 'routine', 'non-urgent'];
+
 exports.handler = async (event) => {
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      body: JSON.stringify({ success: false, message: 'Method not allowed' })
-    };
-  }
+  if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
     const {
@@ -20,41 +17,18 @@ exports.handler = async (event) => {
       pharmacistEmail
     } = JSON.parse(event.body || '{}');
 
-    // Validate required fields
     if (!medicationId || !quantity || !urgency || !pharmacistEmail) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          success: false,
-          message: 'Missing required fields: medicationId, quantity, urgency, pharmacistEmail'
-        })
-      };
+      return db.fail(400, 'Missing required fields: medicationId, quantity, urgency, pharmacistEmail');
     }
 
-    // Validate quantity is positive
     if (quantity <= 0) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          success: false,
-          message: 'Quantity must be greater than zero'
-        })
-      };
+      return db.fail(400, 'Quantity must be greater than zero');
     }
 
-    // Validate urgency value
-    const validUrgencies = ['urgent', 'routine', 'non-urgent'];
-    if (!validUrgencies.includes(urgency)) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          success: false,
-          message: 'Invalid urgency value. Must be: urgent, routine, or non-urgent'
-        })
-      };
+    if (!VALID_URGENCIES.includes(urgency)) {
+      return db.fail(400, 'Invalid urgency value. Must be: urgent, routine, or non-urgent');
     }
 
-    // Insert the order into the database
     const result = await db.query(
       `INSERT INTO orders
        (medication_id, user_id, quantity, urgency, notes, pharmacist_email, status, ordered_at)
@@ -65,32 +39,21 @@ exports.handler = async (event) => {
 
     const order = result.rows[0];
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        success: true,
-        order: {
-          id: order.id,
-          medicationId: order.medication_id,
-          userId: order.user_id,
-          quantity: order.quantity,
-          urgency: order.urgency,
-          notes: order.notes,
-          pharmacistEmail: order.pharmacist_email,
-          status: order.status,
-          orderedAt: order.ordered_at,
-          createdAt: order.created_at
-        }
-      })
-    };
+    return db.ok({
+      order: {
+        id: order.id,
+        medicationId: order.medication_id,
+        userId: order.user_id,
+        quantity: order.quantity,
+        urgency: order.urgency,
+        notes: order.notes,
+        pharmacistEmail: order.pharmacist_email,
+        status: order.status,
+        orderedAt: order.ordered_at,
+        createdAt: order.created_at
+      }
+    });
   } catch (e) {
-    console.error('order-place error:', e);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        success: false,
-        message: 'Server error while placing order.'
-      })
-    };
+    return db.serverError('order-place', e);
   }
 };

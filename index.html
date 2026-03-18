@@ -32,7 +32,7 @@
     <!-- html5-qrcode: Mobile camera barcode scanner supporting 1D (EAN-13, Code 128, etc.) and 2D (QR, Data Matrix) codes -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <!-- GS1 DataMatrix Parser: Extracts product code, batch, expiry from 2D medicine barcodes -->
-    <script src="./utils/parseGs1Data.js?v=5"></script>
+    <script src="./utils/parseGs1Data.js?v=6"></script>
 
   <script type="text/babel">
       const { useState, useEffect, useRef } = React;
@@ -1582,10 +1582,8 @@
               existingBatchId: null
             }));
 
-            console.log('[Batch Lookup] Successfully populated form with batch data');
           } else {
             // Batch not found - leave fields unlocked for manual entry
-            console.log('[Batch Lookup] Batch not found in database');
             setBarcodeNewMedForm(prev => ({
               ...prev,
               medicationId: null,
@@ -1647,8 +1645,6 @@
       // Mobile support: Optimized for iOS Safari and Android Chrome
 
       const startCameraScanner = async () => {
-        console.log('[Camera Scanner] Starting camera scanner...');
-
         setCameraScanner({
           isOpen: true,
           isScanning: false,
@@ -1661,105 +1657,94 @@
         setTimeout(async () => {
           let tempStream = null;
           try {
-            console.log('[Camera Scanner] Step 1: Checking library...');
             if (typeof Html5Qrcode === 'undefined') {
               throw new Error('Barcode scanner library not loaded. Please refresh the page.');
             }
 
-            // Check if DOM element exists
             const element = document.getElementById("barcode-scanner-video");
             if (!element) {
               throw new Error('Scanner element not ready. Please try again.');
             }
 
-            // CRITICAL FIX: Use native getUserMedia API to FORCE permission dialog
-            // This is the only reliable way to trigger the permission popup
-            console.log('[Camera Scanner] Step 2: Requesting camera permission via getUserMedia...');
-            console.log('[Camera Scanner] >>> PERMISSION DIALOG SHOULD APPEAR NOW <<<');
-
-            // Request camera access with native browser API - this ALWAYS shows the permission dialog
+            // Use native getUserMedia to force the permission dialog
             tempStream = await navigator.mediaDevices.getUserMedia({
               video: { facingMode: 'environment' }
             });
-
-            console.log('[Camera Scanner] ✓ Permission granted! Got camera stream');
-
-            // Stop the temporary stream - we just needed it to get permission
             tempStream.getTracks().forEach(track => track.stop());
-            console.log('[Camera Scanner] Stopped temporary stream');
+            tempStream = null;
 
-            // Now get the list of cameras (permission already granted)
-            console.log('[Camera Scanner] Step 3: Getting camera list...');
+            // Get list of cameras (permission already granted)
             const devices = await navigator.mediaDevices.enumerateDevices();
             const cameras = devices.filter(device => device.kind === 'videoinput');
-            console.log('[Camera Scanner] Found cameras:', cameras);
 
             if (!cameras || cameras.length === 0) {
               throw new Error('No cameras found on this device.');
             }
 
-            // Find the back camera or use the first available
+            // Prefer the back camera
             let cameraId = cameras[0].deviceId;
-            for (let camera of cameras) {
+            for (const camera of cameras) {
               if (camera.label && camera.label.toLowerCase().includes('back')) {
                 cameraId = camera.deviceId;
-                console.log('[Camera Scanner] ✓ Using back camera:', camera.label);
                 break;
               }
             }
 
             // Initialize scanner instance
             if (!cameraScannerRef.current) {
-              console.log('[Camera Scanner] Step 4: Creating Html5Qrcode scanner...');
               cameraScannerRef.current = new Html5Qrcode("barcode-scanner-video");
             }
 
             const scanner = cameraScannerRef.current;
 
-            // Configuration for barcode scanning
-            const config = {
-              fps: 10,
-              qrbox: { width: 250, height: 250 },
-              aspectRatio: 1.0
-            };
-
-            console.log('[Camera Scanner] Step 5: Starting barcode scanner with camera...');
-            // Start scanning (permission already granted, so this should work)
             await scanner.start(
               cameraId,
-              config,
-              (decodedText, decodedResult) => {
-                console.log('[Camera Scanner] ✓ Barcode detected:', decodedText);
-                handleBarcodeDetected(decodedText);
-              },
-              (errorMessage) => {
-                // Error callback - fires when no barcode in view (normal, ignore)
-              }
+              { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
+              (decodedText) => handleBarcodeDetected(decodedText),
+              () => {} // No barcode in view - normal, ignore
             );
 
-            console.log('[Camera Scanner] ✓ Camera scanner started successfully!');
+            // Request macro focus mode for close-up barcode scanning
+            // This helps the camera focus on small barcodes held close to the lens
+            try {
+              const videoElement = document.querySelector('#barcode-scanner-video video');
+              if (videoElement && videoElement.srcObject) {
+                const track = videoElement.srcObject.getVideoTracks()[0];
+                if (track) {
+                  const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+                  // Apply macro focus if supported, otherwise fall back to continuous
+                  if (capabilities.focusMode && capabilities.focusMode.includes('macro')) {
+                    await track.applyConstraints({ advanced: [{ focusMode: 'macro' }] });
+                  } else if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+                    await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+                  }
+                  // If manual focus distance is available, set a close focus distance
+                  if (capabilities.focusDistance) {
+                    const minDist = capabilities.focusDistance.min || 0;
+                    await track.applyConstraints({ advanced: [{ focusDistance: Math.max(minDist, 0.05) }] });
+                  }
+                }
+              }
+            } catch (focusErr) {
+              // Focus constraints are best-effort - don't fail if unsupported
+            }
+
             setCameraScanner(prev => ({ ...prev, isScanning: true, error: '' }));
           } catch (err) {
-            // Clean up temporary stream if it exists
             if (tempStream) {
               tempStream.getTracks().forEach(track => track.stop());
             }
 
-            console.error('[Camera Scanner] ❌ Error:', err);
-            console.error('[Camera Scanner] Error name:', err.name);
-            console.error('[Camera Scanner] Error message:', err.message);
+            console.error('[Camera Scanner] Error:', err.name, err.message);
 
-            let errorMessage = '';
-
+            let errorMessage;
             if (err.name === 'NotAllowedError' || err.message.includes('Permission denied')) {
               errorMessage = 'Camera permission denied. Please click "Allow" when your browser asks for camera access, then try again.';
             } else if (err.name === 'NotFoundError' || err.message.includes('No cameras found')) {
               errorMessage = 'No camera found on this device. Please use manual barcode entry.';
             } else if (err.name === 'NotSupportedError' || err.message.includes('secure')) {
               errorMessage = 'Camera access requires HTTPS. Please ensure you are accessing the site via https:// (not http://)';
-            } else if (err.message.includes('not loaded')) {
-              errorMessage = err.message;
-            } else if (err.message.includes('not ready')) {
+            } else if (err.message.includes('not loaded') || err.message.includes('not ready')) {
               errorMessage = err.message;
             } else {
               errorMessage = `Failed to start camera: ${err.message || err.name || 'Unknown error'}. Please try manual entry.`;
@@ -1799,8 +1784,6 @@
        * @param {string} barcode - The raw barcode string
        */
       const handleGenericBarcodeScan = (barcode) => {
-        console.log('[Generic Scan] Processing 1D barcode:', barcode);
-
         // Pre-fill barcode field and trigger lookup
         setBarcodeNewMedForm(prev => ({
           ...prev,
@@ -1830,8 +1813,6 @@
        * @param {object} parsedGs1 - Parsed GS1 data from parseGs1Data()
        */
       const handleMedicinePackScan = (parsedGs1) => {
-        console.log('[GS1 Pack Scan] Processing 2D medicine pack:', parsedGs1);
-
         // Use GTIN for lookup, fallback to raw string if GTIN missing
         const lookupBarcode = parsedGs1.gtin || parsedGs1.raw;
 
@@ -1852,19 +1833,11 @@
         // Open the barcode modal (will adapt based on whether medication is found)
         setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
 
-        // Trigger medication lookup
         // Priority: 1) Barcode/GTIN lookup, 2) Batch number lookup, 3) Manual entry
         if (lookupBarcode && lookupBarcode.trim()) {
-          // If we have a barcode/GTIN, use that for lookup
-          console.log('[GS1 Pack Scan] Using barcode lookup:', lookupBarcode);
           handleBarcodeLookup(lookupBarcode);
         } else if (parsedGs1.batch && parsedGs1.batch.trim()) {
-          // No barcode, but we have a batch number - try batch lookup
-          console.log('[GS1 Pack Scan] No barcode available, using batch lookup:', parsedGs1.batch);
           handleBatchLookup(parsedGs1.batch);
-        } else {
-          // No barcode or batch - manual entry mode
-          console.log('[GS1 Pack Scan] No barcode or batch available, manual entry mode');
         }
       };
 
@@ -1883,18 +1856,9 @@
        * @param {string} rawValue - Raw barcode string from scanner library
        */
       const handleScanDetected = (rawValue) => {
-        // Log raw scanner output with character codes for debugging
-        console.log('[SCAN RAW]', rawValue);
-        console.log('[SCAN RAW CODES]', Array.from(rawValue).map(ch => ch.charCodeAt(0)));
-        console.log('[SCAN RAW LENGTH]', rawValue.length);
-
-        // Parse the barcode to check if it's GS1-encoded
         const parsed = window.parseGs1Data(rawValue);
 
-        console.log('[Scan Detected] Parse result:', parsed);
-
-        // Decision logic: GS1 with batch/expiry data → treat as medicine pack
-        // Otherwise → treat as generic barcode
+        // GS1 with batch/expiry data = medicine pack, otherwise generic barcode
         if (parsed.isGs1 && (parsed.batch || parsed.expiryDateRaw)) {
           // GS1 2D medicine pack with structured data
           handleMedicinePackScan(parsed);
@@ -1921,7 +1885,6 @@
 
         // Prevent duplicate scans of the same barcode within 2 seconds
         if (cameraScanner.lastScannedCode === barcode && (now - cameraScanner.lastScanTime) < 2000) {
-          console.log('[Scanner] Ignoring duplicate scan');
           return;
         }
 
@@ -2121,14 +2084,7 @@
          * Supported AIs: (01) GTIN, (10) Batch, (17) Expiry YYMMDD, (21) Serial
          */
         const handleBarcodeScanned = (barcode) => {
-          // Log raw scanner output with character codes for debugging
-          console.log('[SCAN RAW]', barcode);
-          console.log('[SCAN RAW CODES]', Array.from(barcode).map(ch => ch.charCodeAt(0)));
-          console.log('[SCAN RAW LENGTH]', barcode.length);
-
-          // Parse GS1 DataMatrix codes for medication packaging
           const gs1Data = window.parseGs1Data(barcode);
-          console.log('[Hardware Scan] GS1 parse result:', gs1Data);
 
           // Determine lookup barcode and extract GS1 fields if present
           let lookupBarcode = barcode.trim().replace(/\s+/g, '');
@@ -2137,19 +2093,14 @@
           let expiryYear = '';
 
           if (gs1Data.isGs1) {
-            // GS1 DataMatrix detected - extract fields
             lookupBarcode = gs1Data.gtin || lookupBarcode;
             batchNumber = gs1Data.batch || '';
             const dateFormat = window.formatDateForMonthYear(gs1Data.expiryDate);
             expiryMonth = dateFormat.month || '';
             expiryYear = dateFormat.year ? String(dateFormat.year) : '';
-            console.log('[Hardware Scan] Using GS1 GTIN for lookup:', lookupBarcode);
-            console.log('[Hardware Scan] Extracted batch:', batchNumber, 'expiry:', expiryMonth, '/', expiryYear);
           }
 
-          // Clean the barcode (remove any whitespace or special characters)
           const cleanBarcode = lookupBarcode.trim().replace(/\s+/g, '');
-          console.log('[Hardware Scan] Cleaned barcode:', cleanBarcode);
 
           // Try to find medication by barcode (exact match first)
           let foundMedication = medications.find(med => med.barcode === cleanBarcode);
@@ -2163,8 +2114,7 @@
           }
 
           if (foundMedication) {
-            // Medication found → Open stock adjustment modal (quick stock operations workflow)
-            console.log('[Hardware Scan] Medication found, opening stock adjustment modal');
+            // Medication found - open stock adjustment modal
 
             setUi(prev => ({
               ...prev,
@@ -2200,8 +2150,7 @@
             }, 100);
 
           } else {
-            // Medication not found → Open new medication modal
-            console.log('[Hardware Scan] Medication not found, opening new medication modal');
+            // Medication not found - open new medication modal
 
             const defaultLocation = (ui.currentLocation !== 'All' && !isGroupName(ui.currentLocation, locations)) ? ui.currentLocation : 'Cupboard 1';
             setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
@@ -2658,39 +2607,22 @@ Medicana Stock Management System`;
       };
 
       const handleStockAdjustment = (type) => {
-        console.log('[DEBUG] handleStockAdjustment called with type:', type);
-        console.log('[DEBUG] adjustmentForm state:', {
-          action: adjustmentForm.action,
-          batchId: adjustmentForm.batchId,
-          amount: adjustmentForm.amount,
-          location: adjustmentForm.location,
-          type: adjustmentForm.type,
-          stockOutPurpose: adjustmentForm.stockOutPurpose
-        });
-        console.log('[DEBUG] ui.selectedMed:', ui.selectedMed);
-
         setAdjustmentForm(prev => ({ ...prev, error: '' }));
-          if (type === 'in' && ((adjustmentForm.stockInSource === 'delivery' && adjustmentForm.deliveryBatchOption === 'new') || (adjustmentForm.stockInSource === 'transfer' && adjustmentForm.transferBatchOption === 'new'))) {
+        if (type === 'in' && ((adjustmentForm.stockInSource === 'delivery' && adjustmentForm.deliveryBatchOption === 'new') || (adjustmentForm.stockInSource === 'transfer' && adjustmentForm.transferBatchOption === 'new'))) {
           processAdjustment(null);
           return;
         }
         if (!ui.selectedMed || !adjustmentForm.amount || parseInt(adjustmentForm.amount) <= 0) {
-          console.log('[DEBUG] Validation failed: missing selectedMed or invalid amount');
-          console.log('[DEBUG] ui.selectedMed:', ui.selectedMed);
-          console.log('[DEBUG] amount:', adjustmentForm.amount);
           return;
         }
         if (!adjustmentForm.batchId) {
-          console.log('[DEBUG] Validation failed: no batchId selected');
           setAdjustmentForm(prev => ({ ...prev, error: 'Please select a batch' }));
           return;
         }
         if (type === 'out' && !adjustmentForm.location) {
-          console.log('[DEBUG] Validation failed: no location selected');
           setAdjustmentForm(prev => ({ ...prev, error: 'Please select a location for stock removal' }));
           return;
         }
-        console.log('[DEBUG] All validations passed, proceeding to process adjustment');
         if (type === 'in' && adjustmentForm.stockInSource === 'transfer' && !adjustmentForm.sourceDepartment) {
           setAdjustmentForm(prev => ({ ...prev, error: 'Please select which department the stock is coming from' }));
           return;
@@ -2799,15 +2731,10 @@ Medicana Stock Management System`;
             return;
           }
         }
-        console.log('[DEBUG] Looking for batch with ID:', adjustmentForm.batchId, 'type:', typeof adjustmentForm.batchId);
-        console.log('[DEBUG] Available batches:', ui.selectedMed.batches.map(b => ({ id: b.id, idType: typeof b.id, brand: b.brand })));
-
         // Handle both string and number IDs by comparing as strings
         const selectedBatch = ui.selectedMed.batches.find(b => String(b.id) === String(adjustmentForm.batchId));
-        console.log('[DEBUG] Found selectedBatch:', selectedBatch);
 
         if (!selectedBatch) {
-          console.error('[DEBUG] selectedBatch is undefined! batchId:', adjustmentForm.batchId);
           setAdjustmentForm(prev => ({ ...prev, error: 'Selected batch not found. Please try selecting the batch again.' }));
           return;
         }
@@ -2827,64 +2754,30 @@ Medicana Stock Management System`;
       };
 
       const processStockOut = async (updatedMed, selectedBatch, amount, overrideReason) => {
-          console.log('[DEBUG] processStockOut called with:', {
-            selectedBatch,
-            amount,
-            overrideReason
-          });
-
           if (selectedBatch.quantity < amount) { setAdjustmentForm(prev => ({ ...prev, error: `Cannot remove ${amount} ${ui.selectedMed.unit}. Only ${selectedBatch.quantity} ${ui.selectedMed.unit} available in this batch.` })); return; }
 
           try {
             const currentUser = getCurrentUserInfo();
             if (!currentUser || !currentUser.id) {
-              console.log('[DEBUG] User not logged in');
               setAdjustmentForm(prev => ({ ...prev, error: 'User not logged in' }));
               return;
             }
 
             // Determine if this is an internal transfer or external dispensing
-            console.log('[DEBUG] Checking if transfer is internal...');
-            console.log('[DEBUG] adjustmentForm.location:', adjustmentForm.location);
-            console.log('[DEBUG] locations array length:', locations.length);
-            console.log('[DEBUG] locations array:', locations);
-
             const targetLocationId = getLocationId(adjustmentForm.location);
-            // Check if target location exists in locations array AND has a valid ID (string or number)
             const targetLocation = locations.find(loc => loc.displayName === adjustmentForm.location);
-            console.log('[DEBUG] targetLocation found:', targetLocation);
-
             const isInternalTransfer = targetLocation && targetLocation.id != null && targetLocation.id !== '';
-            console.log('[DEBUG] isInternalTransfer:', isInternalTransfer);
-            console.log('[DEBUG] targetLocation?.id type:', typeof targetLocation?.id);
 
             const displayAmount = formatQuantityDisplay(amount, selectedBatch.itemsPerBox, ui.selectedMed.unit, adjustmentForm.type, adjustmentForm.type === 'boxes' ? adjustmentForm.amount : null);
             let transactionNote = adjustmentForm.note || (isInternalTransfer ? `Transfer to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}` : `Dispensed to ${adjustmentForm.location} - ${displayAmount} - Brand: ${selectedBatch.brand}`);
             if (overrideReason) transactionNote += ` [FEFO OVERRIDE: ${overrideReason}]`;
 
-            console.log('[DEBUG] Transfer details:', {
-              isInternalTransfer,
-              targetLocation,
-              targetLocationId,
-              targetLocationDisplayName: adjustmentForm.location,
-              sourceLocationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
-              batchId: selectedBatch.id,
-              amount,
-              transactionNote,
-              locationsArrayLength: locations.length
-            });
-
             if (isInternalTransfer) {
               // Use the dedicated transfer API for internal transfers
-              // Server derives medication_id from batch_id - do not send medicationId
-              console.log('[DEBUG] Calling transferStock API');
-
               const sourceLocationId = ui.selectedMed.locationId || getLocationId(ui.selectedMed.location);
-              const finalTargetLocationId = targetLocation.id; // Use the validated location ID
+              const finalTargetLocationId = targetLocation.id;
 
-              // Final validation: ensure both IDs are valid (not null, undefined, or empty)
               if (!sourceLocationId || !finalTargetLocationId || sourceLocationId === '' || finalTargetLocationId === '') {
-                console.error('[ERROR] Invalid location IDs:', { sourceLocationId, finalTargetLocationId });
                 setAdjustmentForm(prev => ({
                   ...prev,
                   error: `Transfer failed: Invalid location IDs. Source: ${sourceLocationId}, Target: ${finalTargetLocationId}. Please refresh the page and try again.`
@@ -2892,17 +2785,14 @@ Medicana Stock Management System`;
                 return;
               }
 
-              const transferPayload = {
+              await window.api.transferStock({
                 userId: currentUser.id,
                 batchId: selectedBatch.id,
                 sourceLocationId: sourceLocationId,
                 targetLocationId: finalTargetLocationId,
                 quantity: amount,
                 reason: transactionNote
-              };
-              console.log('[DEBUG] Transfer payload:', transferPayload);
-              await window.api.transferStock(transferPayload);
-              console.log('[DEBUG] transferStock API call completed successfully');
+              });
             } else {
               // External dispensing - just remove stock
               // Server derives medication_id from batch_id - do not send medicationId
@@ -3023,10 +2913,7 @@ Medicana Stock Management System`;
             const sourceLocationId = sourceMed.locationId || getLocationId(adjustmentForm.sourceDepartment);
             const targetLocationId = ui.selectedMed.locationId || getLocationId(ui.selectedMed.location);
 
-            console.log('[DEBUG] Transfer IN - Location IDs:', { sourceLocationId, targetLocationId });
-
             if (!sourceLocationId || !targetLocationId || sourceLocationId === '' || targetLocationId === '') {
-              console.error('[ERROR] Invalid location IDs for transfer IN:', { sourceLocationId, targetLocationId });
               setAdjustmentForm(prev => ({
                 ...prev,
                 error: `Transfer failed: Invalid location IDs. Source: ${sourceLocationId}, Target: ${targetLocationId}. Please refresh the page and try again.`
