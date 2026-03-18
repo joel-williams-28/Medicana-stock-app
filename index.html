@@ -490,7 +490,6 @@
 
       // Global barcode scanner state
       const [globalBarcodeScanner, setGlobalBarcodeScanner] = useState({
-        isActive: true,
         currentInput: '',
         timeoutId: null,
         lastScanTime: 0
@@ -754,7 +753,7 @@
 
         // Global barcode scanner - listen for barcode input anywhere in the app
         useEffect(() => {
-          if (!auth.isLoggedIn || !globalBarcodeScanner.isActive) return;
+          if (!auth.isLoggedIn) return;
 
           const handleKeyDown = (e) => {
             handleGlobalBarcodeInput(e);
@@ -769,7 +768,7 @@
               clearTimeout(globalBarcodeScanner.timeoutId);
             }
           };
-        }, [auth.isLoggedIn, globalBarcodeScanner.isActive, globalBarcodeScanner.timeoutId]);
+        }, [auth.isLoggedIn, globalBarcodeScanner.timeoutId]);
 
         // Cleanup search barcode detection timeout on unmount
         useEffect(() => {
@@ -2208,11 +2207,6 @@
 
         // Global barcode scanner handler - works from anywhere in the app
         const handleGlobalBarcodeInput = (e) => {
-          // Only process if global scanner is active
-          if (!globalBarcodeScanner.isActive) {
-            return;
-          }
-
           const char = e.key;
           const now = Date.now();
           
@@ -3595,12 +3589,6 @@ Medicana Stock Management System`;
                     <p className="text-xs text-gray-600">Logged in as: {getCurrentUserInfo()?.fullName || auth.currentUser}</p>
                     <button onClick={() => setModals(prev => ({ ...prev, showChangePassword: true }))} className="text-xs text-cyan-600 hover:text-cyan-700 underline">Change Password</button>
                   </div>
-                  {globalBarcodeScanner.isActive && (
-                    <div className="flex items-center gap-1 mt-1">
-                      <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                      <p className="text-xs text-green-600 font-medium">Global Scanner Active</p>
-                    </div>
-                  )}
                 </div>
                 </div>
                 <button onClick={handleLogout} className="bg-cyan-500 px-4 py-2 rounded hover:bg-cyan-600 transition-colors text-sm font-medium text-white w-full sm:w-auto">Log Out</button>
@@ -3721,22 +3709,6 @@ Medicana Stock Management System`;
                           )}
                       </div>
                       <div className="flex gap-2 sm:gap-3 flex-shrink-0">
-                        <button
-                          onClick={(e) => {
-                            setGlobalBarcodeScanner(prev => ({ ...prev, isActive: !prev.isActive }));
-                            e.currentTarget.blur(); // Remove focus from button to prevent barcode scanner from triggering it
-                          }}
-                          className={`px-3 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2 ${
-                            globalBarcodeScanner.isActive
-                              ? 'bg-blue-500 text-white hover:bg-blue-600'
-                              : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
-                          }`}
-                          title={globalBarcodeScanner.isActive ? "Global scanner is ON - scan barcodes from anywhere" : "Global scanner is OFF - click to enable"}
-                        >
-                          <div className={`w-2 h-2 sm:w-3 sm:h-3 rounded-full ${globalBarcodeScanner.isActive ? 'bg-green-400' : 'bg-gray-400'}`}></div>
-                          <span className="hidden sm:inline">Global Scan</span>
-                          <span className="sm:hidden">Scan</span>
-                        </button>
                           {getUserRole() !== 'Basic User' && (
                             <>
                               <button
