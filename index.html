@@ -99,6 +99,11 @@
           <line x1="6" y1="6" x2="18" y2="18"></line>
         </IconBase>
       );
+      const Zap = (props) => (
+        <IconBase {...props}>
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </IconBase>
+      );
 
     const MEDICATION_TYPES = [
       'Ampule', 'Box Kit', 'Capsule', 'Cream', 'Fluid bag', 'Inhaler', 'Liquid', 
@@ -504,7 +509,9 @@
         isScanning: false,
         error: '',
         lastScannedCode: '',
-        lastScanTime: 0
+        lastScanTime: 0,
+        torchOn: false,
+        torchSupported: false
       });
       const cameraScannerRef = useRef(null); // Reference to Html5Qrcode instance
       const [medicationFilters, setMedicationFilters] = useState({
@@ -1729,7 +1736,22 @@
               // Focus constraints are best-effort - don't fail if unsupported
             }
 
-            setCameraScanner(prev => ({ ...prev, isScanning: true, error: '' }));
+            // Detect torch capability
+            let torchAvailable = false;
+            try {
+              const torchVideo = document.querySelector('#barcode-scanner-video video');
+              if (torchVideo && torchVideo.srcObject) {
+                const torchTrack = torchVideo.srcObject.getVideoTracks()[0];
+                if (torchTrack) {
+                  const torchCaps = torchTrack.getCapabilities ? torchTrack.getCapabilities() : {};
+                  torchAvailable = !!torchCaps.torch;
+                }
+              }
+            } catch (torchErr) {
+              // Torch detection is best-effort
+            }
+
+            setCameraScanner(prev => ({ ...prev, isScanning: true, error: '', torchSupported: torchAvailable, torchOn: false }));
           } catch (err) {
             if (tempStream) {
               tempStream.getTracks().forEach(track => track.stop());
@@ -1768,8 +1790,25 @@
             isScanning: false,
             error: '',
             lastScannedCode: '',
-            lastScanTime: 0
+            lastScanTime: 0,
+            torchOn: false,
+            torchSupported: false
           });
+        }
+      };
+
+      const toggleTorch = async () => {
+        try {
+          const videoElement = document.querySelector('#barcode-scanner-video video');
+          if (!videoElement || !videoElement.srcObject) return;
+          const track = videoElement.srcObject.getVideoTracks()[0];
+          if (!track) return;
+          const newState = !cameraScanner.torchOn;
+          await track.applyConstraints({ advanced: [{ torch: newState }] });
+          setCameraScanner(prev => ({ ...prev, torchOn: newState }));
+        } catch (err) {
+          // If toggle fails, hide the button
+          setCameraScanner(prev => ({ ...prev, torchSupported: false, torchOn: false }));
         }
       };
 
@@ -7909,13 +7948,28 @@ Medicana Stock Management System`;
                   {/* Header */}
                   <div className="bg-gray-900 text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
                     <h2 className="text-lg font-semibold">Scan Barcode</h2>
-                    <button
-                      onClick={stopCameraScanner}
-                      className="p-2 hover:bg-gray-800 rounded-full transition-colors"
-                      title="Close scanner"
-                    >
-                      <X className="w-6 h-6" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {cameraScanner.isScanning && cameraScanner.torchSupported && (
+                        <button
+                          onClick={toggleTorch}
+                          className={`p-2 rounded-full transition-colors ${
+                            cameraScanner.torchOn
+                              ? 'bg-yellow-500 text-gray-900 hover:bg-yellow-400'
+                              : 'hover:bg-gray-800 text-white'
+                          }`}
+                          title={cameraScanner.torchOn ? 'Turn off flashlight' : 'Turn on flashlight'}
+                        >
+                          <Zap className="w-6 h-6" />
+                        </button>
+                      )}
+                      <button
+                        onClick={stopCameraScanner}
+                        className="p-2 hover:bg-gray-800 rounded-full transition-colors"
+                        title="Close scanner"
+                      >
+                        <X className="w-6 h-6" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Scanner Content */}
