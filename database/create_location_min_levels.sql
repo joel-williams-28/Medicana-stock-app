@@ -3,11 +3,11 @@
 -- overriding the global medications.min_level_boxes value.
 
 CREATE TABLE IF NOT EXISTS location_min_levels (
-  medication_id  INTEGER NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
-  location_id    INTEGER NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+  medication_id  TEXT NOT NULL,
+  location_id    TEXT NOT NULL,
   min_level_boxes INTEGER NOT NULL DEFAULT 0,
   updated_at     TIMESTAMPTZ DEFAULT NOW(),
-  updated_by     INTEGER REFERENCES users(id),
+  updated_by     TEXT,
   PRIMARY KEY (medication_id, location_id)
 );
 
