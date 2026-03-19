@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-    <title>Medicana - Medication Stock Management (Demo)</title>
+    <title>Medicana - Medication Stock Management</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%230c2753'/%3E%3Ctext x='50' y='72' font-size='70' font-weight='bold' text-anchor='middle' fill='%2306B6D4' font-family='Arial, sans-serif'%3E%5C%5C%3C/text%3E%3C/svg%3E">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -925,38 +925,25 @@
           warningShownRef.current = sessionTimeout.showWarning;
         }, [sessionTimeout.showWarning]);
 
-        // Session timeout functionality - Activity detection
+        // Session timeout functionality - Activity detection with background tab support
         useEffect(() => {
           if (!auth.isLoggedIn) return;
 
-          let inactivityTimer;
+          // Use a ref-like approach: store lastActivity in a variable accessible to the interval
+          let lastActivityTime = Date.now();
 
-          const resetActivityTimer = () => {
-            setSessionTimeout(prev => ({ ...prev, lastActivity: Date.now() }));
-            
-            // Clear existing timer
-            if (inactivityTimer) clearTimeout(inactivityTimer);
-            
-            // Set new inactivity timer
-            inactivityTimer = setTimeout(() => {
-              warningShownRef.current = true;
-              const now = Date.now();
-              setSessionTimeout(prev => ({ 
-                ...prev, 
-                showWarning: true, 
-                warningCountdown: 30,
-                warningStartTime: now
-              }));
-            }, INACTIVITY_TIMEOUT);
+          const updateActivity = () => {
+            lastActivityTime = Date.now();
+            setSessionTimeout(prev => ({ ...prev, lastActivity: lastActivityTime }));
           };
 
           // Attach event listeners for user activity
           const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
-          
+
           const activityHandler = () => {
-            // Only reset timer if warning is NOT currently shown
+            // Only track activity if warning is NOT currently shown
             if (!warningShownRef.current) {
-              resetActivityTimer();
+              updateActivity();
             }
           };
 
@@ -964,51 +951,91 @@
             document.addEventListener(event, activityHandler, true);
           });
 
+          // Check timeout state every second — works reliably even in background tabs
+          // because browsers still run setInterval (albeit throttled to ~1s minimum)
+          const checkInterval = setInterval(() => {
+            const now = Date.now();
+            const elapsed = now - lastActivityTime;
+
+            if (warningShownRef.current) {
+              // Warning is shown — check if we need to auto-logout
+              // warningStartTime is managed by state, read from ref
+              // We calculate based on INACTIVITY_TIMEOUT + WARNING_DURATION from lastActivity
+              const totalTimeout = INACTIVITY_TIMEOUT + WARNING_DURATION;
+              if (elapsed >= totalTimeout) {
+                // Auto logout
+                warningShownRef.current = false;
+                window.api.stopPolling();
+                storage.remove('medicana_auth');
+                sessionStorage.removeItem('currentUser');
+                setAuth({ currentUser: '', password: '', isLoggedIn: false, error: '' });
+                setSessionTimeout({ showWarning: false, warningCountdown: 30, lastActivity: Date.now(), warningStartTime: null });
+              } else {
+                // Update countdown
+                const warningElapsed = elapsed - INACTIVITY_TIMEOUT;
+                const remainingSeconds = Math.max(0, 30 - Math.floor(warningElapsed / 1000));
+                setSessionTimeout(prev => ({ ...prev, warningCountdown: remainingSeconds }));
+              }
+            } else if (elapsed >= INACTIVITY_TIMEOUT) {
+              // Show warning
+              warningShownRef.current = true;
+              setSessionTimeout(prev => ({
+                ...prev,
+                showWarning: true,
+                warningCountdown: 30,
+                warningStartTime: now
+              }));
+            }
+          }, 1000);
+
+          // When tab becomes visible again, immediately check timeout state
+          const handleVisibilityChange = () => {
+            if (!document.hidden) {
+              const now = Date.now();
+              const elapsed = now - lastActivityTime;
+              const totalTimeout = INACTIVITY_TIMEOUT + WARNING_DURATION;
+
+              if (elapsed >= totalTimeout) {
+                // Should already be logged out — force it
+                warningShownRef.current = false;
+                window.api.stopPolling();
+                storage.remove('medicana_auth');
+                sessionStorage.removeItem('currentUser');
+                setAuth({ currentUser: '', password: '', isLoggedIn: false, error: '' });
+                setSessionTimeout({ showWarning: false, warningCountdown: 30, lastActivity: Date.now(), warningStartTime: null });
+              } else if (elapsed >= INACTIVITY_TIMEOUT && !warningShownRef.current) {
+                // Show warning immediately
+                warningShownRef.current = true;
+                setSessionTimeout(prev => ({
+                  ...prev,
+                  showWarning: true,
+                  warningCountdown: 30,
+                  warningStartTime: now
+                }));
+              }
+            }
+          };
+          document.addEventListener('visibilitychange', handleVisibilityChange);
+
           // Store reset function globally for "Stay Logged In" button
           window.resetSessionActivity = () => {
             warningShownRef.current = false;
-            setSessionTimeout(prev => ({ ...prev, showWarning: false, warningCountdown: 30, warningStartTime: null }));
-            resetActivityTimer();
+            lastActivityTime = Date.now();
+            setSessionTimeout(prev => ({ ...prev, showWarning: false, warningCountdown: 30, warningStartTime: null, lastActivity: Date.now() }));
           };
-          
-          // Initialize timer
-          resetActivityTimer();
+
+          // Initialize activity
+          updateActivity();
 
           // Cleanup function
           return () => {
             activityEvents.forEach(event => {
               document.removeEventListener(event, activityHandler, true);
             });
-            if (inactivityTimer) clearTimeout(inactivityTimer);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            clearInterval(checkInterval);
           };
         }, [auth.isLoggedIn]);
-
-        // Session timeout functionality - Countdown timer (separate effect)
-        useEffect(() => {
-          if (!sessionTimeout.showWarning || !auth.isLoggedIn || !sessionTimeout.warningStartTime) return;
-
-          let countdownTimer = setInterval(() => {
-            const now = Date.now();
-            const elapsedSeconds = Math.floor((now - sessionTimeout.warningStartTime) / 1000);
-            const remainingSeconds = 30 - elapsedSeconds;
-            
-            if (remainingSeconds <= 0) {
-              // Auto logout
-              clearInterval(countdownTimer);
-              warningShownRef.current = false;
-              window.api.stopPolling();
-              setAuth({ currentUser: '', password: '', isLoggedIn: false, error: '' });
-              setSessionTimeout({ showWarning: false, warningCountdown: 30, lastActivity: Date.now(), warningStartTime: null });
-            } else {
-              setSessionTimeout(prev => ({ ...prev, warningCountdown: remainingSeconds }));
-            }
-          }, 1000);
-
-          // Cleanup
-          return () => {
-            if (countdownTimer) clearInterval(countdownTimer);
-          };
-        }, [sessionTimeout.showWarning, sessionTimeout.warningStartTime, auth.isLoggedIn]);
 
       const hasPendingOrder = (med) => {
         // Check orders from database (using internalId)
@@ -2248,22 +2275,9 @@
             setTransactions(backendData.transactions || []);
             setLocations(backendData.locations || []);
             
-            // Determine default location based on user role and primary location
+            // Default to "All Locations" for all users on login
             let defaultLocation = 'All';
             const userRole = data.user.role;
-            const userPrimaryLocation = data.user.primaryLocation;
-            
-            // Management and Pharmacist roles default to "All Locations"
-            // All other roles default to their primary location if available
-            if (userRole !== 'Management' && userRole !== 'Pharmacist' && userPrimaryLocation) {
-              // Check if the primary location exists in the locations list
-              const locationExists = backendData.locations.some(loc => 
-                loc.displayName === userPrimaryLocation || loc.id === userPrimaryLocation
-              );
-              if (locationExists) {
-                defaultLocation = userPrimaryLocation;
-              }
-            }
             
             // Determine default tab based on user role
             // Helper function to check tab access (defined inline for this scope)
@@ -4312,9 +4326,6 @@ Medicana Stock Management System`;
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-cyan-50">
           {/* Header */}
           <div className="bg-white text-gray-900 shadow-lg border-b-2 border-gray-200 relative">
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <span className="text-3xl sm:text-4xl md:text-6xl font-black text-slate-500 opacity-50">DEMO</span>
-            </div>
             <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-3 sm:py-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-0 relative z-10">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-0">
                 <div className="mr-0 sm:mr-4">
