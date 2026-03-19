@@ -8,10 +8,26 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
-    const { userId, locationId, batchId, delta, reason, medicationName, batchCode } = JSON.parse(event.body || '{}');
+    const body = db.parseBody(event);
+    console.log('[stock-adjust] body:', JSON.stringify(body));
 
-    if (!userId || !locationId || !batchId || delta === undefined || delta === null) {
-      return db.fail(400, 'Missing required fields: userId, locationId, batchId, delta');
+    const userId = Number(body.userId);
+    const locationId = Number(body.locationId);
+    const batchId = Number(body.batchId);
+    const delta = (body.delta !== undefined && body.delta !== null) ? Number(body.delta) : undefined;
+    const reason = body.reason;
+    const medicationName = body.medicationName;
+    const batchCode = body.batchCode;
+
+    const missing = [];
+    if (!userId || isNaN(userId)) missing.push('userId');
+    if (!locationId || isNaN(locationId)) missing.push('locationId');
+    if (!batchId || isNaN(batchId)) missing.push('batchId');
+    if (delta === undefined || isNaN(delta)) missing.push('delta');
+
+    if (missing.length > 0) {
+      console.log('[stock-adjust] Validation failed. Missing:', missing);
+      return db.fail(400, `Missing required fields: ${missing.join(', ')}`);
     }
 
     await db.query('BEGIN');

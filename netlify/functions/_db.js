@@ -20,11 +20,21 @@ const serverError = (label, err) => {
   return fail(500, 'Server error.');
 };
 
+// Safe body parser that handles Netlify's base64 encoding
+function parseBody(event) {
+  let raw = event.body || '{}';
+  if (event.isBase64Encoded) {
+    raw = Buffer.from(raw, 'base64').toString('utf-8');
+  }
+  return JSON.parse(raw);
+}
+
 module.exports = {
   query: (text, params) => pool.query(text, params),
   json,
   ok,
   fail,
   methodNotAllowed,
-  serverError
+  serverError,
+  parseBody
 };

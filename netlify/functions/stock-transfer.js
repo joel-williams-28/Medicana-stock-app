@@ -8,22 +8,31 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
-    const {
-      userId,
-      batchId,
-      sourceLocationId,
-      targetLocationId,
-      quantity,
-      reason,
-      medicationName,
-      batchCode
-    } = JSON.parse(event.body || '{}');
+    const body = db.parseBody(event);
+    console.log('[stock-transfer] body:', JSON.stringify(body));
 
-    if (!userId || !batchId || !sourceLocationId || !targetLocationId || !quantity) {
-      return db.fail(400, 'Missing or invalid fields');
+    const userId = Number(body.userId);
+    const batchId = Number(body.batchId);
+    const sourceLocationId = Number(body.sourceLocationId);
+    const targetLocationId = Number(body.targetLocationId);
+    const quantity = Number(body.quantity);
+    const reason = body.reason;
+    const medicationName = body.medicationName;
+    const batchCode = body.batchCode;
+
+    const missing = [];
+    if (!userId || isNaN(userId)) missing.push('userId');
+    if (!batchId || isNaN(batchId)) missing.push('batchId');
+    if (!sourceLocationId || isNaN(sourceLocationId)) missing.push('sourceLocationId');
+    if (!targetLocationId || isNaN(targetLocationId)) missing.push('targetLocationId');
+    if (!quantity || isNaN(quantity)) missing.push('quantity');
+
+    if (missing.length > 0) {
+      console.log('[stock-transfer] Validation failed. Missing:', missing);
+      return db.fail(400, `Missing or invalid fields: ${missing.join(', ')}`);
     }
 
-    if (typeof quantity !== 'number' || quantity <= 0 || !Number.isInteger(quantity)) {
+    if (quantity <= 0 || !Number.isInteger(quantity)) {
       return db.fail(400, 'Quantity must be a positive integer');
     }
 

@@ -2982,7 +2982,7 @@ Medicana Stock Management System`;
             throw new Error('Invalid location or batch selection. Please re-select.');
           }
 
-          await window.api.transferStock({
+          const transferPayload = {
             userId: currentUser.id,
             batchId: Number(batchIdVal),
             sourceLocationId: Number(srcLocId),
@@ -2991,7 +2991,9 @@ Medicana Stock Management System`;
             reason: 'Transfer via barcode scan',
             medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
             batchCode: batch.batchNumber || null
-          });
+          };
+          console.log('[Barcode Transfer] payload:', JSON.stringify(transferPayload), '| raw form:', { srcLocId, tgtLocId, batchIdVal, transferQty });
+          await window.api.transferStock(transferPayload);
 
           const data = await window.api.fetchAllData();
           setMedications(data.medications || []);
@@ -3073,7 +3075,7 @@ Medicana Stock Management System`;
           const usageLabel = barcodeNewMedForm.useReason ? getUsageOptionsForLocation(locMed?.location).find(o => o.value === barcodeNewMedForm.useReason)?.label || barcodeNewMedForm.useReason : '';
           const reason = `Patient use — Patient: ${barcodeNewMedForm.patientFirstName.trim()} ${barcodeNewMedForm.patientLastName.trim()}, ID: ${barcodeNewMedForm.patientLocalId.trim()}${usageLabel ? ', Reason: ' + usageLabel : ''}${barcodeNewMedForm.useNotes ? ', Notes: ' + barcodeNewMedForm.useNotes : ''}`;
 
-          await window.api.adjustStock({
+          const adjustPayload = {
             userId: currentUser.id,
             locationId: Number(locationIdVal),
             batchId: Number(batchIdVal),
@@ -3081,7 +3083,9 @@ Medicana Stock Management System`;
             reason: reason,
             medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
             batchCode: batch.batchNumber || null
-          });
+          };
+          console.log('[Barcode Patient Use] payload:', JSON.stringify(adjustPayload), '| raw form:', { locationIdVal, batchIdVal, useQty });
+          await window.api.adjustStock(adjustPayload);
 
           const data = await window.api.fetchAllData();
           setMedications(data.medications || []);
@@ -3184,7 +3188,7 @@ Medicana Stock Management System`;
           const medFullName = barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : '');
 
           // Step 1: Transfer stock from source to target
-          await window.api.transferStock({
+          const transferPayload = {
             userId: currentUser.id,
             batchId: Number(batchIdVal),
             sourceLocationId: Number(srcLocId),
@@ -3193,7 +3197,9 @@ Medicana Stock Management System`;
             reason: 'Transfer for patient use via barcode scan',
             medicationName: medFullName,
             batchCode: batch.batchNumber || null
-          });
+          };
+          console.log('[Barcode Transfer+Use] transfer payload:', JSON.stringify(transferPayload), '| raw form:', { srcLocId, tgtLocId, batchIdVal, transferQty });
+          await window.api.transferStock(transferPayload);
 
           // Step 2: Record patient use at target (same batchId — transfer reuses batch row)
           // Use quantity may be less than transferred (e.g., transfer 1 box, use 2 tablets)
@@ -3201,7 +3207,7 @@ Medicana Stock Management System`;
           const usageLabel = barcodeNewMedForm.useReason ? getUsageOptionsForLocation(targetLoc?.displayName).find(o => o.value === barcodeNewMedForm.useReason)?.label || barcodeNewMedForm.useReason : '';
           const reason = `Patient use — Patient: ${barcodeNewMedForm.patientFirstName.trim()} ${barcodeNewMedForm.patientLastName.trim()}, ID: ${barcodeNewMedForm.patientLocalId.trim()}${usageLabel ? ', Reason: ' + usageLabel : ''}${barcodeNewMedForm.useNotes ? ', Notes: ' + barcodeNewMedForm.useNotes : ''}`;
 
-          await window.api.adjustStock({
+          const adjustPayload = {
             userId: currentUser.id,
             locationId: Number(tgtLocId),
             batchId: Number(batchIdVal),
@@ -3209,7 +3215,9 @@ Medicana Stock Management System`;
             reason: reason,
             medicationName: medFullName,
             batchCode: batch.batchNumber || null
-          });
+          };
+          console.log('[Barcode Transfer+Use] adjust payload:', JSON.stringify(adjustPayload), '| raw form:', { tgtLocId, batchIdVal, useQty });
+          await window.api.adjustStock(adjustPayload);
 
           const data = await window.api.fetchAllData();
           setMedications(data.medications || []);
