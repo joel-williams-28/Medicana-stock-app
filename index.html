@@ -2984,9 +2984,9 @@ Medicana Stock Management System`;
 
           const transferPayload = {
             userId: currentUser.id,
-            batchId: Number(batchIdVal),
-            sourceLocationId: Number(srcLocId),
-            targetLocationId: Number(tgtLocId),
+            batchId: batchIdVal,
+            sourceLocationId: srcLocId,
+            targetLocationId: tgtLocId,
             quantity: transferQty,
             reason: 'Transfer via barcode scan',
             medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
@@ -3077,8 +3077,8 @@ Medicana Stock Management System`;
 
           const adjustPayload = {
             userId: currentUser.id,
-            locationId: Number(locationIdVal),
-            batchId: Number(batchIdVal),
+            locationId: locationIdVal,
+            batchId: batchIdVal,
             delta: -useQty,
             reason: reason,
             medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
@@ -3190,9 +3190,9 @@ Medicana Stock Management System`;
           // Step 1: Transfer stock from source to target
           const transferPayload = {
             userId: currentUser.id,
-            batchId: Number(batchIdVal),
-            sourceLocationId: Number(srcLocId),
-            targetLocationId: Number(tgtLocId),
+            batchId: batchIdVal,
+            sourceLocationId: srcLocId,
+            targetLocationId: tgtLocId,
             quantity: transferQty,
             reason: 'Transfer for patient use via barcode scan',
             medicationName: medFullName,
@@ -3209,8 +3209,8 @@ Medicana Stock Management System`;
 
           const adjustPayload = {
             userId: currentUser.id,
-            locationId: Number(tgtLocId),
-            batchId: Number(batchIdVal),
+            locationId: tgtLocId,
+            batchId: batchIdVal,
             delta: -useQty,
             reason: reason,
             medicationName: medFullName,

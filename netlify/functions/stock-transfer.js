@@ -11,24 +11,25 @@ exports.handler = async (event) => {
     const body = db.parseBody(event);
     console.log('[stock-transfer] body:', JSON.stringify(body));
 
-    const userId = Number(body.userId);
-    const batchId = Number(body.batchId);
-    const sourceLocationId = Number(body.sourceLocationId);
-    const targetLocationId = Number(body.targetLocationId);
+    // IDs: accept as-is (string or number) — let PostgreSQL handle type coercion
+    const userId = body.userId;
+    const batchId = body.batchId;
+    const sourceLocationId = body.sourceLocationId;
+    const targetLocationId = body.targetLocationId;
     const quantity = Number(body.quantity);
     const reason = body.reason;
     const medicationName = body.medicationName;
     const batchCode = body.batchCode;
 
     const missing = [];
-    if (!userId || isNaN(userId)) missing.push('userId');
-    if (!batchId || isNaN(batchId)) missing.push('batchId');
-    if (!sourceLocationId || isNaN(sourceLocationId)) missing.push('sourceLocationId');
-    if (!targetLocationId || isNaN(targetLocationId)) missing.push('targetLocationId');
+    if (!userId && userId !== 0) missing.push('userId');
+    if (!batchId && batchId !== 0) missing.push('batchId');
+    if (!sourceLocationId && sourceLocationId !== 0) missing.push('sourceLocationId');
+    if (!targetLocationId && targetLocationId !== 0) missing.push('targetLocationId');
     if (!quantity || isNaN(quantity)) missing.push('quantity');
 
     if (missing.length > 0) {
-      console.log('[stock-transfer] Validation failed. Missing:', missing);
+      console.log('[stock-transfer] Validation failed. Missing:', missing, 'Raw body:', body);
       return db.fail(400, `Missing or invalid fields: ${missing.join(', ')}`);
     }
 
