@@ -1009,6 +1009,20 @@
           };
         }, [sessionTimeout.showWarning, sessionTimeout.warningStartTime, auth.isLoggedIn]);
 
+      const hasPendingOrder = (med) => {
+        // Check orders from database (using internalId)
+        // Orders are stored with medication_id (internal database ID), not display ID
+        const medInternalId = typeof med === 'object' ? med.internalId : null;
+        return medInternalId && orders.some(o => o.medId === medInternalId && o.status === 'pending');
+      };
+        const getMostRecentOrder = (med) => {
+          // Get most recent pending order from database
+          const medInternalId = typeof med === 'object' ? med.internalId : null;
+          if (!medInternalId) return null;
+          const pendingOrders = orders.filter(o => o.medId === medInternalId && o.status === 'pending');
+          return pendingOrders.length > 0 ? pendingOrders[0] : null;
+        };
+
         const lowStockMedications = (() => {
           const filtered = medications
             .filter(med => matchesLocationFilter(med, ui.currentLocation, locations))
@@ -1280,21 +1294,7 @@
         return locationMatches || noteContainsLocation || medicationInLocation;
       });
 
-      const hasPendingOrder = (med) => {
-        // Check orders from database (using internalId)
-        // Orders are stored with medication_id (internal database ID), not display ID
-        const medInternalId = typeof med === 'object' ? med.internalId : null;
-        return medInternalId && orders.some(o => o.medId === medInternalId && o.status === 'pending');
-      };
-        const getMostRecentOrder = (med) => {
-          // Get most recent pending order from database
-          const medInternalId = typeof med === 'object' ? med.internalId : null;
-          if (!medInternalId) return null;
-          const pendingOrders = orders.filter(o => o.medId === medInternalId && o.status === 'pending');
-          return pendingOrders.length > 0 ? pendingOrders[0] : null;
-        };
-
-        // Get dynamic filter options (moved here after functions are defined)
+        // Get dynamic filter options
         const availableTypes = [...new Set(medications
           .filter(med => matchesLocationFilter(med, ui.currentLocation, locations))
           .map(med => med.type))].sort();
