@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS activity_log (
   action_type   TEXT NOT NULL,
   entity_type   TEXT,
   entity_id     TEXT,
-  location_id   INTEGER,
+  location_id   TEXT,
   details       JSONB DEFAULT '{}',
   occurred_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

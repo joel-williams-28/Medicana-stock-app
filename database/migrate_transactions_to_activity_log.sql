@@ -13,7 +13,7 @@ SELECT
   END,
   'medication',
   t.medication_id::text,
-  t.location_id::integer,
+  t.location_id,
   jsonb_build_object(
     'medicationName', CASE WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name ELSE m.name || ' ' || m.strength END,
     'batchId', t.batch_id,
@@ -41,7 +41,7 @@ SELECT
   'stock_transfer',
   'medication',
   t_out.medication_id::text,
-  t_out.location_id::integer,
+  t_out.location_id,
   jsonb_build_object(
     'medicationName', CASE WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name ELSE m.name || ' ' || m.strength END,
     'batchId', t_out.batch_id,
@@ -75,7 +75,7 @@ SELECT
   'stock_transfer',
   'medication',
   t.medication_id::text,
-  t.location_id::integer,
+  t.location_id,
   jsonb_build_object(
     'medicationName', CASE WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name ELSE m.name || ' ' || m.strength END,
     'batchId', t.batch_id,
