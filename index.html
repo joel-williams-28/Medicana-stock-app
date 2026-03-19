@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
     <title>Medicana - Medication Stock Management (Demo)</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%230c2753'/%3E%3Ctext x='50' y='72' font-size='70' font-weight='bold' text-anchor='middle' fill='%2306B6D4' font-family='Arial, sans-serif'%3E%5C%5C%3C/text%3E%3C/svg%3E">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -705,8 +705,53 @@
           }
 
           const savedAuth = storage.load('medicana_auth');
-          if (savedAuth && typeof savedAuth === 'object') {
-            // Always start logged out on fresh load
+          const sessionUser = sessionStorage.getItem('currentUser');
+          if (savedAuth && typeof savedAuth === 'object' && sessionUser) {
+            // Session still active (page refresh, not new tab) — auto-restore login
+            try {
+              const userData = JSON.parse(sessionUser);
+              setAuth(prev => ({
+                ...prev,
+                currentUser: userData.username || savedAuth.currentUser || '',
+                isLoggedIn: true,
+                password: '',
+                error: ''
+              }));
+              // Re-fetch data from backend to restore state
+              (async () => {
+                try {
+                  const backendData = await window.api.fetchAllData();
+                  setMedications(backendData.medications || []);
+                  setTransactions(backendData.transactions || []);
+                  setLocations(backendData.locations || []);
+                  window.api.startPolling({
+                    onData: ({ medications: meds, transactions: txs, locations: locs, orders: ords }) => {
+                      setMedications(meds || []);
+                      setTransactions(txs || []);
+                      setLocations(locs || []);
+                      setOrders(ords || []);
+                    },
+                    intervalMs: 20000
+                  });
+                } catch (err) {
+                  console.error('Failed to restore session data:', err);
+                  setAuth(prev => ({ ...prev, isLoggedIn: false }));
+                  sessionStorage.removeItem('currentUser');
+                }
+              })();
+            } catch (e) {
+              // Invalid sessionStorage data — fall through to logged-out state
+              sessionStorage.removeItem('currentUser');
+              setAuth(prev => ({
+                ...prev,
+                currentUser: savedAuth.currentUser || '',
+                isLoggedIn: false,
+                password: '',
+                error: ''
+              }));
+            }
+          } else if (savedAuth && typeof savedAuth === 'object') {
+            // No active session but have saved username — pre-fill login form
             setAuth(prev => ({
               ...prev,
               currentUser: savedAuth.currentUser || '',
@@ -1509,6 +1554,13 @@
               existingBatches: [],
               existingBatchId: null
             }));
+            // Focus the Name field so user can start typing (only if camera is closed)
+            setTimeout(() => {
+              if (!cameraScanner.isOpen) {
+                const nameEl = document.getElementById('barcodeNewMed-name');
+                if (nameEl && !nameEl.readOnly) nameEl.focus();
+              }
+            }, 150);
           }
         } catch (err) {
           console.error('Failed to lookup barcode:', err);
@@ -2066,6 +2118,13 @@
             
             // NOW set logged in - UI will render with real Neon data already loaded
             setAuth(prev => ({ ...prev, isLoggedIn: true, error: '' }));
+
+            // Reset viewport zoom after login (mobile browsers may have zoomed on login inputs)
+            const vp = document.querySelector('meta[name="viewport"]');
+            if (vp) {
+              vp.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1');
+              setTimeout(() => vp.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=5'), 100);
+            }
             
             // Reset UI to default state on login
             setUi(prev => ({
@@ -6093,6 +6152,7 @@ Medicana Stock Management System`;
                               handleBarcodeLookup(barcode);
                             }
                           }}
+                          enterKeyHint="next"
                           className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
                           placeholder="Scan or enter barcode"
                           autoComplete="off"
@@ -6130,7 +6190,7 @@ Medicana Stock Management System`;
                             }}
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-name'); } }}
                             readOnly={barcodeNewMedForm.medicationLocked}
-                            autoFocus={!barcodeNewMedForm.medicationLocked}
+                            enterKeyHint="next"
                             className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.medicationLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             placeholder="e.g., Paracetamol"
                           />
@@ -6186,6 +6246,7 @@ Medicana Stock Management System`;
                               }}
                               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-strength'); } }}
                               readOnly={barcodeNewMedForm.medicationLocked}
+                              enterKeyHint="next"
                               className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.medicationLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                               placeholder="e.g., 500mg"
                             />
@@ -6225,6 +6286,7 @@ Medicana Stock Management System`;
                             }}
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-itemsPerBox'); } }}
                             readOnly={barcodeNewMedForm.batchLocked || barcodeNewMedForm.medicationLocked}
+                            enterKeyHint="next"
                             className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${(barcodeNewMedForm.batchLocked || barcodeNewMedForm.medicationLocked) ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             min="1"
                             placeholder="e.g., 28"
@@ -6277,6 +6339,7 @@ Medicana Stock Management System`;
                               }
                             }}
                             disabled={barcodeNewMedForm.batchLocked}
+                            enterKeyHint="next"
                             className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             placeholder="e.g., BN123456"
                           />
@@ -6336,6 +6399,7 @@ Medicana Stock Management System`;
                               }}
                               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-expiryYear'); } }}
                               disabled={barcodeNewMedForm.batchLocked}
+                              enterKeyHint="next"
                               className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                               placeholder="YYYY"
                               min={new Date().getFullYear()}
@@ -6357,6 +6421,7 @@ Medicana Stock Management System`;
                             }}
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-brand'); } }}
                             readOnly={barcodeNewMedForm.batchLocked}
+                            enterKeyHint="next"
                             className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             placeholder="e.g., Pfizer"
                           />
@@ -6373,6 +6438,7 @@ Medicana Stock Management System`;
                             value={barcodeNewMedForm.boxQuantity}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, boxQuantity: e.target.value, error: '' }))}
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-boxQuantity'); } }}
+                            enterKeyHint="done"
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
                             min="1"
                             placeholder="e.g., 2"
