@@ -39,10 +39,10 @@ SELECT
     WHEN m.strength IS NULL OR m.strength = 'N/A' THEN ''
     ELSE m.strength
   END AS strength_clean,
-  m.min_level_boxes,
+  COALESCE(lml.min_level_boxes, m.min_level_boxes) AS min_level_boxes,
   CASE
     WHEN b.items_per_box IS NOT NULL AND b.items_per_box > 0
-    THEN m.min_level_boxes * b.items_per_box
+    THEN COALESCE(lml.min_level_boxes, m.min_level_boxes) * b.items_per_box
     ELSE NULL
   END AS min_level_items
 
@@ -50,6 +50,7 @@ FROM inventory i
 INNER JOIN batches b ON i.batch_id = b.id
 INNER JOIN medications m ON b.medication_id = m.id
 INNER JOIN locations l ON i.location_id = l.id
+LEFT JOIN location_min_levels lml ON lml.medication_id = m.id AND lml.location_id = i.location_id
 WHERE m.is_active = true;
 
 -- Create indexes for better performance
