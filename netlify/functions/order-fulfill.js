@@ -1,56 +1,31 @@
 // netlify/functions/order-fulfill.js
 // Marks an order as fulfilled when stock arrives
 const db = require('./_db');
+const { logActivity } = require('./_activity-log');
 
 exports.handler = async (event) => {
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      body: JSON.stringify({ success: false, message: 'Method not allowed' })
-    };
-  }
+  if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
-    const { orderId } = JSON.parse(event.body || '{}');
+    const { orderId, userId, medicationName } = JSON.parse(event.body || '{}');
 
-    // Validate required fields
     if (!orderId) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          success: false,
-          message: 'Missing required field: orderId'
-        })
-      };
+      return db.fail(400, 'Missing required field: orderId');
     }
 
-    // Check if order exists and is pending
     const checkResult = await db.query(
       'SELECT id, status FROM orders WHERE id = $1',
       [orderId]
     );
 
     if (checkResult.rows.length === 0) {
-      return {
-        statusCode: 404,
-        body: JSON.stringify({
-          success: false,
-          message: 'Order not found'
-        })
-      };
+      return db.fail(404, 'Order not found');
     }
 
     if (checkResult.rows[0].status !== 'pending') {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          success: false,
-          message: `Order is already ${checkResult.rows[0].status}`
-        })
-      };
+      return db.fail(400, `Order is already ${checkResult.rows[0].status}`);
     }
 
-    // Update order status to fulfilled
     const result = await db.query(
       `UPDATE orders
        SET status = 'fulfilled', fulfilled_at = NOW()
@@ -61,26 +36,26 @@ exports.handler = async (event) => {
 
     const order = result.rows[0];
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        success: true,
-        order: {
-          id: order.id,
-          medicationId: order.medication_id,
-          status: order.status,
-          fulfilledAt: order.fulfilled_at
-        }
-      })
-    };
+    await logActivity({
+      userId: userId || null,
+      actionType: 'order_fulfilled',
+      entityType: 'medication',
+      entityId: order.medication_id,
+      details: {
+        medicationName: medicationName || null,
+        orderId: order.id
+      }
+    });
+
+    return db.ok({
+      order: {
+        id: order.id,
+        medicationId: order.medication_id,
+        status: order.status,
+        fulfilledAt: order.fulfilled_at
+      }
+    });
   } catch (e) {
-    console.error('order-fulfill error:', e);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        success: false,
-        message: 'Server error while fulfilling order.'
-      })
-    };
+    return db.serverError('order-fulfill', e);
   }
 };

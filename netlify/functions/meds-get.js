@@ -1,68 +1,48 @@
 // netlify/functions/meds-get.js
-// Returns all medications (with batches/inventory), recent transactions, and locations list
+// Returns all medications (with batches/inventory), recent transactions, locations, and orders
 // Uses inventory_full view as the primary source
 const db = require('./_db');
 
 exports.handler = async () => {
   try {
     // Query medication/stock snapshot from inventory_full view
-    // INCLUDE medications with on_hand = 0 if they have pending orders
-    // The view returns columns in this exact order:
-    // batch_id, location_id, location_name, location_group, medication_name, strength_clean,
-    // medication_display_id, barcode, batch_code, brand, expiry_date, on_hand, items_per_box, number_of_boxes
-    // Plus helper fields: type (form) and strength_raw
-    const medsQuery = `
+    // Include medications with on_hand = 0 if they have pending orders
+    const medsResult = await db.query(`
       SELECT DISTINCT ON (medication_id, location_id, batch_id) *
       FROM inventory_full
       WHERE on_hand > 0 OR medication_id IN (
         SELECT medication_id FROM orders WHERE status = 'pending'
       )
       ORDER BY medication_id, location_id, batch_id, medication_name, location_name, expiry_date;
-    `;
-    const medsResult = await db.query(medsQuery);
+    `);
 
     // Get medication details (fefo, min_level_boxes, is_active) from medications table
-    // We still need this because inventory_full doesn't have all medication metadata
-    // Match by medication_display_id (which is name + strength combination)
-    const medicationDetailsQuery = `
-      SELECT 
-        id,
-        name,
-        strength,
-        fefo,
-        min_level_boxes,
-        is_active
+    const medicationDetailsResult = await db.query(`
+      SELECT id, name, strength, fefo, min_level_boxes, is_active
       FROM medications
       WHERE is_active = true
-    `;
-    const medicationDetailsResult = await db.query(medicationDetailsQuery);
-    
-    // Create a map by display_id (name + strength combination)
+    `);
+
+    // Build lookup maps by display_id and internal id
     const medicationDetailsByDisplayId = {};
     const medicationDetailsById = {};
-    medicationDetailsResult.rows.forEach(med => {
+    for (const med of medicationDetailsResult.rows) {
       const displayId = med.strength && med.strength !== 'N/A'
         ? `${med.name} ${med.strength}`
         : med.name;
       const minLevelBoxes = Number.isFinite(Number(med.min_level_boxes)) ? Number(med.min_level_boxes) : 0;
-      const details = {
-        internalId: med.id,
-        fefo: med.fefo,
-        minLevelBoxes
-      };
+      const details = { internalId: med.id, fefo: med.fefo, minLevelBoxes };
       medicationDetailsByDisplayId[displayId] = details;
       medicationDetailsById[med.id] = { ...details, displayId };
-    });
+    }
 
-    // Shape into front-end-friendly structure
-    // Key = medicationDisplayId + locationId to create separate entries per location
+    // Shape into front-end-friendly structure keyed by medicationDisplayId + locationId
     const medsByKey = {};
     for (const row of medsResult.rows) {
       const displayId = row.medication_display_id;
       const locationId = row.location_id;
       const key = `${displayId}|${locationId}`;
-      
-      // Get medication details from the map
+
       const medDetailsById = row.medication_id ? medicationDetailsById[row.medication_id] : undefined;
       const medDetails = medDetailsById || medicationDetailsByDisplayId[displayId] || {};
 
@@ -70,66 +50,57 @@ exports.handler = async () => {
       const resolvedMinLevelBoxes = Number.isFinite(Number(rawRowMinLevelBoxes))
         ? Number(rawRowMinLevelBoxes)
         : (medDetails.minLevelBoxes || 0);
-      
-      // Build display name: Medication Name + " " + Strength Raw (e.g., "Paracetamol 500mg")
+
       const displayName = row.strength_raw && row.strength_raw !== 'N/A'
         ? `${row.medication_name} ${row.strength_raw}`
         : row.medication_name;
-      
+
       if (!medsByKey[key]) {
         medsByKey[key] = {
-          id: displayId, // Use display_id as the identifier (no internal id exposed)
-          internalId: row.medication_id || (medDetailsById && medDetailsById.internalId) || medDetails.internalId || null,
-          name: displayName, // Display name: "Medication Name + Strength Raw"
-          // Extended fields from inventory_full view for sorting/filtering
-          medicationName: row.medication_name, // Base medication name (without strength)
-          strength: row.strength_clean || '', // Clean strength from view
-          strengthRaw: row.strength_raw || '', // Raw strength (e.g., "500mg" or "4mg/mL")
-          medicationDisplayId: displayId, // Explicit display ID field
+          id: displayId,
+          internalId: row.medication_id || medDetails.internalId || null,
+          name: displayName,
+          medicationName: row.medication_name,
+          strength: row.strength_clean || '',
+          strengthRaw: row.strength_raw || '',
+          medicationDisplayId: displayId,
           minLevelBoxes: resolvedMinLevelBoxes,
-          unit: row.type || 'units', // type field from view (form)
-          type: row.type || 'stock', // type field from view (form)
+          unit: row.type || 'units',
+          type: row.type || 'stock',
           location: row.location_name,
           locationId: locationId,
-          locationGroup: row.location_group || null, // Location group from inventory_full
-          barcode: row.barcode || '', // Barcode from inventory_full
-          standardItemsPerBox: null, // Not in view, would need separate query if needed
+          locationGroup: row.location_group || null,
+          barcode: row.barcode || '',
+          standardItemsPerBox: null,
           fefo: medDetails.fefo || false,
           batches: []
         };
       }
 
-      // Add batch with all fields from inventory_full view (only if on_hand > 0)
+      // Add batch (only if on_hand > 0)
       if (row.batch_id && row.on_hand > 0) {
         medsByKey[key].batches.push({
           id: row.batch_id,
-          quantity: row.on_hand, // on_hand from inventory_full
+          quantity: row.on_hand,
           expiryDate: row.expiry_date
-            ? new Date(row.expiry_date).toISOString().slice(0,7)
-            : null, // YYYY-MM format for display
-          expiryDateFull: row.expiry_date ? new Date(row.expiry_date).toISOString() : null, // Full ISO date for sorting
-          itemsPerBox: row.items_per_box || null, // items_per_box from inventory_full
-          brand: row.brand || '', // brand from inventory_full
-          batchNumber: row.batch_code || '', // batch_code from inventory_full
-          numberOfBoxes: row.number_of_boxes || null // Calculated by view: on_hand / items_per_box
+            ? new Date(row.expiry_date).toISOString().slice(0, 7)
+            : null,
+          expiryDateFull: row.expiry_date ? new Date(row.expiry_date).toISOString() : null,
+          itemsPerBox: row.items_per_box || null,
+          brand: row.brand || '',
+          batchNumber: row.batch_code || '',
+          numberOfBoxes: row.number_of_boxes || null
         });
       }
-      // Note: If on_hand = 0, we still created the medication entry above,
-      // but we don't add any batches. This allows medications with pending
-      // orders to remain visible even when stock reaches zero.
     }
 
-    // Calculate total number_of_boxes for each medication and add to response
-    Object.values(medsByKey).forEach(med => {
-      // Sum up number_of_boxes from all batches
-      med.numberOfBoxes = med.batches.reduce((sum, batch) => {
-        return sum + (batch.numberOfBoxes || 0);
-      }, 0);
-    });
+    // Calculate total numberOfBoxes per medication
+    for (const med of Object.values(medsByKey)) {
+      med.numberOfBoxes = med.batches.reduce((sum, b) => sum + (b.numberOfBoxes || 0), 0);
+    }
 
-    // Query pending orders BEFORE filtering medications
-    // We need this to keep medications with pending orders even if they have no stock
-    const ordersQuery = `
+    // Query pending orders
+    const ordersResult = await db.query(`
       SELECT
         o.id,
         o.medication_id,
@@ -150,8 +121,7 @@ exports.handler = async () => {
       LEFT JOIN users u ON u.id = o.user_id
       WHERE o.status = 'pending'
       ORDER BY o.ordered_at DESC;
-    `;
-    const ordersResult = await db.query(ordersQuery);
+    `);
 
     const orders = ordersResult.rows.map(row => ({
       id: row.id,
@@ -167,17 +137,14 @@ exports.handler = async () => {
       user: row.user_name || 'System'
     }));
 
-    // Create set of medication IDs with pending orders
-    const medicationIdsWithOrders = new Set(orders.map(o => o.medId));
-
     // Filter medications: keep if they have batches OR have pending orders
+    const medicationIdsWithOrders = new Set(orders.map(o => o.medId));
     const medications = Object.values(medsByKey).filter(med =>
       med.batches.length > 0 || medicationIdsWithOrders.has(med.internalId)
     );
 
     // Query recent transactions for Activity tab
-    // Join with batches to get medication_id, then join with medications for display info
-    const txQuery = `
+    const txResult = await db.query(`
       SELECT
         t.id,
         t.medication_id,
@@ -202,23 +169,17 @@ exports.handler = async () => {
       LEFT JOIN users u ON u.id = t.user_id
       ORDER BY t.occurred_at DESC
       LIMIT 200;
-    `;
-    const txResult = await db.query(txQuery);
+    `);
 
     const transactions = txResult.rows.map(row => {
-      // Use the type from database, or determine from delta if type is just 'in'/'out'
       let txType = row.type || 'system';
 
-      // If type is generic 'in' or 'out', check reason to determine specific type
+      // Refine type based on reason where applicable
       if (txType === 'in' && row.reason && row.reason.startsWith('Order fulfilled')) {
         txType = 'order_fulfilled';
-      } else if (txType === 'out' && row.reason && row.reason.startsWith('Batch removed')) {
-        // Batch removal handled by location check in categorizeTransaction
-        txType = 'out';
       }
-      // NOTE: DO NOT convert transfer transactions to 'transfer' type here
-      // The frontend pairing logic needs to distinguish between 'in' and 'out' transactions
-      // to properly match and combine them into single transfer entries
+      // NOTE: Do NOT convert transfer transactions to 'transfer' type here.
+      // The frontend pairing logic needs 'in' and 'out' to properly match transfers.
 
       return {
         id: row.id,
@@ -239,15 +200,14 @@ exports.handler = async () => {
     });
 
     // Query all locations for UI dropdowns
-    const locationsQuery = `
+    const locationsResult = await db.query(`
       SELECT id, display_name, group_name
       FROM locations
       ORDER BY
         CASE WHEN group_name IS NOT NULL THEN 0 ELSE 1 END,
         group_name,
         display_name;
-    `;
-    const locationsResult = await db.query(locationsQuery);
+    `);
 
     const locations = locationsResult.rows.map(row => ({
       id: row.id,
@@ -255,50 +215,17 @@ exports.handler = async () => {
       groupName: row.group_name
     }));
 
-    // Orders already queried above (before filtering medications)
-    // to allow medications with pending orders to remain visible even with zero stock
-
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        medications,
-        transactions,
-        locations,
-        orders
-      })
-    };
+    return db.json(200, { medications, transactions, locations, orders });
   } catch (e) {
-    // Enhanced error logging for debugging
     console.error('=== meds-get error ===');
-    console.error('Error name:', e.name);
-    console.error('Error message:', e.message);
-    console.error('Error stack:', e.stack);
+    console.error('Error:', e.message);
+    if (e.code) console.error('Code:', e.code);
+    if (e.detail) console.error('Detail:', e.detail);
 
-    // Log specific error details for common database issues
-    if (e.code) {
-      console.error('Error code:', e.code);
-    }
-    if (e.detail) {
-      console.error('Error detail:', e.detail);
-    }
-    if (e.hint) {
-      console.error('Error hint:', e.hint);
-    }
-
-    // Return more informative error message in development
     const isDevelopment = process.env.NODE_ENV !== 'production';
-    const errorMessage = isDevelopment
-      ? `Server error: ${e.message}`
-      : 'Server error. Please try again or contact support.';
-
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        success: false,
-        message: errorMessage,
-        // Include error code if available for debugging
-        ...(isDevelopment && e.code ? { errorCode: e.code } : {})
-      })
-    };
+    return db.fail(500,
+      isDevelopment ? `Server error: ${e.message}` : 'Server error. Please try again or contact support.',
+      isDevelopment && e.code ? { errorCode: e.code } : {}
+    );
   }
 };

@@ -2,30 +2,35 @@
 // Adjusts stock level (stock in, stock out, removal, transfer, etc.)
 // Security: medication_id is derived from batch_id on the server, not trusted from client
 const db = require('./_db');
+const { logActivity } = require('./_activity-log');
 
 exports.handler = async (event) => {
-  if (event.httpMethod !== 'POST') {
-    return { 
-      statusCode: 405, 
-      body: JSON.stringify({ success: false, message: 'Method not allowed' }) 
-    };
-  }
+  if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
-    const { userId, locationId, batchId, delta, reason } = JSON.parse(event.body || '{}');
+    const body = db.parseBody(event);
+    console.log('[stock-adjust] body:', JSON.stringify(body));
 
-    // Validate required fields (medicationId is no longer required from client)
-    if (!userId || !locationId || !batchId || delta === undefined || delta === null) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ 
-          success: false, 
-          message: 'Missing required fields: userId, locationId, batchId, delta' 
-        })
-      };
+    // IDs: accept as-is (string or number) — let PostgreSQL handle type coercion
+    const userId = body.userId;
+    const locationId = body.locationId;
+    const batchId = body.batchId;
+    const delta = (body.delta !== undefined && body.delta !== null) ? Number(body.delta) : undefined;
+    const reason = body.reason;
+    const medicationName = body.medicationName;
+    const batchCode = body.batchCode;
+
+    const missing = [];
+    if (!userId && userId !== 0) missing.push('userId');
+    if (!locationId && locationId !== 0) missing.push('locationId');
+    if (!batchId && batchId !== 0) missing.push('batchId');
+    if (delta === undefined || isNaN(delta)) missing.push('delta');
+
+    if (missing.length > 0) {
+      console.log('[stock-adjust] Validation failed. Missing:', missing, 'Raw body:', body);
+      return db.fail(400, `Missing required fields: ${missing.join(', ')}`);
     }
 
-    // Begin transaction
     await db.query('BEGIN');
 
     try {
@@ -37,13 +42,7 @@ exports.handler = async (event) => {
 
       if (batchQuery.rows.length === 0) {
         await db.query('ROLLBACK');
-        return {
-          statusCode: 400,
-          body: JSON.stringify({ 
-            success: false, 
-            message: 'Batch not found' 
-          })
-        };
+        return db.fail(400, 'Batch not found');
       }
 
       const medicationId = batchQuery.rows[0].medication_id;
@@ -55,25 +54,14 @@ exports.handler = async (event) => {
       );
 
       if (checkInv.rows.length === 0) {
-        // Insert new inventory row
         await db.query(
           'INSERT INTO inventory (location_id, batch_id, on_hand) VALUES ($1, $2, $3)',
           [locationId, batchId, delta]
         );
       } else {
-        // Update existing inventory
-        const newQuantity = checkInv.rows[0].on_hand + delta;
-        
-        // Prevent negative stock
-        if (newQuantity < 0) {
+        if (checkInv.rows[0].on_hand + delta < 0) {
           await db.query('ROLLBACK');
-          return {
-            statusCode: 400,
-            body: JSON.stringify({ 
-              success: false, 
-              message: 'Insufficient stock. Cannot reduce below zero.' 
-            })
-          };
+          return db.fail(400, 'Insufficient stock. Cannot reduce below zero.');
         }
 
         await db.query(
@@ -83,9 +71,7 @@ exports.handler = async (event) => {
       }
 
       // Insert transaction record
-      // Determine transaction type: positive delta = 'in', negative delta = 'out'
       const transactionType = delta > 0 ? 'in' : 'out';
-
       await db.query(
         `INSERT INTO transactions
          (batch_id, location_id, medication_id, user_id, delta, type, reason)
@@ -93,22 +79,30 @@ exports.handler = async (event) => {
         [batchId, locationId, medicationId, userId, delta, transactionType, reason || '']
       );
 
-      // Commit transaction
       await db.query('COMMIT');
 
-      return {
-        statusCode: 200,
-        body: JSON.stringify({ success: true })
-      };
+      const isBatchRemoval = (reason || '').startsWith('Batch removed');
+      await logActivity({
+        userId,
+        actionType: isBatchRemoval ? 'batch_removed' : (delta > 0 ? 'stock_in' : 'stock_out'),
+        entityType: 'medication',
+        entityId: medicationId,
+        locationId,
+        details: {
+          medicationName: medicationName || null,
+          batchId,
+          batchCode: batchCode || null,
+          delta,
+          reason: reason || ''
+        }
+      });
+
+      return db.ok();
     } catch (err) {
       await db.query('ROLLBACK');
       throw err;
     }
   } catch (e) {
-    console.error('stock-adjust error:', e);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ success: false, message: 'Server error.' })
-    };
+    return db.serverError('stock-adjust', e);
   }
 };
