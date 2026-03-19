@@ -81,6 +81,21 @@ window.api = (function () {
     return out;
   }
 
+  async function fetchIntelligenceReport(locationId) {
+    const params = locationId ? `?location_id=${locationId}` : '';
+    const res = await fetch(`/.netlify/functions/intelligence-report${params}`);
+    const out = await res.json();
+    if (!res.ok || !out.success) throw new Error(out.message || 'Failed to fetch intelligence report');
+    return out;
+  }
+
+  async function getIntelligenceConfig() {
+    const res = await fetch('/.netlify/functions/intelligence-config');
+    const out = await res.json();
+    if (!res.ok || !out.success) throw new Error(out.message || 'Failed to fetch intelligence config');
+    return out;
+  }
+
   return {
     fetchAllData,
     adjustStock:          (payload)  => postJSON('/.netlify/functions/stock-adjust', payload),
@@ -92,8 +107,11 @@ window.api = (function () {
     setMedicationActive:  (payload)  => postJSON('/.netlify/functions/medication-set-active', payload),
     medicationUpsert:     (payload)  => postJSON('/.netlify/functions/medication-upsert', payload),
     setMedicationMinLevel:(payload)  => postJSON('/.netlify/functions/medication-minlevel-set', payload),
+    setIntelligenceConfig:(payload)  => postJSON('/.netlify/functions/intelligence-config', payload),
     placeOrder:           (payload)  => postJSON('/.netlify/functions/order-place', payload),
     fulfillOrder:         (payload)  => postJSON('/.netlify/functions/order-fulfill', payload),
+    fetchIntelligenceReport,
+    getIntelligenceConfig,
     fetchActivityLog,
     loginUser,
     startPolling,
