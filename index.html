@@ -2975,18 +2975,18 @@ Medicana Stock Management System`;
           const currentUser = getCurrentUserInfo();
           if (!currentUser?.id) throw new Error('User not logged in');
 
-          const srcLocId = parseInt(barcodeNewMedForm.transferSourceLocation);
-          const tgtLocId = parseInt(barcodeNewMedForm.transferTargetLocation);
-          const batchIdNum = parseInt(barcodeNewMedForm.transferBatchId);
-          if (isNaN(srcLocId) || isNaN(tgtLocId) || isNaN(batchIdNum)) {
+          const srcLocId = barcodeNewMedForm.transferSourceLocation;
+          const tgtLocId = barcodeNewMedForm.transferTargetLocation;
+          const batchIdVal = barcodeNewMedForm.transferBatchId;
+          if (!srcLocId || !tgtLocId || !batchIdVal) {
             throw new Error('Invalid location or batch selection. Please re-select.');
           }
 
           await window.api.transferStock({
             userId: currentUser.id,
-            batchId: batchIdNum,
-            sourceLocationId: srcLocId,
-            targetLocationId: tgtLocId,
+            batchId: Number(batchIdVal),
+            sourceLocationId: Number(srcLocId),
+            targetLocationId: Number(tgtLocId),
             quantity: transferQty,
             reason: 'Transfer via barcode scan',
             medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
@@ -3064,9 +3064,9 @@ Medicana Stock Management System`;
           const currentUser = getCurrentUserInfo();
           if (!currentUser?.id) throw new Error('User not logged in');
 
-          const locationId = parseInt(barcodeNewMedForm.useLocation);
-          const batchIdNum = parseInt(barcodeNewMedForm.useBatchId);
-          if (isNaN(locationId) || isNaN(batchIdNum) || isNaN(useQty) || useQty <= 0) {
+          const locationIdVal = barcodeNewMedForm.useLocation;
+          const batchIdVal = barcodeNewMedForm.useBatchId;
+          if (!locationIdVal || !batchIdVal || isNaN(useQty) || useQty <= 0) {
             throw new Error('Invalid location, batch, or quantity. Please re-select.');
           }
 
@@ -3075,8 +3075,8 @@ Medicana Stock Management System`;
 
           await window.api.adjustStock({
             userId: currentUser.id,
-            locationId: locationId,
-            batchId: batchIdNum,
+            locationId: Number(locationIdVal),
+            batchId: Number(batchIdVal),
             delta: -useQty,
             reason: reason,
             medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
@@ -3174,10 +3174,10 @@ Medicana Stock Management System`;
           const currentUser = getCurrentUserInfo();
           if (!currentUser?.id) throw new Error('User not logged in');
 
-          const srcLocId = parseInt(barcodeNewMedForm.transferSourceLocation);
-          const tgtLocId = parseInt(barcodeNewMedForm.transferTargetLocation);
-          const batchIdNum = parseInt(barcodeNewMedForm.transferBatchId);
-          if (isNaN(srcLocId) || isNaN(tgtLocId) || isNaN(batchIdNum)) {
+          const srcLocId = barcodeNewMedForm.transferSourceLocation;
+          const tgtLocId = barcodeNewMedForm.transferTargetLocation;
+          const batchIdVal = barcodeNewMedForm.transferBatchId;
+          if (!srcLocId || !tgtLocId || !batchIdVal) {
             throw new Error('Invalid location or batch selection. Please re-select.');
           }
 
@@ -3186,9 +3186,9 @@ Medicana Stock Management System`;
           // Step 1: Transfer stock from source to target
           await window.api.transferStock({
             userId: currentUser.id,
-            batchId: batchIdNum,
-            sourceLocationId: srcLocId,
-            targetLocationId: tgtLocId,
+            batchId: Number(batchIdVal),
+            sourceLocationId: Number(srcLocId),
+            targetLocationId: Number(tgtLocId),
             quantity: transferQty,
             reason: 'Transfer for patient use via barcode scan',
             medicationName: medFullName,
@@ -3203,8 +3203,8 @@ Medicana Stock Management System`;
 
           await window.api.adjustStock({
             userId: currentUser.id,
-            locationId: tgtLocId,
-            batchId: batchIdNum,
+            locationId: Number(tgtLocId),
+            batchId: Number(batchIdVal),
             delta: -useQty,
             reason: reason,
             medicationName: medFullName,
