@@ -67,6 +67,20 @@ window.api = (function () {
     pollTimer = null;
   }
 
+  async function fetchActivityLog(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.actionTypes && params.actionTypes.length > 0) qs.set('action_type', params.actionTypes.join(','));
+    if (params.userId) qs.set('user_id', params.userId);
+    if (params.from) qs.set('from', params.from);
+    if (params.to) qs.set('to', params.to);
+    if (params.limit) qs.set('limit', params.limit);
+    if (params.beforeId) qs.set('before_id', params.beforeId);
+    const res = await fetch(`/.netlify/functions/activity-log?${qs}`);
+    const out = await res.json();
+    if (!res.ok || !out.success) throw new Error(out.message || 'Failed to fetch activity log');
+    return out;
+  }
+
   return {
     fetchAllData,
     adjustStock:          (payload)  => postJSON('/.netlify/functions/stock-adjust', payload),
@@ -75,11 +89,12 @@ window.api = (function () {
     transferStock:        (payload)  => postJSON('/.netlify/functions/stock-transfer', payload),
     checkBatch:           (batchCode) => postJSON('/.netlify/functions/batch-check', { batchCode }),
     lookupByBarcode:      (barcode)  => postJSON('/.netlify/functions/barcode-lookup', { barcode }),
-    setMedicationActive:  (medicationId, isActive) => postJSON('/.netlify/functions/medication-set-active', { medicationId, isActive }),
+    setMedicationActive:  (payload)  => postJSON('/.netlify/functions/medication-set-active', payload),
     medicationUpsert:     (payload)  => postJSON('/.netlify/functions/medication-upsert', payload),
     setMedicationMinLevel:(payload)  => postJSON('/.netlify/functions/medication-minlevel-set', payload),
     placeOrder:           (payload)  => postJSON('/.netlify/functions/order-place', payload),
-    fulfillOrder:         (orderId)  => postJSON('/.netlify/functions/order-fulfill', { orderId }),
+    fulfillOrder:         (payload)  => postJSON('/.netlify/functions/order-fulfill', payload),
+    fetchActivityLog,
     loginUser,
     startPolling,
     stopPolling

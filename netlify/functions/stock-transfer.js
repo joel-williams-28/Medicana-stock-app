@@ -2,6 +2,7 @@
 // Handles transfers of stock between two locations
 // Security: medication_id is derived from batch_id on the server, not trusted from client
 const db = require('./_db');
+const { logActivity } = require('./_activity-log');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
@@ -13,7 +14,9 @@ exports.handler = async (event) => {
       sourceLocationId,
       targetLocationId,
       quantity,
-      reason
+      reason,
+      medicationName,
+      batchCode
     } = JSON.parse(event.body || '{}');
 
     if (!userId || !batchId || !sourceLocationId || !targetLocationId || !quantity) {
@@ -104,6 +107,26 @@ exports.handler = async (event) => {
       );
 
       await db.query('COMMIT');
+
+      await logActivity({
+        userId,
+        actionType: 'stock_transfer',
+        entityType: 'medication',
+        entityId: medicationId,
+        locationId: sourceLocationId,
+        details: {
+          medicationName: medicationName || null,
+          batchId,
+          batchCode: batchCode || null,
+          delta: quantity,
+          sourceLocationId,
+          sourceLocationName,
+          targetLocationId,
+          targetLocationName,
+          reason: reason || ''
+        }
+      });
+
       return db.ok();
     } catch (err) {
       await db.query('ROLLBACK');

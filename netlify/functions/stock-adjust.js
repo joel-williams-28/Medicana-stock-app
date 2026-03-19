@@ -2,12 +2,13 @@
 // Adjusts stock level (stock in, stock out, removal, transfer, etc.)
 // Security: medication_id is derived from batch_id on the server, not trusted from client
 const db = require('./_db');
+const { logActivity } = require('./_activity-log');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
-    const { userId, locationId, batchId, delta, reason } = JSON.parse(event.body || '{}');
+    const { userId, locationId, batchId, delta, reason, medicationName, batchCode } = JSON.parse(event.body || '{}');
 
     if (!userId || !locationId || !batchId || delta === undefined || delta === null) {
       return db.fail(400, 'Missing required fields: userId, locationId, batchId, delta');
@@ -62,6 +63,23 @@ exports.handler = async (event) => {
       );
 
       await db.query('COMMIT');
+
+      const isBatchRemoval = (reason || '').startsWith('Batch removed');
+      await logActivity({
+        userId,
+        actionType: isBatchRemoval ? 'batch_removed' : (delta > 0 ? 'stock_in' : 'stock_out'),
+        entityType: 'medication',
+        entityId: medicationId,
+        locationId,
+        details: {
+          medicationName: medicationName || null,
+          batchId,
+          batchCode: batchCode || null,
+          delta,
+          reason: reason || ''
+        }
+      });
+
       return db.ok();
     } catch (err) {
       await db.query('ROLLBACK');

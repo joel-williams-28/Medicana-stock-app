@@ -2,6 +2,7 @@
 // Authenticates users against Neon PostgreSQL with bcrypt hashed passwords
 const db = require('./_db');
 const bcrypt = require('bcryptjs');
+const { logActivity } = require('./_activity-log');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
@@ -45,6 +46,14 @@ exports.handler = async (event) => {
     if (!passwordMatch) {
       return db.fail(401, 'Invalid credentials.');
     }
+
+    await logActivity({
+      userId: user.id,
+      actionType: 'login',
+      entityType: 'user',
+      entityId: user.id,
+      details: { username: user.username, fullName: user.full_name }
+    });
 
     return db.ok({
       message: 'Login successful.',

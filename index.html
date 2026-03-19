@@ -132,13 +132,16 @@
     ];
 
     const ACTIVITY_FILTERS = [
-      { id: 'delivery', label: 'Stock Deliveries', color: 'bg-green-100 text-green-800 border-green-300' },
-      { id: 'dispensing', label: 'Ward Dispensing', color: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
-      { id: 'transfer', label: 'Internal Transfers', color: 'bg-blue-100 text-blue-800 border-blue-300' },
-      { id: 'order', label: 'Orders Placed', color: 'bg-purple-100 text-purple-800 border-purple-300' },
-      { id: 'order_fulfilled', label: 'Orders Fulfilled', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
-      { id: 'removal', label: 'Batch Removals', color: 'bg-red-100 text-red-800 border-red-300' },
-      { id: 'system', label: 'System Changes', color: 'bg-gray-100 text-gray-800 border-gray-300' }
+      { id: 'login',              label: 'Logins',            color: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
+      { id: 'stock_in',           label: 'Stock In',          color: 'bg-green-100 text-green-800 border-green-300' },
+      { id: 'stock_out',          label: 'Stock Out',         color: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
+      { id: 'stock_transfer',     label: 'Transfers',         color: 'bg-blue-100 text-blue-800 border-blue-300' },
+      { id: 'order_placed',       label: 'Orders Placed',     color: 'bg-purple-100 text-purple-800 border-purple-300' },
+      { id: 'order_fulfilled',    label: 'Orders Fulfilled',  color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+      { id: 'medication_created', label: 'Meds Added',        color: 'bg-teal-100 text-teal-800 border-teal-300' },
+      { id: 'medication_deleted', label: 'Meds Deleted',      color: 'bg-red-100 text-red-800 border-red-300' },
+      { id: 'batch_removed',      label: 'Batch Removals',    color: 'bg-orange-100 text-orange-800 border-orange-300' },
+      { id: 'min_level_changed',  label: 'Min Level Changes', color: 'bg-amber-100 text-amber-800 border-amber-300' }
     ];
 
     const formatExpiry = (expiryDate, format = 'short') => {
@@ -625,7 +628,11 @@
         pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk',
         error: ''
       });
-        const [activityLogFilters, setActivityLogFilters] = useState(['delivery', 'dispensing', 'transfer', 'order', 'order_fulfilled', 'removal', 'system']);
+        const [activityLogFilters, setActivityLogFilters] = useState(ACTIVITY_FILTERS.map(f => f.id));
+      const [activityLog, setActivityLog] = useState([]);
+      const [activityLogLoading, setActivityLogLoading] = useState(false);
+      const [activityLogHasMore, setActivityLogHasMore] = useState(true);
+      const [activityUserFilter, setActivityUserFilter] = useState('');
       const [collapsedDates, setCollapsedDates] = useState([]);
         const [changePasswordForm, setChangePasswordForm] = useState({
           currentPassword: '',
@@ -2054,6 +2061,32 @@
         }
       };
 
+      const loadActivityLog = async (reset = false) => {
+        if (activityLogLoading) return;
+        setActivityLogLoading(true);
+        try {
+          const params = {
+            actionTypes: activityLogFilters,
+            limit: 50
+          };
+          if (activityUserFilter) params.userId = activityUserFilter;
+          if (!reset && activityLog.length > 0) {
+            params.beforeId = activityLog[activityLog.length - 1].id;
+          }
+          const data = await window.api.fetchActivityLog(params);
+          if (reset) {
+            setActivityLog(data.entries || []);
+          } else {
+            setActivityLog(prev => [...prev, ...(data.entries || [])]);
+          }
+          setActivityLogHasMore(data.hasMore || false);
+        } catch (err) {
+          console.error('Failed to load activity log:', err);
+        } finally {
+          setActivityLogLoading(false);
+        }
+      };
+
       const handleLogin = async () => {
         if (!auth.currentUser.trim() || !auth.password.trim()) {
           setAuth(prev => ({ ...prev, error: 'Please enter both username and password' }));
@@ -2640,7 +2673,8 @@ Medicana Stock Management System`;
             form: barcodeNewMedForm.type,
             barcode: barcodeNewMedForm.barcode,
             standardItemsPerBox: itemsPerBox || null,
-            minLevel: minLevel || 0
+            minLevel: minLevel || 0,
+            userId: currentUser.id
           };
 
           // If lookup found a medication, still call medicationUpsert to update minLevel safely
@@ -2668,6 +2702,7 @@ Medicana Stock Management System`;
               quantityBoxes: boxQuantity,
               quantityIndividuals: 0,
               serial: barcodeNewMedForm.serial || null, // GS1 serial number (if scanned from 2D barcode)
+              medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
               reason: 'Delivery (existing batch)'
             });
           } else {
@@ -2684,6 +2719,7 @@ Medicana Stock Management System`;
               quantityBoxes: boxQuantity,
               quantityIndividuals: 0,
               serial: barcodeNewMedForm.serial || null, // GS1 serial number (if scanned from 2D barcode)
+              medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
               reason: 'Delivery'
             });
           }
@@ -2920,7 +2956,9 @@ Medicana Stock Management System`;
                 sourceLocationId: sourceLocationId,
                 targetLocationId: finalTargetLocationId,
                 quantity: amount,
-                reason: transactionNote
+                reason: transactionNote,
+                medicationName: updatedMed.name,
+                batchCode: selectedBatch.batchCode || null
               });
             } else {
               // External dispensing - just remove stock
@@ -2930,7 +2968,9 @@ Medicana Stock Management System`;
                 locationId: ui.selectedMed.locationId || getLocationId(ui.selectedMed.location),
                 batchId: selectedBatch.id,
                 delta: -amount,
-                reason: transactionNote
+                reason: transactionNote,
+                medicationName: updatedMed.name,
+                batchCode: selectedBatch.batchCode || null
               });
 
               // Handle cupboard stock removal - if removing from a cupboard, also remove from Medication Stock L1
@@ -3058,7 +3098,9 @@ Medicana Stock Management System`;
               sourceLocationId: sourceLocationId,
               targetLocationId: targetLocationId,
               quantity: amount,
-              reason: transactionNote
+              reason: transactionNote,
+              medicationName: updatedMed.name,
+              batchCode: sourceBatch.batchCode || null
             });
           } else {
             // Stock in from delivery (already handled by processAdjustment delivery flow)
@@ -3107,7 +3149,7 @@ Medicana Stock Management System`;
 
           try {
             // Soft-delete: set is_active to false
-            await window.api.setMedicationActive(internalId, false);
+            await window.api.setMedicationActive({ medicationId: internalId, isActive: false, userId: userInfo?.id, medicationName: deletion.med.name });
             
             // Refresh data from backend to ensure UI is in sync (inactive meds will be filtered out)
             // Note: Backend doesn't create a transaction for soft-delete, so we create one locally for Activity Log
@@ -3160,7 +3202,9 @@ Medicana Stock Management System`;
             locationId: locationId,
             batchId: batch.id,
             delta: -batch.quantity, // Negative delta to remove all stock
-            reason: removalNote
+            reason: removalNote,
+            medicationName: med.name,
+            batchCode: batch.batchCode || null
           });
 
           // Refresh data from backend to ensure UI is in sync (small delay to ensure DB commit)
@@ -3205,7 +3249,10 @@ Medicana Stock Management System`;
           // Update min level using dedicated function
           await window.api.setMedicationMinLevel({
             medicationId: Math.floor(internalMedicationId),
-            minLevel: Math.floor(finalMinLevelBoxes)
+            minLevel: Math.floor(finalMinLevelBoxes),
+            userId: currentUser.id,
+            medicationName: editMinLevel.editing?.name || null,
+            oldMinLevel: editMinLevel.editing?.minLevelBoxes || 0
           });
 
           // Optimistically update local state while awaiting refetch
@@ -3265,7 +3312,8 @@ Medicana Stock Management System`;
               quantity: parseInt(orderForm.quantity),
               urgency: orderForm.urgency,
               notes: orderForm.notes || '',
-              pharmacistEmail: orderForm.pharmacistEmail
+              pharmacistEmail: orderForm.pharmacistEmail,
+              medicationName: orderForm.med.name
             });
 
             // Create transaction for activity log
@@ -3312,7 +3360,8 @@ Medicana Stock Management System`;
               quantity: parseInt(orderForm.quantity),
               urgency: orderForm.urgency,
               notes: orderForm.notes || '',
-              pharmacistEmail: orderForm.pharmacistEmail
+              pharmacistEmail: orderForm.pharmacistEmail,
+              medicationName: orderForm.med.name
             });
 
             // Create transaction for activity log
@@ -3573,7 +3622,7 @@ Medicana Stock Management System`;
           });
 
           // Mark order as fulfilled
-          await window.api.fulfillOrder(fulfilOrderForm.order.id);
+          await window.api.fulfillOrder({ orderId: fulfilOrderForm.order.id, userId: currentUser.id, medicationName: fulfilOrderForm.order?.medName || null });
 
           // Refresh data from backend
           await new Promise(resolve => setTimeout(resolve, 100));
@@ -3753,7 +3802,7 @@ Medicana Stock Management System`;
                       <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'medications' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'medications' ? 'border-cyan-500 text-cyan-600 shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Medications List</button>
                     )}
                     {canAccessTab('transactions') && (
-                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'transactions' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-all whitespace-nowrap relative ${ui.activeTab === 'transactions' ? 'border-cyan-500 text-cyan-600 shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Activity Log</button>
+                      <button onClick={() => { setUi(prev => ({ ...prev, activeTab: 'transactions' })); if (ui.activeTab !== 'transactions') { setTimeout(() => loadActivityLog(true), 0); } }} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-all whitespace-nowrap relative ${ui.activeTab === 'transactions' ? 'border-cyan-500 text-cyan-600 shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Activity Log</button>
                     )}
                     {canAccessTab('lowstock') && (
                       <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'lowstock' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors relative whitespace-nowrap ${ui.activeTab === 'lowstock' ? 'border-cyan-500 text-cyan-600 shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
@@ -4203,152 +4252,250 @@ Medicana Stock Management System`;
                     <div className="flex justify-between items-start mb-3">
                       <p className="text-sm font-medium text-gray-700">Filter by Activity Type:</p>
                       <div className="flex gap-2">
-                          <button onClick={() => setActivityLogFilters(['delivery', 'dispensing', 'transfer', 'order', 'order_fulfilled', 'removal', 'system'])} className="text-xs text-cyan-600 hover:text-cyan-700 font-medium underline">Select All</button>
+                          <button onClick={() => { setActivityLogFilters(ACTIVITY_FILTERS.map(f => f.id)); setTimeout(() => loadActivityLog(true), 0); }} className="text-xs text-cyan-600 hover:text-cyan-700 font-medium underline">Select All</button>
                         <span className="text-gray-400">|</span>
-                          <button onClick={() => setActivityLogFilters([])} className="text-xs text-gray-600 hover:text-gray-700 font-medium underline">Deselect All</button>
+                          <button onClick={() => { setActivityLogFilters([]); setActivityLog([]); }} className="text-xs text-gray-600 hover:text-gray-700 font-medium underline">Deselect All</button>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {ACTIVITY_FILTERS.map(filter => (
-                          <button key={filter.id} onClick={() => { if (activityLogFilters.includes(filter.id)) { setActivityLogFilters(activityLogFilters.filter(f => f !== filter.id)); } else { setActivityLogFilters([...activityLogFilters, filter.id]); } }} className={`px-3 py-1.5 rounded-lg text-xs font-medium border-2 transition-all ${activityLogFilters.includes(filter.id) ? filter.color : 'bg-white text-gray-400 border-gray-200'}`}>{filter.label}</button>
+                          <button key={filter.id} onClick={() => {
+                            const newFilters = activityLogFilters.includes(filter.id)
+                              ? activityLogFilters.filter(f => f !== filter.id)
+                              : [...activityLogFilters, filter.id];
+                            setActivityLogFilters(newFilters);
+                            // Reload with new filters after state update
+                            setTimeout(() => loadActivityLog(true), 0);
+                          }} className={`px-3 py-1.5 rounded-lg text-xs font-medium border-2 transition-all ${activityLogFilters.includes(filter.id) ? filter.color : 'bg-white text-gray-400 border-gray-200'}`}>{filter.label}</button>
                       ))}
+                    </div>
+                    {/* User filter */}
+                    <div className="mt-3 flex items-center gap-2">
+                      <label className="text-sm text-gray-600">Filter by user:</label>
+                      <select
+                        value={activityUserFilter}
+                        onChange={(e) => { setActivityUserFilter(e.target.value); setTimeout(() => loadActivityLog(true), 0); }}
+                        className="text-sm border border-gray-300 rounded px-2 py-1"
+                      >
+                        <option value="">All Users</option>
+                        {(() => {
+                          const userSet = new Map();
+                          activityLog.forEach(entry => {
+                            if (entry.userId && entry.userFullName) userSet.set(entry.userId, entry.userFullName);
+                            else if (entry.userId && entry.username) userSet.set(entry.userId, entry.username);
+                          });
+                          return Array.from(userSet.entries()).sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => (
+                            <option key={id} value={id}>{name}</option>
+                          ));
+                        })()}
+                      </select>
+                      <button onClick={() => loadActivityLog(true)} className="text-xs bg-cyan-500 text-white px-3 py-1 rounded hover:bg-cyan-600 transition-colors">Refresh</button>
                     </div>
                   </div>
 
                   <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
                   {(() => {
-                        // Compute category once and filter
-                        const transactionsWithCategory = filteredTransactions.map(trans => ({
-                          ...trans,
-                          _category: categorizeTransaction(trans, LOCATIONS)
-                        }));
-                        const filteredByType = transactionsWithCategory.filter(trans => activityLogFilters.includes(trans._category));
-                    
-                    // Combine transfer pairs into single entries
-                    const processedTransactions = [];
-                    const usedIds = new Set();
-                    
-                    filteredByType.forEach(trans => {
-                      if (usedIds.has(trans.id)) return;
-                      
-                      // Check if this is part of a transfer pair
-                      const isTransferOut = trans.type === 'out' && trans.note && trans.note.includes('Transfer to');
-                      const isTransferIn = trans.type === 'in' && trans.note && trans.note.includes('Transfer from');
-                      
-                      if (isTransferOut || isTransferIn) {
-                        // Find matching transfer transaction
-                        const match = filteredByType.find(t => 
-                          t.id !== trans.id &&
-                          !usedIds.has(t.id) &&
-                          t.medId === trans.medId &&
-                          Math.abs(new Date(t.timestamp) - new Date(trans.timestamp)) < 2000 && // Within 2 seconds
-                          ((isTransferOut && t.type === 'in' && t.note && t.note.includes('Transfer from')) ||
-                           (isTransferIn && t.type === 'out' && t.note && t.note.includes('Transfer to')))
-                        );
-                        
-                        if (match) {
-                          // Combine into single transfer entry
-                          const sourceLocation = isTransferOut ? trans.location : match.location;
-                          const targetLocation = isTransferOut ? match.location : trans.location;
-
-                          // Format quantity with box information if available
-                          const quantity = trans.amount;
-                          const itemsPerBox = trans.itemsPerBox || match.itemsPerBox;
-                          let quantityText = `${quantity} items`;
-
-                          if (itemsPerBox && quantity >= itemsPerBox) {
-                            const boxes = Math.floor(quantity / itemsPerBox);
-                            const loose = quantity % itemsPerBox;
-                            if (loose > 0) {
-                              quantityText = `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(itemsPerBox)} + ${loose} items`;
-                            } else {
-                              quantityText = `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(itemsPerBox)}`;
-                            }
-                          } else if (itemsPerBox && quantity < itemsPerBox) {
-                            quantityText = `${quantity} items`;
-                          }
-
-                          processedTransactions.push({
-                            ...trans,
-                            id: `transfer-${trans.id}-${match.id}`,
-                            type: 'transfer',
-                            location: sourceLocation,
-                            note: `Transferred ${quantityText} from ${sourceLocation} to ${targetLocation}`,
-                            originalAmount: trans.amount,
-                            timestamp: trans.timestamp, // Use earlier timestamp
-                            user: trans.user
-                          });
-                          usedIds.add(trans.id);
-                          usedIds.add(match.id);
-                          return;
-                        }
-                      }
-                      
-                      // Not a transfer pair, add as-is
-                      processedTransactions.push(trans);
-                      usedIds.add(trans.id);
-                    });
-                    
-                    const groupedByDate = processedTransactions.reduce((groups, trans) => {
-                      const date = new Date(trans.timestamp);
-                          const dateKey = date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-                      if (!groups[dateKey]) groups[dateKey] = [];
-                      groups[dateKey].push(trans);
-                      return groups;
-                    }, {});
-                        const sortedDates = Object.keys(groupedByDate).sort((a, b) => { const dateA = new Date(groupedByDate[a][0].timestamp); const dateB = new Date(groupedByDate[b][0].timestamp); return dateB - dateA; });
-                    if (sortedDates.length === 0) {
+                    if (activityLogLoading && activityLog.length === 0) {
                       return (
                         <div className="p-8 text-center text-gray-500">
-                          <p className="text-lg font-medium">No Activities found</p>
-                          <p className="text-sm mt-1">Try adjusting your filters</p>
+                          <p className="text-lg font-medium">Loading activity log...</p>
                         </div>
                       );
                     }
-                    return sortedDates.map(dateKey => {
-                      const isCollapsed = collapsedDates.includes(dateKey);
+                    if (activityLog.length === 0) {
                       return (
-                        <div key={dateKey}>
-                              <button onClick={() => { if (isCollapsed) { setCollapsedDates(collapsedDates.filter(d => d !== dateKey)); } else { setCollapsedDates([...collapsedDates, dateKey]); } }} className="w-full bg-slate-100 px-4 py-2 sticky top-0 hover:bg-slate-200 transition-colors text-left flex items-center justify-between">
-                            <h3 className="text-sm font-bold text-slate-700">{dateKey}</h3>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-slate-600">({groupedByDate[dateKey].length} {groupedByDate[dateKey].length === 1 ? 'Activity' : 'Activities'})</span>
-                              <span className="text-slate-700">{isCollapsed ? '▼' : '▲'}</span>
-                            </div>
-                          </button>
-                          {!isCollapsed && groupedByDate[dateKey].map(trans => {
-                            const category = trans._category || categorizeTransaction(trans, LOCATIONS);
-                            const isOrderFulfilled = category === 'order_fulfilled';
-                            const isBatchRemoval = category === 'removal';
-                            // Ensure amount is a number and strip any existing signs
-                            const amountValue = Math.abs(typeof trans.amount === 'string' ? parseFloat(trans.amount.replace(/^[+-]/, '')) || 0 : trans.amount || 0);
-                            return (
-                            <div key={trans.id} className="p-4 hover:bg-gray-50">
-                              <div className="flex justify-between items-start mb-1">
-                                <span className="font-medium text-gray-900">{trans.medName}</span>
-                                {isBatchRemoval ? (
-                                  <div className="bg-red-100 text-red-800 px-3 py-2 rounded border border-red-300 text-right">
-                                    <div className="text-xs font-bold uppercase">Batch Removed</div>
-                                    <div className="text-lg font-bold mt-1">{amountValue}</div>
-                                  </div>
-                                ) : (
-                                    <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${trans.type === 'transfer' ? 'bg-blue-100 text-blue-800' : isOrderFulfilled ? 'bg-emerald-100 text-emerald-800' : trans.type === 'in' ? 'bg-green-100 text-green-800' : trans.type === 'delete' ? 'bg-red-100 text-red-800' : trans.type === 'order' ? 'bg-blue-100 text-blue-800' : 'bg-cyan-100 text-cyan-800'}`}>
-                                      {trans.type === 'transfer' ? <Download className="w-3 h-3 mr-1" /> : isOrderFulfilled ? <Download className="w-3 h-3 mr-1" /> : trans.type === 'in' ? <Plus className="w-3 h-3 mr-1" /> : trans.type === 'delete' ? <AlertTriangle className="w-3 h-3 mr-1" /> : trans.type === 'order' ? <Download className="w-3 h-3 mr-1" /> : <Minus className="w-3 h-3 mr-1" />}
-                                      {trans.type === 'transfer' ? 'TRANSFER' : isOrderFulfilled ? 'FULFILLED' : trans.type === 'delete' ? 'DELETED' : trans.type === 'order' ? 'ORDERED' : trans.type === 'in' ? `+${amountValue}` : `-${amountValue}`}
-                                </span>
-                                )}
-                              </div>
-                              <div className="text-sm text-gray-600">
-                                <p><span className="font-medium">Location:</span> {trans.location}</p>
-                                {trans.note && <p className="mt-1">{trans.note}</p>}
-                                <p className="text-xs mt-1">{trans.user} • {new Date(trans.timestamp).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
-                              </div>
-                            </div>
-                            );
-                          })}
+                        <div className="p-8 text-center text-gray-500">
+                          <p className="text-lg font-medium">No Activities found</p>
+                          <p className="text-sm mt-1">Try adjusting your filters or click Refresh</p>
                         </div>
                       );
+                    }
+
+                    // Group entries by date
+                    const groupedByDate = activityLog.reduce((groups, entry) => {
+                      const date = new Date(entry.occurredAt);
+                      const dateKey = date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+                      if (!groups[dateKey]) groups[dateKey] = [];
+                      groups[dateKey].push(entry);
+                      return groups;
+                    }, {});
+                    const sortedDates = Object.keys(groupedByDate).sort((a, b) => {
+                      const dateA = new Date(groupedByDate[a][0].occurredAt);
+                      const dateB = new Date(groupedByDate[b][0].occurredAt);
+                      return dateB - dateA;
                     });
+
+                    // Badge config by action type
+                    const badgeConfig = {
+                      login:              { label: 'LOGIN',       css: 'bg-indigo-100 text-indigo-800', icon: null },
+                      stock_in:           { label: 'STOCK IN',    css: 'bg-green-100 text-green-800', icon: Plus },
+                      stock_out:          { label: 'STOCK OUT',   css: 'bg-cyan-100 text-cyan-800', icon: Minus },
+                      stock_transfer:     { label: 'TRANSFER',    css: 'bg-blue-100 text-blue-800', icon: Download },
+                      order_placed:       { label: 'ORDERED',     css: 'bg-purple-100 text-purple-800', icon: Download },
+                      order_fulfilled:    { label: 'FULFILLED',   css: 'bg-emerald-100 text-emerald-800', icon: Download },
+                      medication_created: { label: 'NEW MED',     css: 'bg-teal-100 text-teal-800', icon: Plus },
+                      medication_deleted: { label: 'DELETED',     css: 'bg-red-100 text-red-800', icon: AlertTriangle },
+                      batch_removed:      { label: 'REMOVED',     css: 'bg-orange-100 text-orange-800', icon: AlertTriangle },
+                      min_level_changed:  { label: 'MIN LEVEL',   css: 'bg-amber-100 text-amber-800', icon: null }
+                    };
+
+                    const renderEntryDetails = (entry) => {
+                      const d = entry.details || {};
+                      const at = entry.actionType;
+
+                      if (at === 'login') {
+                        return (
+                          <div className="text-sm text-gray-600">
+                            <p><span className="font-medium">User Login</span> — {entry.userFullName || entry.username || 'Unknown'} logged in</p>
+                          </div>
+                        );
+                      }
+
+                      if (at === 'stock_in' || at === 'stock_out') {
+                        const delta = Math.abs(d.delta || 0);
+                        const ipb = d.itemsPerBox;
+                        const qBoxes = d.quantityBoxes;
+                        let qtyText = `${delta} items`;
+                        if (qBoxes && ipb) {
+                          qtyText = `${qBoxes} ${qBoxes === 1 ? 'box' : 'boxes'} x ${ipb}/box (${delta} items)`;
+                        } else if (ipb && delta >= ipb) {
+                          const boxes = Math.floor(delta / ipb);
+                          const loose = delta % ipb;
+                          qtyText = loose > 0 ? `${boxes} box${boxes !== 1 ? 'es' : ''} + ${loose} items` : `${boxes} box${boxes !== 1 ? 'es' : ''}`;
+                        }
+                        return (
+                          <div className="text-sm text-gray-600">
+                            {entry.locationName && <p><span className="font-medium">Location:</span> {entry.locationName}</p>}
+                            <p><span className="font-medium">Quantity:</span> {at === 'stock_out' ? '-' : '+'}{qtyText}</p>
+                            {d.batchCode && <p><span className="font-medium">Batch:</span> {d.batchCode}{d.expiryDate ? ` | Expiry: ${formatExpiry(d.expiryDate)}` : ''}{d.brand ? ` | Brand: ${d.brand}` : ''}</p>}
+                            {d.reason && <p className="mt-1 text-gray-500">{d.reason}</p>}
+                          </div>
+                        );
+                      }
+
+                      if (at === 'stock_transfer') {
+                        return (
+                          <div className="text-sm text-gray-600">
+                            <p><span className="font-medium">From:</span> {d.sourceLocationName || 'Unknown'} <span className="font-medium ml-2">To:</span> {d.targetLocationName || 'Unknown'}</p>
+                            <p><span className="font-medium">Quantity:</span> {d.delta || 0} items</p>
+                            {d.batchCode && <p><span className="font-medium">Batch:</span> {d.batchCode}</p>}
+                          </div>
+                        );
+                      }
+
+                      if (at === 'medication_created') {
+                        return (
+                          <div className="text-sm text-gray-600">
+                            <p>New medication added to the system</p>
+                            {d.strength && d.strength !== 'N/A' && <p><span className="font-medium">Strength:</span> {d.strength}</p>}
+                            {d.form && <p><span className="font-medium">Form:</span> {d.form}</p>}
+                            {d.barcode && <p><span className="font-medium">Barcode:</span> {d.barcode}</p>}
+                          </div>
+                        );
+                      }
+
+                      if (at === 'medication_deleted') {
+                        return (
+                          <div className="text-sm text-gray-600">
+                            <p>Medication deactivated from the system</p>
+                          </div>
+                        );
+                      }
+
+                      if (at === 'batch_removed') {
+                        return (
+                          <div className="text-sm text-gray-600">
+                            {entry.locationName && <p><span className="font-medium">Location:</span> {entry.locationName}</p>}
+                            <p><span className="font-medium">Quantity removed:</span> {Math.abs(d.delta || 0)} items</p>
+                            {d.batchCode && <p><span className="font-medium">Batch:</span> {d.batchCode}</p>}
+                            {d.reason && <p className="mt-1 text-gray-500">{d.reason}</p>}
+                          </div>
+                        );
+                      }
+
+                      if (at === 'min_level_changed') {
+                        return (
+                          <div className="text-sm text-gray-600">
+                            <p>Minimum level changed from <span className="font-medium">{d.oldMinLevel ?? '?'} boxes</span> to <span className="font-medium">{d.newMinLevel ?? '?'} boxes</span></p>
+                          </div>
+                        );
+                      }
+
+                      if (at === 'order_placed') {
+                        return (
+                          <div className="text-sm text-gray-600">
+                            <p><span className="font-medium">Quantity:</span> {d.quantity || '?'} | <span className="font-medium">Urgency:</span> {(d.urgency || 'routine').toUpperCase()}</p>
+                            {d.pharmacistEmail && <p><span className="font-medium">Sent to:</span> {d.pharmacistEmail}</p>}
+                            {d.notes && <p className="mt-1 text-gray-500">{d.notes}</p>}
+                          </div>
+                        );
+                      }
+
+                      if (at === 'order_fulfilled') {
+                        return (
+                          <div className="text-sm text-gray-600">
+                            <p>Order #{d.orderId || '?'} marked as fulfilled</p>
+                          </div>
+                        );
+                      }
+
+                      // Fallback for migrated/unknown types
+                      return (
+                        <div className="text-sm text-gray-600">
+                          {entry.locationName && <p><span className="font-medium">Location:</span> {entry.locationName}</p>}
+                          {d.reason && <p>{d.reason}</p>}
+                        </div>
+                      );
+                    };
+
+                    return (
+                      <>
+                        {sortedDates.map(dateKey => {
+                          const isCollapsed = collapsedDates.includes(dateKey);
+                          return (
+                            <div key={dateKey}>
+                              <button onClick={() => { if (isCollapsed) { setCollapsedDates(collapsedDates.filter(d => d !== dateKey)); } else { setCollapsedDates([...collapsedDates, dateKey]); } }} className="w-full bg-slate-100 px-4 py-2 sticky top-0 hover:bg-slate-200 transition-colors text-left flex items-center justify-between">
+                                <h3 className="text-sm font-bold text-slate-700">{dateKey}</h3>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-slate-600">({groupedByDate[dateKey].length} {groupedByDate[dateKey].length === 1 ? 'Activity' : 'Activities'})</span>
+                                  <span className="text-slate-700">{isCollapsed ? '▼' : '▲'}</span>
+                                </div>
+                              </button>
+                              {!isCollapsed && groupedByDate[dateKey].map(entry => {
+                                const badge = badgeConfig[entry.actionType] || { label: entry.actionType.toUpperCase(), css: 'bg-gray-100 text-gray-800', icon: null };
+                                const BadgeIcon = badge.icon;
+                                const medName = entry.details?.medicationName || (entry.actionType === 'login' ? '' : 'Unknown Medication');
+                                const delta = entry.details?.delta ? Math.abs(entry.details.delta) : null;
+                                return (
+                                  <div key={entry.id} className="p-4 hover:bg-gray-50">
+                                    <div className="flex justify-between items-start mb-1">
+                                      <span className="font-medium text-gray-900">{medName || (entry.actionType === 'login' ? (entry.userFullName || entry.username) : '')}</span>
+                                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${badge.css}`}>
+                                        {BadgeIcon && <BadgeIcon className="w-3 h-3 mr-1" />}
+                                        {badge.label}{delta != null && (entry.actionType === 'stock_in' || entry.actionType === 'stock_out') ? ` ${entry.actionType === 'stock_in' ? '+' : '-'}${delta}` : ''}
+                                      </span>
+                                    </div>
+                                    {renderEntryDetails(entry)}
+                                    <p className="text-xs text-gray-400 mt-1">{entry.userFullName || entry.username || 'System'} — {new Date(entry.occurredAt).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
+                        {activityLogHasMore && (
+                          <div className="p-4 text-center">
+                            <button
+                              onClick={() => loadActivityLog(false)}
+                              disabled={activityLogLoading}
+                              className="px-6 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition-colors text-sm disabled:opacity-50"
+                            >
+                              {activityLogLoading ? 'Loading...' : 'Load More'}
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    );
                   })()}
                   </div>
                 </>

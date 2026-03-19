@@ -1,6 +1,7 @@
 // netlify/functions/order-place.js
 // Creates a new medication order request in the database
 const db = require('./_db');
+const { logActivity } = require('./_activity-log');
 
 const VALID_URGENCIES = ['urgent', 'routine', 'non-urgent'];
 
@@ -14,7 +15,8 @@ exports.handler = async (event) => {
       quantity,
       urgency,
       notes,
-      pharmacistEmail
+      pharmacistEmail,
+      medicationName
     } = JSON.parse(event.body || '{}');
 
     if (!medicationId || !quantity || !urgency || !pharmacistEmail) {
@@ -38,6 +40,21 @@ exports.handler = async (event) => {
     );
 
     const order = result.rows[0];
+
+    await logActivity({
+      userId: userId || null,
+      actionType: 'order_placed',
+      entityType: 'medication',
+      entityId: medicationId,
+      details: {
+        medicationName: medicationName || null,
+        orderId: order.id,
+        quantity,
+        urgency,
+        notes: notes || null,
+        pharmacistEmail
+      }
+    });
 
     return db.ok({
       order: {

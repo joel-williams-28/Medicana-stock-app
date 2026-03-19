@@ -2,6 +2,7 @@
 // Adds a new batch/delivery of medication to inventory
 // Supports both existing batch selection and new batch creation with integrity enforcement
 const db = require('./_db');
+const { logActivity } = require('./_activity-log');
 
 // Build expiry date string (last day of month) from month/year
 function buildExpiryDate(expiryMonth, expiryYear) {
@@ -31,7 +32,8 @@ exports.handler = async (event) => {
       userId,
       note,
       reason,
-      serial
+      serial,
+      medicationName
     } = JSON.parse(event.body || '{}');
 
     const transactionNote = reason || note;
@@ -150,6 +152,29 @@ exports.handler = async (event) => {
       );
 
       await db.query('COMMIT');
+
+      const batchCodeUsed = batchNumber || batchCode || null;
+      const expiryDate = buildExpiryDate(expiryMonth, expiryYear);
+      await logActivity({
+        userId,
+        actionType: 'stock_in',
+        entityType: 'medication',
+        entityId: canonicalMedicationId,
+        locationId,
+        details: {
+          medicationName: medicationName || null,
+          batchId: batchIdResult,
+          batchCode: batchCodeUsed,
+          expiryDate: expiryDate || null,
+          brand: brand || null,
+          delta: finalTotal,
+          quantityBoxes: quantityBoxes || null,
+          itemsPerBox: itemsPerBox || null,
+          reason: transactionNote || `Delivery received - ${finalTotal} units`,
+          isNewBatch: !existingBatchId
+        }
+      });
+
       return db.ok();
     } catch (err) {
       await db.query('ROLLBACK');

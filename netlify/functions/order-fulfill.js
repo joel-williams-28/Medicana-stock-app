@@ -1,12 +1,13 @@
 // netlify/functions/order-fulfill.js
 // Marks an order as fulfilled when stock arrives
 const db = require('./_db');
+const { logActivity } = require('./_activity-log');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
-    const { orderId } = JSON.parse(event.body || '{}');
+    const { orderId, userId, medicationName } = JSON.parse(event.body || '{}');
 
     if (!orderId) {
       return db.fail(400, 'Missing required field: orderId');
@@ -34,6 +35,17 @@ exports.handler = async (event) => {
     );
 
     const order = result.rows[0];
+
+    await logActivity({
+      userId: userId || null,
+      actionType: 'order_fulfilled',
+      entityType: 'medication',
+      entityId: order.medication_id,
+      details: {
+        medicationName: medicationName || null,
+        orderId: order.id
+      }
+    });
 
     return db.ok({
       order: {

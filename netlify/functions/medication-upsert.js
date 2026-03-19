@@ -2,6 +2,7 @@
 // Finds or creates a medication by barcode or slug (name+strength+form)
 // Returns the medication ID to use for batch operations
 const db = require('./_db');
+const { logActivity } = require('./_activity-log');
 
 // Generates next sequential ID for medications
 async function getNextMedicationId() {
@@ -22,7 +23,8 @@ exports.handler = async (event) => {
       barcode,
       standardItemsPerBox,
       minLevel,
-      minLevelBoxes
+      minLevelBoxes,
+      userId
     } = JSON.parse(event.body || '{}');
 
     const rawMin = (minLevelBoxes !== undefined ? minLevelBoxes : minLevel);
@@ -34,6 +36,7 @@ exports.handler = async (event) => {
     }
 
     let medicationId = null;
+    let wasCreated = false;
 
     // Strategy 1: Find or create by barcode
     if (barcode && barcode.trim()) {
@@ -55,6 +58,7 @@ exports.handler = async (event) => {
            VALUES ($1, $2, $3, $4, $5, $6, $7, true, true)`,
           [medicationId, name, strength || '', form || 'stock', barcode.trim(), minBoxes, standardItemsPerBox || null]
         );
+        wasCreated = true;
       }
     } else {
       // Strategy 2: Find or create by slug (name + strength + form)
@@ -83,10 +87,28 @@ exports.handler = async (event) => {
            VALUES ($1, $2, $3, $4, $5, $6, $7, true, true)`,
           [medicationId, name, strengthValue || '', formValue, '', minBoxes, standardItemsPerBox || null]
         );
+        wasCreated = true;
       }
     }
 
-    return db.ok({ medicationId });
+    if (wasCreated) {
+      await logActivity({
+        userId: userId || null,
+        actionType: 'medication_created',
+        entityType: 'medication',
+        entityId: medicationId,
+        details: {
+          medicationName: name,
+          strength: strength || null,
+          form: form || null,
+          barcode: barcode || null,
+          minLevelBoxes: minBoxes,
+          standardItemsPerBox: standardItemsPerBox || null
+        }
+      });
+    }
+
+    return db.ok({ medicationId, wasCreated });
   } catch (e) {
     return db.serverError('medication-upsert', e);
   }
