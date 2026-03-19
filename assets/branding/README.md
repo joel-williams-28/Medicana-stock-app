@@ -6,7 +6,8 @@ Replace the placeholder SVG files in this folder with your actual logo files.
 
 | File | Purpose | Recommended Size | Used In |
 |------|---------|-----------------|---------|
-| `logo.svg` | Main company logo | ~300x80px (or similar aspect ratio) | Header, Login page |
+| `logo-login.svg` | Main company logo (large) | ~300x100px (or similar aspect ratio) | Login page |
+| `logo-header.svg` | Main company logo (compact) | ~200x50px (or similar aspect ratio) | Header bar |
 | `favicon.svg` | Browser tab icon | 32x32px or 100x100px square | Browser tab |
 | `hospital-logo.svg` | Hospital/client logo | ~250x60px (or similar aspect ratio) | Login page (below main logo) |
 
