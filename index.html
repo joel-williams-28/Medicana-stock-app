@@ -6,6 +6,25 @@
     <title>Medicana - Medication Stock Management</title>
     <link rel="icon" type="image/png" href="assets/branding/favicon.png">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                light: '#5DCAA5',
+                mid: '#0F6E56',
+                dark: '#085041',
+                deepest: '#04342C',
+                pale: '#E1F5EE',
+              },
+              'near-black': '#1A1A1A',
+              'off-white': '#F5F5F3',
+            }
+          }
+        }
+      }
+    </script>
     <style>
       html {
         scrollbar-gutter: stable;
@@ -140,7 +159,7 @@
     const ACTIVITY_FILTERS = [
       { id: 'login',              label: 'Logins',            color: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
       { id: 'stock_in',           label: 'Stock In',          color: 'bg-green-100 text-green-800 border-green-300' },
-      { id: 'stock_out',          label: 'Stock Out',         color: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
+      { id: 'stock_out',          label: 'Stock Out',         color: 'bg-brand-pale text-brand-deepest border-brand-light' },
       { id: 'stock_transfer',     label: 'Transfers',         color: 'bg-blue-100 text-blue-800 border-blue-300' },
       { id: 'order_placed',       label: 'Orders Placed',     color: 'bg-purple-100 text-purple-800 border-purple-300' },
       { id: 'order_fulfilled',    label: 'Orders Fulfilled',  color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
@@ -4169,7 +4188,7 @@ Medicana Stock Management System`;
 
       if (!auth.isLoggedIn) {
         return (
-          <div className="min-h-screen bg-gradient-to-br from-slate-50 to-cyan-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="min-h-screen bg-gradient-to-br from-off-white to-brand-pale flex items-center justify-center p-3 sm:p-4">
             <div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 max-w-md w-full mx-2 sm:mx-0">
               <div className="flex flex-col items-center justify-center mb-4 sm:mb-6">
                 <div className="mb-3 sm:mb-4">
@@ -4187,10 +4206,10 @@ Medicana Stock Management System`;
                 {auth.error && (<div className="mb-4 p-3 bg-red-50 border border-red-300 rounded text-xs sm:text-sm text-red-700">{auth.error}</div>)}
               <div>
                 <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Username</label>
-                  <input type="text" value={auth.currentUser} onChange={(e) => setAuth(prev => ({ ...prev, currentUser: e.target.value }))} onKeyPress={handleKeyPress} className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent mb-4 text-sm" placeholder="Enter username" />
+                  <input type="text" value={auth.currentUser} onChange={(e) => setAuth(prev => ({ ...prev, currentUser: e.target.value }))} onKeyPress={handleKeyPress} className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent mb-4 text-sm" placeholder="Enter username" />
                 <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Password</label>
-                  <input type="password" value={auth.password} onChange={(e) => setAuth(prev => ({ ...prev, password: e.target.value }))} onKeyPress={handleKeyPress} className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent mb-4 text-sm" placeholder="Enter password" />
-                  <button onClick={handleLogin} className="w-full bg-slate-800 text-white py-2 rounded-lg hover:bg-slate-700 transition-colors font-medium text-sm sm:text-base">Log In</button>
+                  <input type="password" value={auth.password} onChange={(e) => setAuth(prev => ({ ...prev, password: e.target.value }))} onKeyPress={handleKeyPress} className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent mb-4 text-sm" placeholder="Enter password" />
+                  <button onClick={handleLogin} className="w-full bg-near-black text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium text-sm sm:text-base">Log In</button>
               </div>
             </div>
           </div>
@@ -4198,32 +4217,32 @@ Medicana Stock Management System`;
       }
 
       return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-cyan-50">
+        <div className="min-h-screen bg-gradient-to-br from-off-white to-brand-pale">
           {/* Header */}
-          <div className="bg-white text-gray-900 shadow-lg border-b-2 border-gray-200 relative">
+          <div className="bg-near-black text-white shadow-lg border-b-2 border-near-black relative">
             <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-3 sm:py-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-0 relative z-10">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-0">
                 <div className="mr-0 sm:mr-4">
                   <img src="assets/branding/logo-header.png" alt="Company Logo" className="h-10 sm:h-12 w-auto" />
                 </div>
-                <div className="border-l-0 sm:border-l border-t sm:border-t-0 border-gray-300 pl-0 sm:pl-4 pt-3 sm:pt-0">
-                  <p className="text-xs sm:text-sm font-medium text-gray-900">Medication Stock Management</p>
+                <div className="border-l-0 sm:border-l border-t sm:border-t-0 border-gray-500 pl-0 sm:pl-4 pt-3 sm:pt-0">
+                  <p className="text-xs sm:text-sm font-medium text-white">Medication Stock Management</p>
                   <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                    <p className="text-xs text-gray-600">Logged in as: {getCurrentUserInfo()?.fullName || auth.currentUser}</p>
-                    <button onClick={() => setModals(prev => ({ ...prev, showChangePassword: true }))} className="text-xs text-cyan-600 hover:text-cyan-700 underline">Change Password</button>
+                    <p className="text-xs text-gray-300">Logged in as: {getCurrentUserInfo()?.fullName || auth.currentUser}</p>
+                    <button onClick={() => setModals(prev => ({ ...prev, showChangePassword: true }))} className="text-xs text-brand-light hover:text-white underline">Change Password</button>
                   </div>
                 </div>
                 </div>
-                <button onClick={handleLogout} className="bg-cyan-500 px-4 py-2 rounded hover:bg-cyan-600 transition-colors text-sm font-medium text-white w-full sm:w-auto">Log Out</button>
+                <button onClick={handleLogout} className="bg-brand-mid px-4 py-2 rounded hover:bg-brand-light transition-colors text-sm font-medium text-white w-full sm:w-auto">Log Out</button>
             </div>
           </div>
 
           {/* Location Selector */}
-          <div className="bg-slate-50 border-b border-gray-200 shadow-sm">
+          <div className="bg-off-white border-b border-gray-200 shadow-sm">
             <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-3 sm:py-4">
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
                 <label className="text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">Current Location:</label>
-                  <select value={ui.currentLocation} onChange={(e) => setUi(prev => ({ ...prev, currentLocation: e.target.value }))} className="w-full sm:w-auto px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent bg-white font-medium text-gray-900 text-sm">
+                  <select value={ui.currentLocation} onChange={(e) => setUi(prev => ({ ...prev, currentLocation: e.target.value }))} className="w-full sm:w-auto px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent bg-white font-medium text-gray-900 text-sm">
                   <option value="All">All Locations</option>
                     {(() => {
                       // Group locations by groupName
@@ -4277,19 +4296,19 @@ Medicana Stock Management System`;
               <div className="border-b border-gray-200 shadow-lg relative z-30">
                 <nav className="flex -mb-px overflow-x-auto scrollbar-hide relative z-10">
                     {canAccessTab('medications') && (
-                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'medications' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'medications' ? 'border-cyan-500 text-cyan-600 shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Medications List</button>
+                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'medications' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'medications' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Medications List</button>
                     )}
                     {canAccessTab('transactions') && (
-                      <button onClick={() => { setUi(prev => ({ ...prev, activeTab: 'transactions' })); if (ui.activeTab !== 'transactions') { setTimeout(() => loadActivityLog(true), 0); } }} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-all whitespace-nowrap relative ${ui.activeTab === 'transactions' ? 'border-cyan-500 text-cyan-600 shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Activity Log</button>
+                      <button onClick={() => { setUi(prev => ({ ...prev, activeTab: 'transactions' })); if (ui.activeTab !== 'transactions') { setTimeout(() => loadActivityLog(true), 0); } }} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-all whitespace-nowrap relative ${ui.activeTab === 'transactions' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Activity Log</button>
                     )}
                     {canAccessTab('lowstock') && (
-                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'lowstock' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors relative whitespace-nowrap ${ui.activeTab === 'lowstock' ? 'border-cyan-500 text-cyan-600 shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
+                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'lowstock' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors relative whitespace-nowrap ${ui.activeTab === 'lowstock' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
                       Low Stock
                         {lowStockMedications.length > 0 && (<span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">{lowStockMedications.length}</span>)}
                     </button>
                     )}
                     {canAccessTab('newmedication') && (
-                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'newmedication' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'newmedication' ? 'border-cyan-500 text-cyan-600 shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
+                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'newmedication' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'newmedication' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
                       New Medication Order
                     </button>
                     )}
@@ -4319,7 +4338,7 @@ Medicana Stock Management System`;
                                 inputSpeed: timeSinceLastKey
                               }));
                             }}
-                            className="w-full pl-9 sm:pl-10 pr-9 sm:pr-10 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" 
+                            className="w-full pl-9 sm:pl-10 pr-9 sm:pr-10 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" 
                           />
                           {ui.searchTerm && (
                             <button
@@ -4353,7 +4372,7 @@ Medicana Stock Management System`;
                                 <span className="hidden sm:inline">Scan Barcode</span>
                                 <span className="sm:hidden">Scan</span>
                               </button>
-                              <button onClick={() => { setModals(prev => ({ ...prev, showAddMedication: true })); }} className="bg-cyan-500 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-cyan-600 transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2">
+                              <button onClick={() => { setModals(prev => ({ ...prev, showAddMedication: true })); }} className="bg-brand-mid text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2">
                                 <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
                                 <span className="hidden sm:inline">Add New Stock</span>
                                 <span className="sm:hidden">Add</span>
@@ -4392,8 +4411,8 @@ Medicana Stock Management System`;
                                 }}
                                 className={`px-2 py-1 rounded text-xs font-medium border transition-all capitalize ${
                                   medicationFilters.types.includes(type)
-                                    ? 'bg-cyan-100 text-cyan-800 border-cyan-300'
-                                    : 'bg-white text-gray-600 border-gray-300 hover:border-cyan-300'
+                                    ? 'bg-brand-pale text-brand-deepest border-brand-light'
+                                    : 'bg-white text-gray-600 border-gray-300 hover:border-brand-light'
                                 }`}
                               >
                                 {type}
@@ -4485,7 +4504,7 @@ Medicana Stock Management System`;
                             <React.Fragment key={stableKey}>
                             <tr className="hover:bg-gray-50" data-med-id={med.id}>
                               <td className="px-4 py-3 text-sm text-gray-900">
-                                  <button onClick={() => setUi(prev => ({ ...prev, expandedMedId: prev.expandedMedId === med.id ? null : med.id }))} className="flex items-center gap-2 hover:text-cyan-600 text-left w-full">
+                                  <button onClick={() => setUi(prev => ({ ...prev, expandedMedId: prev.expandedMedId === med.id ? null : med.id }))} className="flex items-center gap-2 hover:text-brand-mid text-left w-full">
                                   <span className="flex-shrink-0" style={{color: '#0c2753'}}>{ui.expandedMedId === med.id ? '▼' : '▶'}</span>
                                   <span className="break-words">{med.name}</span>
                                 </button>
@@ -4508,7 +4527,7 @@ Medicana Stock Management System`;
                               <td className="px-4 py-3 text-sm text-gray-600 text-center">
                                 <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
                                   <span>{formatMinLevelDisplay(med)}</span>
-                                    <button onClick={() => setEditMinLevel({ editing: med, newLevel: '', type: 'boxes', boxes: (med.minLevelBoxes || 0).toString(), error: '' })} className="text-cyan-600 hover:text-cyan-700 text-xs underline">Edit</button>
+                                    <button onClick={() => setEditMinLevel({ editing: med, newLevel: '', type: 'boxes', boxes: (med.minLevelBoxes || 0).toString(), error: '' })} className="text-brand-mid hover:text-brand-dark text-xs underline">Edit</button>
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-center">
@@ -4599,7 +4618,7 @@ Medicana Stock Management System`;
                                     setModals(prev => ({ ...prev, showAdjustStock: true }));
                                     setAdjustmentForm({ amount: '', note: '', location: '', type: defaultQuantityType, action: 'out', batchId: '', sourceDepartment: '', stockInSource: 'transfer', transferBatchOption: 'existing', deliveryBatchOption: 'new', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' });
                                     setDeliveryForm({ brand: '', expiryMonth: '', expiryYear: '', quantityType: defaultQuantityType, boxQuantity: '', itemsPerBox: '', individualQuantity: '', batchNumber: '' });
-                                  }} className="text-cyan-600 hover:text-cyan-700 font-medium text-xs sm:text-sm">Adjust</button>
+                                  }} className="text-brand-mid hover:text-brand-dark font-medium text-xs sm:text-sm">Adjust</button>
                                 </div>
                               </td>
                             </tr>
@@ -4746,7 +4765,7 @@ Medicana Stock Management System`;
                     <div className="flex justify-between items-start mb-3">
                       <p className="text-sm font-medium text-gray-700">Filter by Activity Type:</p>
                       <div className="flex gap-2">
-                          <button onClick={() => { setActivityLogFilters(ACTIVITY_FILTERS.map(f => f.id)); setTimeout(() => loadActivityLog(true), 0); }} className="text-xs text-cyan-600 hover:text-cyan-700 font-medium underline">Select All</button>
+                          <button onClick={() => { setActivityLogFilters(ACTIVITY_FILTERS.map(f => f.id)); setTimeout(() => loadActivityLog(true), 0); }} className="text-xs text-brand-mid hover:text-brand-dark font-medium underline">Select All</button>
                         <span className="text-gray-400">|</span>
                           <button onClick={() => { setActivityLogFilters([]); setActivityLog([]); }} className="text-xs text-gray-600 hover:text-gray-700 font-medium underline">Deselect All</button>
                       </div>
@@ -4783,7 +4802,7 @@ Medicana Stock Management System`;
                           ));
                         })()}
                       </select>
-                      <button onClick={() => loadActivityLog(true)} className="text-xs bg-cyan-500 text-white px-3 py-1 rounded hover:bg-cyan-600 transition-colors">Refresh</button>
+                      <button onClick={() => loadActivityLog(true)} className="text-xs bg-brand-mid text-white px-3 py-1 rounded hover:bg-brand-dark transition-colors">Refresh</button>
                     </div>
                   </div>
 
@@ -4823,7 +4842,7 @@ Medicana Stock Management System`;
                     const badgeConfig = {
                       login:              { label: 'LOGIN',       css: 'bg-indigo-100 text-indigo-800', icon: null },
                       stock_in:           { label: 'STOCK IN',    css: 'bg-green-100 text-green-800', icon: Plus },
-                      stock_out:          { label: 'STOCK OUT',   css: 'bg-cyan-100 text-cyan-800', icon: Minus },
+                      stock_out:          { label: 'STOCK OUT',   css: 'bg-brand-pale text-brand-deepest', icon: Minus },
                       stock_transfer:     { label: 'TRANSFER',    css: 'bg-blue-100 text-blue-800', icon: Download },
                       order_placed:       { label: 'ORDERED',     css: 'bg-purple-100 text-purple-800', icon: Download },
                       order_fulfilled:    { label: 'FULFILLED',   css: 'bg-emerald-100 text-emerald-800', icon: Download },
@@ -4982,7 +5001,7 @@ Medicana Stock Management System`;
                             <button
                               onClick={() => loadActivityLog(false)}
                               disabled={activityLogLoading}
-                              className="px-6 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition-colors text-sm disabled:opacity-50"
+                              className="px-6 py-2 bg-brand-mid text-white rounded-lg hover:bg-brand-dark transition-colors text-sm disabled:opacity-50"
                             >
                               {activityLogLoading ? 'Loading...' : 'Load More'}
                             </button>
@@ -5015,13 +5034,13 @@ Medicana Stock Management System`;
                               return loc ? loc.id : null;
                             })();
                             fetchIntelligenceReport(currentLocId);
-                          }} className="flex items-center bg-cyan-600 text-white px-4 py-2 rounded hover:bg-cyan-700 transition-colors text-sm mr-2">
+                          }} className="flex items-center bg-brand-mid text-white px-4 py-2 rounded hover:bg-brand-dark transition-colors text-sm mr-2">
                             <TrendingUp className="w-4 h-4 mr-2" />
                             Intelligence Report
                           </button>
                         )}
                         {hasAccessTo('exportSimpleReport') && (
-                          <button onClick={exportLowStockReport} className="flex items-center bg-slate-800 text-white px-4 py-2 rounded hover:bg-slate-700 transition-colors text-sm">
+                          <button onClick={exportLowStockReport} className="flex items-center bg-near-black text-white px-4 py-2 rounded hover:bg-brand-dark transition-colors text-sm">
                             <Download className="w-4 h-4 mr-2" />
                             Export Simple Report
                           </button>
@@ -5088,7 +5107,7 @@ Medicana Stock Management System`;
                                   const batchWithBoxes = med.batches.find(b => b.itemsPerBox);
                                   const finalQty = batchWithBoxes ? suggestedBoxes * batchWithBoxes.itemsPerBox : suggestedBoxes;
                                   setOrderForm({ med, quantity: finalQty.toString(), urgency: 'routine', notes: '', pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk' });
-                                }} className={`${hasPendingOrder(med) ? 'bg-blue-500 hover:bg-blue-600' : 'bg-cyan-500 hover:bg-cyan-600'} text-white px-3 py-1 rounded text-sm transition-colors font-medium`}>
+                                }} className={`${hasPendingOrder(med) ? 'bg-blue-500 hover:bg-blue-600' : 'bg-brand-mid hover:bg-brand-dark'} text-white px-3 py-1 rounded text-sm transition-colors font-medium`}>
                                 {hasPendingOrder(med) ? 'Re-order' : 'Order'}
                               </button>
                             </td>
@@ -5110,7 +5129,7 @@ Medicana Stock Management System`;
               {/* New Medication Order Tab */}
               {ui.activeTab === 'newmedication' && (
                 <>
-                  <div className="p-3 sm:p-4 md:p-6 border-b border-cyan-100 bg-gradient-to-r from-cyan-50 to-blue-50">
+                  <div className="p-3 sm:p-4 md:p-6 border-b border-brand-pale bg-gradient-to-r from-brand-pale to-brand-pale">
                     <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-2">Order New Medication</h2>
                     <p className="text-sm sm:text-base text-gray-600">Request a new medication that is not currently in the stock system.</p>
                   </div>
@@ -5131,7 +5150,7 @@ Medicana Stock Management System`;
                             value={newMedicationOrderForm.name}
                             onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, name: e.target.value, error: '' }))}
                             placeholder="e.g., Amoxicillin"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
                           />
                         </div>
 
@@ -5142,7 +5161,7 @@ Medicana Stock Management System`;
                           <select
                             value={newMedicationOrderForm.type}
                             onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, type: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
                           >
                             {MEDICATION_TYPES.map(type => (
                               <option key={type} value={type}>{type}</option>
@@ -5159,7 +5178,7 @@ Medicana Stock Management System`;
                             value={newMedicationOrderForm.strength}
                             onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, strength: e.target.value, error: '' }))}
                             placeholder="e.g., 500mg"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
                           />
                         </div>
 
@@ -5172,7 +5191,7 @@ Medicana Stock Management System`;
                             value={newMedicationOrderForm.quantityNeeded}
                             onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, quantityNeeded: e.target.value, error: '' }))}
                             placeholder="e.g., 5 boxes, 100 tablets, 3 vials"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
                           />
                           <p className="text-xs text-gray-500 mt-1">Enter the quantity needed in any format (numbers, letters, or both)</p>
                         </div>
@@ -5187,7 +5206,7 @@ Medicana Stock Management System`;
                               value={newMedicationOrderForm.bagSize}
                               onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, bagSize: e.target.value, error: '' }))}
                               placeholder="e.g., 500ml, 1000ml"
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
                             />
                           </div>
                         )}
@@ -5197,7 +5216,7 @@ Medicana Stock Management System`;
                           <select
                             value={newMedicationOrderForm.urgency}
                             onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, urgency: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
                           >
                             <option value="routine">Routine</option>
                             <option value="urgent">Urgent</option>
@@ -5212,14 +5231,14 @@ Medicana Stock Management System`;
                             onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, notes: e.target.value }))}
                             placeholder="Any additional information or special requirements..."
                             rows="3"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent resize-none"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent resize-none"
                           />
                         </div>
 
                         <div className="flex gap-3">
                           <button
                             type="submit"
-                            className="flex-1 bg-cyan-500 text-white py-3 rounded-lg hover:bg-cyan-600 transition-colors font-medium"
+                            className="flex-1 bg-brand-mid text-white py-3 rounded-lg hover:bg-brand-dark transition-colors font-medium"
                           >
                             Review Order
                           </button>
@@ -5255,7 +5274,7 @@ Medicana Stock Management System`;
                       onClick={() => setAdjustmentForm(prev => ({ ...prev, action: 'out', stockInSource: 'transfer', transferBatchOption: 'existing', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' }))}
                       className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                         adjustmentForm.action === 'out'
-                          ? 'border-cyan-500 text-cyan-700 bg-cyan-50'
+                          ? 'border-brand-mid text-brand-dark bg-brand-pale'
                           : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50'
                       }`}
                     >
@@ -5439,7 +5458,7 @@ Medicana Stock Management System`;
                     {adjustmentForm.stockInSource === 'transfer' && (
                       <div className="mb-4">
                             <label className="block text-sm font-medium text-gray-700 mb-2">Department (Stock Coming From) <span className="text-red-600">*</span></label>
-                            <select value={adjustmentForm.sourceDepartment} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, sourceDepartment: e.target.value, batchId: '' })); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
+                            <select value={adjustmentForm.sourceDepartment} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, sourceDepartment: e.target.value, batchId: '' })); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent">
                           <option value="">Select department...</option>
                           {(() => {
                             // Group locations by groupName
@@ -5470,7 +5489,7 @@ Medicana Stock Management System`;
                                       );
                                       const hasBatches = medInLocation && medInLocation.batches.length > 0 && location.displayName !== ui.selectedMed.location;
                                       return (
-                                        <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#059669', fontWeight: '600' } : {}}>
+                                        <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#0F6E56', fontWeight: '600' } : {}}>
                                           {location.displayName}{hasBatches ? ' ✓' : ''}
                                         </option>
                                       );
@@ -5490,7 +5509,7 @@ Medicana Stock Management System`;
                                 );
                                 const hasBatches = medInLocation && medInLocation.batches.length > 0 && location.displayName !== ui.selectedMed.location;
                                 elements.push(
-                                  <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#059669', fontWeight: '600' } : {}}>
+                                  <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#0F6E56', fontWeight: '600' } : {}}>
                                     {location.displayName}{hasBatches ? ' ✓' : ''}
                                   </option>
                                 );
@@ -5508,7 +5527,7 @@ Medicana Stock Management System`;
                 {((adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'transfer') || (adjustmentForm.action === 'in' && ((adjustmentForm.stockInSource === 'transfer' && adjustmentForm.transferBatchOption === 'existing') || (adjustmentForm.stockInSource === 'delivery' && adjustmentForm.deliveryBatchOption === 'existing')))) && (
                   <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700 mb-2">Select Batch <span className="text-red-600">*</span></label>
-                        <select value={adjustmentForm.batchId} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, batchId: e.target.value, error: '' })); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
+                        <select value={adjustmentForm.batchId} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, batchId: e.target.value, error: '' })); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent">
                       <option value="">Select batch...</option>
                       {(() => {
                         let batchSource = ui.selectedMed;
@@ -5549,7 +5568,7 @@ Medicana Stock Management System`;
                     )}
                     <div className="mb-4">
                           <label className="block text-sm font-medium text-gray-700 mb-2">Brand <span className="text-red-600">*</span></label>
-                          <input type="text" list="adjustBrandList" value={deliveryForm.brand} onChange={(e) => setDeliveryForm(prev => ({ ...prev, brand: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. Actavis, Accord, Teva" />
+                          <input type="text" list="adjustBrandList" value={deliveryForm.brand} onChange={(e) => setDeliveryForm(prev => ({ ...prev, brand: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="e.g. Actavis, Accord, Teva" />
                           <datalist id="adjustBrandList">
                             {[...new Set(ui.selectedMed.batches.map(b => b.brand))].map(brand => (
                               <option key={brand} value={brand} />
@@ -5559,14 +5578,14 @@ Medicana Stock Management System`;
                     </div>
                     <div className="mb-4">
                           <label className="block text-sm font-medium text-gray-700 mb-2">Batch Number</label>
-                          <input type="text" value={deliveryForm.batchNumber} onChange={(e) => setDeliveryForm(prev => ({ ...prev, batchNumber: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. BN123456" />
+                          <input type="text" value={deliveryForm.batchNumber} onChange={(e) => setDeliveryForm(prev => ({ ...prev, batchNumber: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="e.g. BN123456" />
                     </div>
                     <div className="mb-4">
                           <label className="block text-sm font-medium text-gray-700 mb-2">Expiry Date <span className="text-red-600">*</span></label>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="block text-xs text-gray-600 mb-1">Month</label>
-                              <select value={deliveryForm.expiryMonth} onChange={(e) => setDeliveryForm(prev => ({ ...prev, expiryMonth: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
+                              <select value={deliveryForm.expiryMonth} onChange={(e) => setDeliveryForm(prev => ({ ...prev, expiryMonth: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent">
                             <option value="">Select...</option>
                                 {['January','February','March','April','May','June','July','August','September','October','November','December'].map((month, idx) => (<option key={month} value={String(idx + 1).padStart(2, '0')}>{month}</option>))}
                           </select>
@@ -5575,7 +5594,7 @@ Medicana Stock Management System`;
                           <label className="block text-xs text-gray-600 mb-1">Year</label>
                           <div className="flex items-center gap-2">
                                 <button type="button" onClick={() => setDeliveryForm(prev => { const year = prev.expiryYear ? parseInt(prev.expiryYear) : new Date().getFullYear(); return { ...prev, expiryYear: String(year - 1) }; })} className="text-slate-700 hover:text-slate-900 text-2xl leading-none p-0 border-0 bg-transparent">←</button>
-                                <input type="number" value={deliveryForm.expiryYear} onChange={(e) => setDeliveryForm(prev => ({ ...prev, expiryYear: e.target.value }))} placeholder={String(new Date().getFullYear())} className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-center" min="2024" max="2099" />
+                                <input type="number" value={deliveryForm.expiryYear} onChange={(e) => setDeliveryForm(prev => ({ ...prev, expiryYear: e.target.value }))} placeholder={String(new Date().getFullYear())} className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-center" min="2024" max="2099" />
                                 <button type="button" onClick={() => setDeliveryForm(prev => { const year = prev.expiryYear ? parseInt(prev.expiryYear) : new Date().getFullYear(); return { ...prev, expiryYear: String(year + 1) }; })} className="text-slate-700 hover:text-slate-900 text-2xl leading-none p-0 border-0 bg-transparent">→</button>
                           </div>
                         </div>
@@ -5618,7 +5637,7 @@ Medicana Stock Management System`;
                               <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Number of {deliveryForm.boxQuantity && parseInt(deliveryForm.boxQuantity) === 1 ? 'Box' : 'Boxes'} <span className="text-red-600">*</span>
                               </label>
-                              <input type="number" value={deliveryForm.boxQuantity} onChange={(e) => setDeliveryForm(prev => ({ ...prev, boxQuantity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. 5" min="1" />
+                              <input type="number" value={deliveryForm.boxQuantity} onChange={(e) => setDeliveryForm(prev => ({ ...prev, boxQuantity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="e.g. 5" min="1" />
                         </div>
                         <div>
                               <label className="block text-sm font-medium text-gray-700 mb-2">Items per Box <span className="text-red-600">*</span></label>
@@ -5631,7 +5650,7 @@ Medicana Stock Management System`;
                                   }
                                 }}
                                 readOnly={deliveryForm.batchLocked}
-                                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${deliveryForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent ${deliveryForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                                 placeholder="e.g. 100" 
                                 min="1" 
                               />
@@ -5645,7 +5664,7 @@ Medicana Stock Management System`;
                     ) : (
                       <div className="mb-4">
                             <label className="block text-sm font-medium text-gray-700 mb-2">Quantity <span className="text-red-600">*</span></label>
-                            <input type="number" value={deliveryForm.individualQuantity} onChange={(e) => setDeliveryForm(prev => ({ ...prev, individualQuantity: e.target.value }))} onClick={(e) => e.stopPropagation()} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Enter quantity" min="1" />
+                            <input type="number" value={deliveryForm.individualQuantity} onChange={(e) => setDeliveryForm(prev => ({ ...prev, individualQuantity: e.target.value }))} onClick={(e) => e.stopPropagation()} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="Enter quantity" min="1" />
                       </div>
                     )}
                   </>
@@ -5700,7 +5719,7 @@ Medicana Stock Management System`;
                       </div>
                       <div className="mb-4">
                             <label className="block text-sm font-medium text-gray-700 mb-2">Quantity <span className="text-red-600">*</span></label>
-                            <input type="number" value={adjustmentForm.amount} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, amount: e.target.value })); }} onClick={(e) => e.stopPropagation()} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder={adjustmentForm.type === 'boxes' ? 'Enter number of boxes' : 'Enter amount'} min="1" />
+                            <input type="number" value={adjustmentForm.amount} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, amount: e.target.value })); }} onClick={(e) => e.stopPropagation()} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder={adjustmentForm.type === 'boxes' ? 'Enter number of boxes' : 'Enter amount'} min="1" />
                         {adjustmentForm.type === 'boxes' && adjustmentForm.amount && adjustmentForm.batchId && (() => {
                           let itemsPerBox = 0;
                           if (adjustmentForm.action === 'in' && adjustmentForm.stockInSource === 'transfer' && adjustmentForm.transferBatchOption === 'existing' && adjustmentForm.sourceDepartment) {
@@ -5719,7 +5738,7 @@ Medicana Stock Management System`;
                 {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'patient' && (
                   <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700 mb-2">Select Batch <span className="text-red-600">*</span></label>
-                        <select value={adjustmentForm.batchId} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, batchId: e.target.value, error: '' })); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
+                        <select value={adjustmentForm.batchId} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, batchId: e.target.value, error: '' })); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent">
                       <option value="">Select batch...</option>
                       {ui.selectedMed.batches.map(batch => (
                         <option key={batch.id} value={batch.id}>
@@ -5776,7 +5795,7 @@ Medicana Stock Management System`;
                 {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'patient' && adjustmentForm.batchId && (
                   <div className="mb-4">
                             <label className="block text-sm font-medium text-gray-700 mb-2">Quantity <span className="text-red-600">*</span></label>
-                            <input type="number" value={adjustmentForm.amount} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, amount: e.target.value })); }} onClick={(e) => e.stopPropagation()} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder={adjustmentForm.type === 'boxes' ? 'Enter number of boxes' : 'Enter amount'} min="1" />
+                            <input type="number" value={adjustmentForm.amount} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, amount: e.target.value })); }} onClick={(e) => e.stopPropagation()} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder={adjustmentForm.type === 'boxes' ? 'Enter number of boxes' : 'Enter amount'} min="1" />
                         {adjustmentForm.type === 'boxes' && adjustmentForm.amount && adjustmentForm.batchId && (() => {
                           let itemsPerBox = 0;
                           itemsPerBox = ui.selectedMed.batches.find(b => b.id === parseInt(adjustmentForm.batchId))?.itemsPerBox || 0;
@@ -5788,14 +5807,14 @@ Medicana Stock Management System`;
                 {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'patient' && (
                   <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700 mb-2">Patient Last Name <span className="text-red-600">*</span></label>
-                        <input type="text" value={adjustmentForm.patientLastName} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, patientLastName: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Enter patient's last name" />
+                        <input type="text" value={adjustmentForm.patientLastName} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, patientLastName: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="Enter patient's last name" />
                   </div>
                 )}
 
                 {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'patient' && (
                   <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700 mb-2">Local ID No. <span className="text-red-600">*</span></label>
-                        <input type="text" value={adjustmentForm.patientLocalId} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, patientLocalId: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Enter patient's local ID number" />
+                        <input type="text" value={adjustmentForm.patientLocalId} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, patientLocalId: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="Enter patient's local ID number" />
                   </div>
                 )}
 
@@ -5829,14 +5848,14 @@ Medicana Stock Management System`;
                 {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'patient' && (
                   <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700 mb-2">Additional Details (optional)</label>
-                        <input type="text" value={adjustmentForm.note} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, note: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Additional notes (e.g., procedure, ward, special instructions)" />
+                        <input type="text" value={adjustmentForm.note} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, note: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="Additional notes (e.g., procedure, ward, special instructions)" />
                   </div>
                 )}
 
                 {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'transfer' && (
                   <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700 mb-2">Location <span className="text-red-600">*</span></label>
-                        <select value={adjustmentForm.location} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, location: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
+                        <select value={adjustmentForm.location} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, location: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent">
                       <option value="">Select location...</option>
                       {locations.map(location => {
                         const isInternalLocation = true; // All locations from backend are internal
@@ -5849,7 +5868,7 @@ Medicana Stock Management System`;
                             );
                         const hasStock = isInternalLocation && medInLocation && medInLocation.batches.length > 0;
                         return (
-                              <option key={location.id} value={location.displayName} style={hasStock ? { color: '#059669', fontWeight: '600' } : {}}>
+                              <option key={location.id} value={location.displayName} style={hasStock ? { color: '#0F6E56', fontWeight: '600' } : {}}>
                             {location.displayName}{hasStock ? ' ✓' : ''}
                           </option>
                         );
@@ -5862,13 +5881,13 @@ Medicana Stock Management System`;
                 {(adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'transfer') || (adjustmentForm.action === 'in' && adjustmentForm.stockInSource === 'transfer' && adjustmentForm.transferBatchOption === 'existing') || (adjustmentForm.action === 'in' && adjustmentForm.stockInSource === 'delivery' && adjustmentForm.deliveryBatchOption === 'existing') && (
                   <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700 mb-2">Additional Note (optional)</label>
-                        <input type="text" value={adjustmentForm.note} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, note: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. Emergency surgery" />
+                        <input type="text" value={adjustmentForm.note} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, note: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="e.g. Emergency surgery" />
                   </div>
                 )}
                 </div>
                 <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 flex-shrink-0">
                   <div className="flex flex-col sm:flex-row gap-2">
-                      {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'transfer' && (<button onClick={() => handleStockAdjustment('out')} className="flex-1 bg-cyan-500 text-white py-2 rounded-lg hover:bg-cyan-600 transition-colors font-medium flex items-center justify-center text-sm"><Minus className="w-4 h-4 mr-1" />Remove Stock</button>)}
+                      {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'transfer' && (<button onClick={() => handleStockAdjustment('out')} className="flex-1 bg-brand-mid text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium flex items-center justify-center text-sm"><Minus className="w-4 h-4 mr-1" />Remove Stock</button>)}
                       {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'patient' && (<button onClick={() => handleStockAdjustment('out')} className="flex-1 bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 transition-colors font-medium flex items-center justify-center"><Minus className="w-4 h-4 mr-1" />Record Patient Use</button>)}
                   {adjustmentForm.action === 'in' && (
                         <button onClick={() => handleStockAdjustment('in')} className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center justify-center">
@@ -5900,7 +5919,7 @@ Medicana Stock Management System`;
                       onClick={() => setAdjustmentForm(prev => ({ ...prev, action: 'out', stockInSource: 'transfer', transferBatchOption: 'existing', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' }))}
                       className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                         adjustmentForm.action === 'out'
-                          ? 'border-cyan-500 text-cyan-700 bg-cyan-50'
+                          ? 'border-brand-mid text-brand-dark bg-brand-pale'
                           : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50'
                       }`}
                     >
@@ -6033,7 +6052,7 @@ Medicana Stock Management System`;
                     {adjustmentForm.stockInSource === 'transfer' && (
                       <div className="mb-4">
                             <label className="block text-sm font-medium text-gray-700 mb-2">Department (Stock Coming From) <span className="text-red-600">*</span></label>
-                            <select value={adjustmentForm.sourceDepartment} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, sourceDepartment: e.target.value, batchId: '' })); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
+                            <select value={adjustmentForm.sourceDepartment} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, sourceDepartment: e.target.value, batchId: '' })); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent">
                           <option value="">Select department...</option>
                           {(() => {
                             // Group locations by groupName
@@ -6064,7 +6083,7 @@ Medicana Stock Management System`;
                                       );
                                       const hasBatches = medInLocation && medInLocation.batches.length > 0 && location.displayName !== ui.selectedMed.location;
                                       return (
-                                        <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#059669', fontWeight: '600' } : {}}>
+                                        <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#0F6E56', fontWeight: '600' } : {}}>
                                           {location.displayName}{hasBatches ? ' ✓' : ''}
                                         </option>
                                       );
@@ -6084,7 +6103,7 @@ Medicana Stock Management System`;
                                 );
                                 const hasBatches = medInLocation && medInLocation.batches.length > 0 && location.displayName !== ui.selectedMed.location;
                                 elements.push(
-                                  <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#059669', fontWeight: '600' } : {}}>
+                                  <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#0F6E56', fontWeight: '600' } : {}}>
                                     {location.displayName}{hasBatches ? ' ✓' : ''}
                                   </option>
                                 );
@@ -6102,7 +6121,7 @@ Medicana Stock Management System`;
                 {((adjustmentForm.action === 'out') || (adjustmentForm.action === 'in' && ((adjustmentForm.stockInSource === 'transfer' && adjustmentForm.transferBatchOption === 'existing') || (adjustmentForm.stockInSource === 'delivery' && adjustmentForm.deliveryBatchOption === 'existing')))) && (
                   <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700 mb-2">Select Batch <span className="text-red-600">*</span></label>
-                        <select value={adjustmentForm.batchId} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, batchId: e.target.value, error: '' })); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
+                        <select value={adjustmentForm.batchId} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, batchId: e.target.value, error: '' })); }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent">
                       <option value="">Select batch...</option>
                       {(() => {
                         let batchSource = ui.selectedMed;
@@ -6138,7 +6157,7 @@ Medicana Stock Management System`;
                               }
                             }}
                             readOnly={deliveryForm.batchLocked}
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${deliveryForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent ${deliveryForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             placeholder="e.g. Actavis, Accord, Teva" 
                           />
                           <datalist id="barcodeBrandList">
@@ -6166,7 +6185,7 @@ Medicana Stock Management System`;
                                 setDeliveryForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
                               }
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" 
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" 
                             placeholder="e.g. BN123456" 
                           />
                           {deliveryForm.batchExists && (
@@ -6186,7 +6205,7 @@ Medicana Stock Management System`;
                                   }
                                 }}
                                 disabled={deliveryForm.batchLocked}
-                                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${deliveryForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent ${deliveryForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                               >
                             <option value="">Select...</option>
                                 {['January','February','March','April','May','June','July','August','September','October','November','December'].map((month, idx) => (<option key={month} value={String(idx + 1).padStart(2, '0')}>{month}</option>))}
@@ -6202,7 +6221,7 @@ Medicana Stock Management System`;
                                   }
                                 }}
                                 disabled={deliveryForm.batchLocked}
-                                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${deliveryForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent ${deliveryForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                               >
                             <option value="">Select...</option>
                                 {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() + i).map(year => (<option key={year} value={year}>{year}</option>))}
@@ -6232,7 +6251,7 @@ Medicana Stock Management System`;
                 {adjustmentForm.action === 'out' && (
                   <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700 mb-2">Destination Location <span className="text-red-600">*</span></label>
-                        <select value={adjustmentForm.location} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, location: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
+                        <select value={adjustmentForm.location} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, location: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent">
                       <option value="">Select destination...</option>
                           {locations.filter(loc => loc.displayName !== ui.selectedMed.location).map(location => {
                             // Check if location has the same medication (name, strength, type)
@@ -6244,7 +6263,7 @@ Medicana Stock Management System`;
                             );
                             const hasBatches = medInLocation && medInLocation.batches.length > 0;
                             return (
-                              <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#059669', fontWeight: '600' } : {}}>
+                              <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#0F6E56', fontWeight: '600' } : {}}>
                                 {location.displayName}{hasBatches ? ' ✓' : ''}
                               </option>
                             );
@@ -6291,7 +6310,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             Number of {deliveryForm.boxQuantity && parseInt(deliveryForm.boxQuantity) === 1 ? 'Box' : 'Boxes'} <span className="text-red-600">*</span>
                           </label>
-                          <input type="number" value={deliveryForm.boxQuantity} onChange={(e) => setDeliveryForm(prev => ({ ...prev, boxQuantity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. 5" />
+                          <input type="number" value={deliveryForm.boxQuantity} onChange={(e) => setDeliveryForm(prev => ({ ...prev, boxQuantity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="e.g. 5" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Items per Box <span className="text-red-600">*</span></label>
@@ -6304,7 +6323,7 @@ Medicana Stock Management System`;
                               }
                             }}
                             readOnly={deliveryForm.batchLocked}
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${deliveryForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent ${deliveryForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             placeholder="e.g. 100" 
                           />
                         </div>
@@ -6317,7 +6336,7 @@ Medicana Stock Management System`;
                     ) : (
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Quantity <span className="text-red-600">*</span></label>
-                        <input type="number" value={deliveryForm.individualQuantity} onChange={(e) => setDeliveryForm(prev => ({ ...prev, individualQuantity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder={`Enter number of ${ui.selectedMed.unit}`} />
+                        <input type="number" value={deliveryForm.individualQuantity} onChange={(e) => setDeliveryForm(prev => ({ ...prev, individualQuantity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder={`Enter number of ${ui.selectedMed.unit}`} />
                       </div>
                     )}
                   </div>
@@ -6336,13 +6355,13 @@ Medicana Stock Management System`;
                         Individual {getIndividualUnitLabel(ui.selectedMed.unit)}
                       </label>
                     </div>
-                    <input type="number" value={adjustmentForm.amount} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, amount: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder={adjustmentForm.type === 'boxes' ? 'Enter number of boxes' : `Enter number of ${ui.selectedMed.unit}`} />
+                    <input type="number" value={adjustmentForm.amount} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, amount: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder={adjustmentForm.type === 'boxes' ? 'Enter number of boxes' : `Enter number of ${ui.selectedMed.unit}`} />
                   </div>
                 )}
 
                 <div className="mb-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Additional Note (optional)</label>
-                      <input type="text" value={adjustmentForm.note} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, note: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. Emergency surgery" />
+                      <input type="text" value={adjustmentForm.note} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, note: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="e.g. Emergency surgery" />
                 </div>
                 </div>
                 <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 flex-shrink-0">
@@ -6353,7 +6372,7 @@ Medicana Stock Management System`;
                           {adjustmentForm.stockInSource === 'delivery' ? (adjustmentForm.deliveryBatchOption === 'new' ? 'Receive Delivery' : 'Add to Batch') : (adjustmentForm.transferBatchOption === 'new' ? 'Add New Batch' : 'Add Stock')}
                     </button>
                   )}
-                      {adjustmentForm.action === 'out' && (<button onClick={() => handleStockAdjustment('out')} className="flex-1 bg-cyan-500 text-white py-2 rounded-lg hover:bg-cyan-600 transition-colors font-medium flex items-center justify-center"><Minus className="w-4 h-4 mr-1" />Transfer Stock</button>)}
+                      {adjustmentForm.action === 'out' && (<button onClick={() => handleStockAdjustment('out')} className="flex-1 bg-brand-mid text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium flex items-center justify-center"><Minus className="w-4 h-4 mr-1" />Transfer Stock</button>)}
                       <button onClick={() => { setModals(prev => ({ ...prev, showBarcodeStockAdjust: false })); setUi(prev => ({ ...prev, selectedMed: null })); }} className="px-6 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors font-medium">Cancel</button>
                     </div>
                   </div>
@@ -6417,7 +6436,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-2">Search Medication <span className="text-red-600">*</span></label>
                           <div className="relative">
                             <Search className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
-                            <input type="text" id="add-medication-search-input" value={addMedForm.searchTerm} onChange={(e) => setAddMedForm(prev => ({ ...prev, searchTerm: e.target.value, selectedExistingMedId: '' }))} className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Search for medication across all locations..." />
+                            <input type="text" id="add-medication-search-input" value={addMedForm.searchTerm} onChange={(e) => setAddMedForm(prev => ({ ...prev, searchTerm: e.target.value, selectedExistingMedId: '' }))} className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="Search for medication across all locations..." />
                             {addMedForm.searchTerm && (
                               <button
                                 onClick={() => setAddMedForm(prev => ({ ...prev, searchTerm: '', selectedExistingMedId: '' }))}
@@ -6447,13 +6466,13 @@ Medicana Stock Management System`;
                                     <p className="text-xs text-gray-600">Found in {meds.length} location{meds.length !== 1 ? 's' : ''}</p>
                                   </div>
                                   {meds.map(med => (
-                                    <button key={med.id} onClick={() => setAddMedForm(prev => ({ ...prev, selectedExistingMedId: String(med.id) }))} className={`w-full text-left px-4 py-3 hover:bg-cyan-50 transition-colors ${addMedForm.selectedExistingMedId === String(med.id) ? 'bg-cyan-100 border-l-4 border-cyan-500' : ''}`}>
+                                    <button key={med.id} onClick={() => setAddMedForm(prev => ({ ...prev, selectedExistingMedId: String(med.id) }))} className={`w-full text-left px-4 py-3 hover:bg-brand-pale transition-colors ${addMedForm.selectedExistingMedId === String(med.id) ? 'bg-brand-pale border-l-4 border-brand-mid' : ''}`}>
                                       <div className="flex justify-between items-center">
                                         <div>
                                           <p className="text-sm font-medium text-gray-900">{med.location}</p>
                                           <p className="text-xs text-gray-600">Stock: {formatStockDisplay(med)} | {med.batches.length} batch{med.batches.length !== 1 ? 'es' : ''}</p>
                                         </div>
-                                        {addMedForm.selectedExistingMedId === String(med.id) && (<span className="text-cyan-600 font-semibold text-sm">Selected</span>)}
+                                        {addMedForm.selectedExistingMedId === String(med.id) && (<span className="text-brand-mid font-semibold text-sm">Selected</span>)}
                                       </div>
                   </button>
                                   ))}
@@ -6479,7 +6498,7 @@ Medicana Stock Management System`;
                         <div className="grid grid-cols-2 gap-3 mb-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Medication Name <span className="text-red-600">*</span></label>
-                            <input type="text" value={addMedForm.name} onChange={(e) => setAddMedForm(prev => ({ ...prev, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. Paracetamol" />
+                            <input type="text" value={addMedForm.name} onChange={(e) => setAddMedForm(prev => ({ ...prev, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="e.g. Paracetamol" />
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Strength/Concentration <span className="text-red-600">*</span></label>
@@ -6510,18 +6529,18 @@ Medicana Stock Management System`;
                               </div>
                             </div>
                             {addMedForm.strengthType === 'value' && (
-                              <input type="text" value={addMedForm.strength} onChange={(e) => setAddMedForm(prev => ({ ...prev, strength: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. 500mg" />
+                              <input type="text" value={addMedForm.strength} onChange={(e) => setAddMedForm(prev => ({ ...prev, strength: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="e.g. 500mg" />
                             )}
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Barcode (Optional)</label>
-                            <input type="text" value={addMedForm.barcode} onChange={(e) => setAddMedForm(prev => ({ ...prev, barcode: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. 123456789012" />
+                            <input type="text" value={addMedForm.barcode} onChange={(e) => setAddMedForm(prev => ({ ...prev, barcode: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="e.g. 123456789012" />
                             <p className="text-xs text-gray-500 mt-1">Leave empty if no barcode available</p>
                           </div>
                         </div>
                         <div className="mb-4">
                           <label className="block text-sm font-medium text-gray-700 mb-2">Type <span className="text-red-600">*</span></label>
-                          <select value={addMedForm.type} onChange={(e) => setAddMedForm(prev => ({ ...prev, type: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
+                          <select value={addMedForm.type} onChange={(e) => setAddMedForm(prev => ({ ...prev, type: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent">
                             {MEDICATION_TYPES.map(type => (<option key={type} value={type}>{type}</option>))}
                           </select>
                         </div>
@@ -6539,7 +6558,7 @@ Medicana Stock Management System`;
                           }
                         }}
                         readOnly={addMedForm.batchLocked}
-                        className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                         placeholder="e.g. Actavis, Accord, Teva" 
                       />
                     </div>
@@ -6559,7 +6578,7 @@ Medicana Stock Management System`;
                             setAddMedForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
                           }
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" 
                         placeholder="e.g. BN123456" 
                       />
                       {addMedForm.batchExists && (
@@ -6579,7 +6598,7 @@ Medicana Stock Management System`;
                               }
                             }}
                             disabled={addMedForm.batchLocked}
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                           >
                             <option value="">Select...</option>
                             {['January','February','March','April','May','June','July','August','September','October','November','December'].map((month, idx) => (<option key={month} value={String(idx + 1).padStart(2, '0')}>{month}</option>))}
@@ -6597,7 +6616,7 @@ Medicana Stock Management System`;
                             }}
                             disabled={addMedForm.batchLocked}
                             placeholder={String(new Date().getFullYear())} 
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             min="2024" 
                             max="2099" 
                           />
@@ -6641,7 +6660,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             Number of {addMedForm.boxQuantity && parseInt(addMedForm.boxQuantity) === 1 ? 'Box' : 'Boxes'} <span className="text-red-600">*</span>
                           </label>
-                          <input type="number" value={addMedForm.boxQuantity} onChange={(e) => setAddMedForm(prev => ({ ...prev, boxQuantity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. 5" min="1" />
+                          <input type="number" value={addMedForm.boxQuantity} onChange={(e) => setAddMedForm(prev => ({ ...prev, boxQuantity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="e.g. 5" min="1" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Items per Box <span className="text-red-600">*</span></label>
@@ -6654,7 +6673,7 @@ Medicana Stock Management System`;
                               }
                             }}
                             readOnly={addMedForm.batchLocked}
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             placeholder="e.g. 100" 
                             min="1" 
                           />
@@ -6664,11 +6683,11 @@ Medicana Stock Management System`;
                       <>
                         <div className="mb-4">
                           <label className="block text-sm font-medium text-gray-700 mb-2">Quantity <span className="text-red-600">*</span></label>
-                          <input type="number" value={addMedForm.individualQuantity} onChange={(e) => setAddMedForm(prev => ({ ...prev, individualQuantity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Enter quantity" min="1" />
+                          <input type="number" value={addMedForm.individualQuantity} onChange={(e) => setAddMedForm(prev => ({ ...prev, individualQuantity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="Enter quantity" min="1" />
                         </div>
                         <div className="mb-4">
                           <label className="block text-sm font-medium text-gray-700 mb-2">Items per Box (optional)</label>
-                          <input type="number" value={addMedForm.itemsPerBox} onChange={(e) => setAddMedForm(prev => ({ ...prev, itemsPerBox: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. 100" min="1" />
+                          <input type="number" value={addMedForm.itemsPerBox} onChange={(e) => setAddMedForm(prev => ({ ...prev, itemsPerBox: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="e.g. 100" min="1" />
                           <p className="text-xs text-gray-500 mt-1">Specify box size for future batch tracking (e.g., adding 50 tablets from a 100-tablet box)</p>
                         </div>
                       </>
@@ -6676,13 +6695,13 @@ Medicana Stock Management System`;
                     {addMedForm.mode === 'new' && (
                       <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700 mb-2">Min stock (boxes)</label>
-                        <input type="number" value={addMedForm.minLevelBoxes} onChange={(e) => setAddMedForm(prev => ({ ...prev, minLevelBoxes: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Enter minimum level in boxes (optional)" min="0" />
+                        <input type="number" value={addMedForm.minLevelBoxes} onChange={(e) => setAddMedForm(prev => ({ ...prev, minLevelBoxes: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="Enter minimum level in boxes (optional)" min="0" />
                       </div>
                     )}
                   </div>
                   <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 flex-shrink-0">
                     <div className="flex flex-col sm:flex-row gap-2">
-                      <button onClick={handleAddNewMedication} className="flex-1 bg-cyan-500 text-white py-2 rounded-lg hover:bg-cyan-600 transition-colors font-medium text-sm">Add Stock</button>
+                      <button onClick={handleAddNewMedication} className="flex-1 bg-brand-mid text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium text-sm">Add Stock</button>
                       <button onClick={() => { setModals(prev => ({ ...prev, showAddMedication: false })); setAddMedForm({ mode: 'existing', selectedExistingMedId: '', searchTerm: '', name: '', strength: '', type: 'tablet', expiryMonth: '', expiryYear: '', quantityType: 'boxes', boxQuantity: '', itemsPerBox: '', individualQuantity: '', minLevelType: 'boxes', minLevel: '', minLevelBoxes: '', brand: '', batchNumber: '', batchLocked: false, batchExists: false, error: '' }); }} className="sm:px-6 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors font-medium text-sm">Cancel</button>
                     </div>
                   </div>
@@ -6778,14 +6797,14 @@ Medicana Stock Management System`;
                             }
                           }}
                           enterKeyHint="next"
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                           placeholder="Scan or enter barcode"
                           autoComplete="off"
                         />
                         <button
                           type="button"
                           onClick={startCameraScanner}
-                          className="px-3 py-2 bg-cyan-500 text-white rounded-md hover:bg-cyan-600 transition-colors flex items-center gap-1 text-sm font-medium whitespace-nowrap"
+                          className="px-3 py-2 bg-brand-mid text-white rounded-md hover:bg-brand-dark transition-colors flex items-center gap-1 text-sm font-medium whitespace-nowrap"
                           title="Scan barcode with camera"
                         >
                           <Camera className="w-4 h-4" />
@@ -6811,7 +6830,7 @@ Medicana Stock Management System`;
                             onClick={() => setBarcodeNewMedForm(prev => ({ ...prev, activeTab: tab.key, error: '', successMessage: '' }))}
                             className={`px-3 py-2 text-xs sm:text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
                               barcodeNewMedForm.activeTab === tab.key
-                                ? 'border-cyan-500 text-cyan-600'
+                                ? 'border-brand-mid text-brand-mid'
                                 : 'border-transparent text-gray-500 hover:text-gray-700'
                             }`}
                           >{tab.label}</button>
@@ -6840,7 +6859,7 @@ Medicana Stock Management System`;
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-name'); } }}
                             readOnly={barcodeNewMedForm.medicationLocked}
                             enterKeyHint="next"
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.medicationLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${barcodeNewMedForm.medicationLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             placeholder="e.g., Paracetamol"
                           />
                         </div>
@@ -6896,7 +6915,7 @@ Medicana Stock Management System`;
                               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-strength'); } }}
                               readOnly={barcodeNewMedForm.medicationLocked}
                               enterKeyHint="next"
-                              className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.medicationLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                              className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${barcodeNewMedForm.medicationLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                               placeholder="e.g., 500mg"
                             />
                           )}
@@ -6917,7 +6936,7 @@ Medicana Stock Management System`;
                               }
                             }}
                             disabled={barcodeNewMedForm.medicationLocked}
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.medicationLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${barcodeNewMedForm.medicationLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                           >
                             {MEDICATION_TYPES.map(type => (
                               <option key={type} value={type.toLowerCase()}>{type}</option>
@@ -6940,7 +6959,7 @@ Medicana Stock Management System`;
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-itemsPerBox'); } }}
                             readOnly={barcodeNewMedForm.batchLocked || barcodeNewMedForm.medicationLocked}
                             enterKeyHint="next"
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${(barcodeNewMedForm.batchLocked || barcodeNewMedForm.medicationLocked) ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${(barcodeNewMedForm.batchLocked || barcodeNewMedForm.medicationLocked) ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             min="1"
                             placeholder="e.g., 28"
                           />
@@ -6967,7 +6986,7 @@ Medicana Stock Management System`;
                                   setTimeout(() => document.getElementById('barcodeNewMed-boxQuantity')?.focus(), 50);
                                 }
                               }}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                             >
                               <option value="">Select batch...</option>
                               {barcodeNewMedForm.existingBatches.map(batch => {
@@ -6998,13 +7017,13 @@ Medicana Stock Management System`;
                                   }
                                 }}
                                 enterKeyHint="next"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                                 placeholder="e.g., BN123456"
                               />
                               {barcodeNewMedForm.enteringNewBatch && barcodeNewMedForm.existingBatches.length > 0 && (
                                 <button type="button" onClick={() => setBarcodeNewMedForm(prev => ({
                                   ...prev, enteringNewBatch: false, batchNumber: '', existingBatchId: null, batchLocked: false, batchExists: false, brand: '', expiryMonth: '', expiryYear: ''
-                                }))} className="text-xs text-cyan-600 hover:text-cyan-800 mt-1">← Back to existing batches</button>
+                                }))} className="text-xs text-brand-mid hover:text-brand-deepest mt-1">← Back to existing batches</button>
                               )}
                             </React.Fragment>
                           )}
@@ -7031,7 +7050,7 @@ Medicana Stock Management System`;
                                 }
                               }}
                               disabled={barcodeNewMedForm.batchLocked}
-                              className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                              className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             >
                               <option value="">Month</option>
                               <option value="01">January</option>
@@ -7062,7 +7081,7 @@ Medicana Stock Management System`;
                                 }
                               }}
                               disabled={barcodeNewMedForm.batchLocked}
-                              className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                              className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             >
                               <option value="">Year</option>
                               {Array.from({ length: 21 }, (_, i) => new Date().getFullYear() + i).map(y => (
@@ -7086,7 +7105,7 @@ Medicana Stock Management System`;
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-brand'); } }}
                             readOnly={barcodeNewMedForm.batchLocked}
                             enterKeyHint="next"
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             placeholder="e.g., Pfizer"
                           />
                         </div>
@@ -7103,7 +7122,7 @@ Medicana Stock Management System`;
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, boxQuantity: e.target.value, error: '' }))}
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-boxQuantity'); } }}
                             enterKeyHint="done"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                             min="1"
                             placeholder="e.g., 2"
                           />
@@ -7123,7 +7142,7 @@ Medicana Stock Management System`;
                                 }, 50);
                               }
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                           >
                             <option value="">Select Location</option>
                             {(() => {
@@ -7167,7 +7186,7 @@ Medicana Stock Management System`;
                             type="number"
                             value={barcodeNewMedForm.minLevelBoxes}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, minLevelBoxes: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                             min="0"
                             placeholder="Optional"
                           />
@@ -7192,7 +7211,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">From Location *</label>
                           <select value={barcodeNewMedForm.transferSourceLocation}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferSourceLocation: e.target.value, transferBatchId: '', error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid">
                             <option value="">Select source location...</option>
                             {scannedMedInv.filter(m => m.batches && m.batches.length > 0).map(m => (
                               <option key={m.locationId} value={m.locationId}>{m.location}</option>
@@ -7205,7 +7224,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Batch *</label>
                           <select value={barcodeNewMedForm.transferBatchId}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferBatchId: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid">
                             <option value="">Select batch...</option>
                             {sourceLocBatches.map(b => (
                               <option key={b.id} value={b.id}>
@@ -7220,7 +7239,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">To Location *</label>
                           <select value={barcodeNewMedForm.transferTargetLocation}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferTargetLocation: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid">
                             <option value="">Select destination...</option>
                             {(() => {
                               const grouped = {};
@@ -7256,11 +7275,11 @@ Medicana Stock Management System`;
                           <div className="flex gap-2">
                             <input type="number" inputMode="numeric" value={barcodeNewMedForm.transferQuantity}
                               onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferQuantity: e.target.value, error: '' }))}
-                              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                               min="1" placeholder="Enter quantity" />
                             <select value={barcodeNewMedForm.transferQuantityType}
                               onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferQuantityType: e.target.value, transferQuantity: '' }))}
-                              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid">
                               <option value="boxes">Boxes</option>
                               <option value="individual">Individual</option>
                             </select>
@@ -7287,11 +7306,11 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-2">Use Type *</label>
                           <div className="flex gap-4">
                             <div onClick={() => setBarcodeNewMedForm(prev => ({ ...prev, useMode: 'hospital', useQuantityType: 'individual', useQuantity: '', error: '' }))}
-                              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border-2 cursor-pointer transition-colors ${barcodeNewMedForm.useMode === 'hospital' ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'}`}>
+                              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border-2 cursor-pointer transition-colors ${barcodeNewMedForm.useMode === 'hospital' ? 'border-brand-mid bg-brand-pale text-brand-dark' : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'}`}>
                               <span className="text-sm font-medium">Hospital Use</span>
                             </div>
                             <div onClick={() => setBarcodeNewMedForm(prev => ({ ...prev, useMode: 'tto', useQuantityType: 'boxes', useQuantity: '', useReason: 'tto', error: '' }))}
-                              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border-2 cursor-pointer transition-colors ${barcodeNewMedForm.useMode === 'tto' ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'}`}>
+                              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border-2 cursor-pointer transition-colors ${barcodeNewMedForm.useMode === 'tto' ? 'border-brand-mid bg-brand-pale text-brand-dark' : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'}`}>
                               <span className="text-sm font-medium">TTO</span>
                             </div>
                           </div>
@@ -7301,7 +7320,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Location *</label>
                           <select value={barcodeNewMedForm.useLocation}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, useLocation: e.target.value, useBatchId: '', error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid">
                             <option value="">Select location...</option>
                             {scannedMedInv.filter(m => m.batches && m.batches.length > 0).map(m => (
                               <option key={m.locationId} value={m.locationId}>{m.location}</option>
@@ -7314,7 +7333,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Batch *</label>
                           <select value={barcodeNewMedForm.useBatchId}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, useBatchId: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid">
                             <option value="">Select batch...</option>
                             {useLocBatches.map(b => (
                               <option key={b.id} value={b.id}>
@@ -7331,11 +7350,11 @@ Medicana Stock Management System`;
                           <div className="flex gap-2">
                             <input type="number" inputMode="numeric" value={barcodeNewMedForm.useQuantity}
                               onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, useQuantity: e.target.value, error: '' }))}
-                              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                               min="1" placeholder="Enter quantity" />
                             <select value={barcodeNewMedForm.useQuantityType}
                               onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, useQuantityType: e.target.value, useQuantity: '' }))}
-                              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid">
                               <option value="boxes">Boxes</option>
                               <option value="individual">Individual</option>
                             </select>
@@ -7347,7 +7366,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Patient First Name *</label>
                           <input type="text" value={barcodeNewMedForm.patientFirstName}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, patientFirstName: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                             placeholder="Enter patient's first name" />
                         </div>
 
@@ -7355,7 +7374,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Patient Last Name *</label>
                           <input type="text" value={barcodeNewMedForm.patientLastName}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, patientLastName: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                             placeholder="Enter patient's last name" />
                         </div>
 
@@ -7363,7 +7382,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Local Patient Source No. *</label>
                           <input type="text" value={barcodeNewMedForm.patientLocalId}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, patientLocalId: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                             placeholder="Enter patient's local ID number" />
                         </div>
 
@@ -7388,7 +7407,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Additional Notes (optional)</label>
                           <input type="text" value={barcodeNewMedForm.useNotes}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, useNotes: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                             placeholder="e.g., procedure, ward, special instructions" />
                         </div>
                       </div>
@@ -7414,7 +7433,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">From Location *</label>
                           <select value={barcodeNewMedForm.transferSourceLocation}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferSourceLocation: e.target.value, transferBatchId: '', error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid">
                             <option value="">Select source location...</option>
                             {scannedMedInv.filter(m => m.batches && m.batches.length > 0).map(m => (
                               <option key={m.locationId} value={m.locationId}>{m.location}</option>
@@ -7427,7 +7446,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Batch *</label>
                           <select value={barcodeNewMedForm.transferBatchId}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferBatchId: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid">
                             <option value="">Select batch...</option>
                             {sourceLocBatches.map(b => (
                               <option key={b.id} value={b.id}>
@@ -7442,7 +7461,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">To Location *</label>
                           <select value={barcodeNewMedForm.transferTargetLocation}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferTargetLocation: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid">
                             <option value="">Select destination...</option>
                             {(() => {
                               const grouped = {};
@@ -7478,11 +7497,11 @@ Medicana Stock Management System`;
                           <div className="flex gap-2">
                             <input type="number" inputMode="numeric" value={barcodeNewMedForm.transferQuantity}
                               onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferQuantity: e.target.value, error: '' }))}
-                              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                               min="1" placeholder="Enter quantity" />
                             <select value={barcodeNewMedForm.transferQuantityType}
                               onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferQuantityType: e.target.value, transferQuantity: '' }))}
-                              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid">
                               <option value="boxes">Boxes</option>
                               <option value="individual">Individual</option>
                             </select>
@@ -7495,11 +7514,11 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-2">Use Type *</label>
                           <div className="flex gap-4">
                             <div onClick={() => setBarcodeNewMedForm(prev => ({ ...prev, useMode: 'hospital', transferUseQuantityType: 'individual', transferUseQuantity: '', error: '' }))}
-                              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border-2 cursor-pointer transition-colors ${barcodeNewMedForm.useMode === 'hospital' ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'}`}>
+                              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border-2 cursor-pointer transition-colors ${barcodeNewMedForm.useMode === 'hospital' ? 'border-brand-mid bg-brand-pale text-brand-dark' : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'}`}>
                               <span className="text-sm font-medium">Hospital Use</span>
                             </div>
                             <div onClick={() => setBarcodeNewMedForm(prev => ({ ...prev, useMode: 'tto', transferUseQuantityType: 'boxes', transferUseQuantity: '', useReason: 'tto', error: '' }))}
-                              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border-2 cursor-pointer transition-colors ${barcodeNewMedForm.useMode === 'tto' ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'}`}>
+                              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border-2 cursor-pointer transition-colors ${barcodeNewMedForm.useMode === 'tto' ? 'border-brand-mid bg-brand-pale text-brand-dark' : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'}`}>
                               <span className="text-sm font-medium">TTO</span>
                             </div>
                           </div>
@@ -7510,11 +7529,11 @@ Medicana Stock Management System`;
                           <div className="flex gap-2">
                             <input type="number" inputMode="numeric" value={barcodeNewMedForm.transferUseQuantity}
                               onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferUseQuantity: e.target.value, error: '' }))}
-                              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                               min="1" placeholder="Amount to use for patient" />
                             <select value={barcodeNewMedForm.transferUseQuantityType}
                               onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferUseQuantityType: e.target.value, transferUseQuantity: '' }))}
-                              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid">
                               <option value="boxes">Boxes</option>
                               <option value="individual">Individual</option>
                             </select>
@@ -7526,7 +7545,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Patient First Name *</label>
                           <input type="text" value={barcodeNewMedForm.patientFirstName}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, patientFirstName: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                             placeholder="Enter patient's first name" />
                         </div>
 
@@ -7534,7 +7553,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Patient Last Name *</label>
                           <input type="text" value={barcodeNewMedForm.patientLastName}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, patientLastName: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                             placeholder="Enter patient's last name" />
                         </div>
 
@@ -7542,7 +7561,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Local Patient Source No. *</label>
                           <input type="text" value={barcodeNewMedForm.patientLocalId}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, patientLocalId: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                             placeholder="Enter patient's local ID number" />
                         </div>
 
@@ -7567,7 +7586,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Additional Notes (optional)</label>
                           <input type="text" value={barcodeNewMedForm.useNotes}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, useNotes: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                             placeholder="e.g., procedure, ward, special instructions" />
                         </div>
                       </div>
@@ -7586,7 +7605,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Quantity (boxes) *</label>
                           <input type="number" inputMode="numeric" value={barcodeNewMedForm.orderQuantity}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, orderQuantity: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                             min="1" placeholder="Enter number of boxes to order" />
                         </div>
 
@@ -7613,7 +7632,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
                           <textarea value={barcodeNewMedForm.orderNotes}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, orderNotes: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                             rows="2" placeholder="Additional order notes" />
                         </div>
 
@@ -7621,7 +7640,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Pharmacist Email</label>
                           <input type="email" value={barcodeNewMedForm.orderPharmacistEmail}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, orderPharmacistEmail: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid" />
                         </div>
                       </div>
                     )}
@@ -7637,7 +7656,7 @@ Medicana Stock Management System`;
                         className={`flex-1 py-3 rounded-lg transition-colors font-medium text-sm sm:text-base ${
                           barcodeNewMedForm.isSubmitting
                             ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
-                            : 'bg-cyan-500 text-white hover:bg-cyan-600'
+                            : 'bg-brand-mid text-white hover:bg-brand-dark'
                         }`}
                       >
                         {barcodeNewMedForm.isSubmitting
@@ -7728,7 +7747,7 @@ Medicana Stock Management System`;
                         
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
-                          <input type="text" value={addMedForm.barcode} onChange={(e) => setAddMedForm(prev => ({ ...prev, barcode: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="e.g. 123456789012" />
+                          <input type="text" value={addMedForm.barcode} onChange={(e) => setAddMedForm(prev => ({ ...prev, barcode: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="e.g. 123456789012" />
                         </div>
                         
                         <div>
@@ -7742,7 +7761,7 @@ Medicana Stock Management System`;
                               }
                             }}
                             readOnly={addMedForm.mode === 'existing'}
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${addMedForm.mode === 'existing' ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${addMedForm.mode === 'existing' ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             placeholder="e.g., Paracetamol"
                           />
                         </div>
@@ -7793,7 +7812,7 @@ Medicana Stock Management System`;
                                 }
                               }}
                               readOnly={addMedForm.mode === 'existing'}
-                              className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${addMedForm.mode === 'existing' ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                              className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${addMedForm.mode === 'existing' ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                               placeholder="e.g., 500mg"
                             />
                           )}
@@ -7809,7 +7828,7 @@ Medicana Stock Management System`;
                               }
                             }}
                             disabled={addMedForm.mode === 'existing'}
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${addMedForm.mode === 'existing' ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${addMedForm.mode === 'existing' ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                           >
                             <option value="tablet">Tablet</option>
                             <option value="capsule">Capsule</option>
@@ -7840,7 +7859,7 @@ Medicana Stock Management System`;
                               }
                             }}
                             readOnly={addMedForm.batchLocked}
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             placeholder="e.g., Generic"
                           />
                         </div>
@@ -7850,7 +7869,7 @@ Medicana Stock Management System`;
                           <select
                             value={addMedForm.location}
                             onChange={(e) => setAddMedForm(prev => ({ ...prev, location: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                           >
                             <option value="">Select location</option>
                             {locations.filter(loc => loc.displayName !== 'All' && loc.displayName !== 'Medication Stock L1').map(loc => (
@@ -7870,7 +7889,7 @@ Medicana Stock Management System`;
                                 }
                               }}
                               disabled={addMedForm.batchLocked}
-                              className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                              className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             >
                               <option value="">Month</option>
                               <option value="01">January</option>
@@ -7895,7 +7914,7 @@ Medicana Stock Management System`;
                                 }
                               }}
                               disabled={addMedForm.batchLocked}
-                              className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                              className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${addMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                               placeholder="YYYY"
                               min={new Date().getFullYear()}
                               max={new Date().getFullYear() + 20}
@@ -7920,7 +7939,7 @@ Medicana Stock Management System`;
                               }
                             }}
                             disabled={!!addMedForm.existingBatchId}
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${addMedForm.existingBatchId ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${addMedForm.existingBatchId ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             placeholder="e.g., BN123456"
                           />
                           {addMedForm.batchExists && (
@@ -7936,7 +7955,7 @@ Medicana Stock Management System`;
                             type="number"
                             value={addMedForm.boxQuantity}
                             onChange={(e) => setAddMedForm(prev => ({ ...prev, boxQuantity: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                             min="0"
                             placeholder="0"
                           />
@@ -7948,7 +7967,7 @@ Medicana Stock Management System`;
                             type="number"
                             value={addMedForm.itemsPerBox}
                             onChange={(e) => setAddMedForm(prev => ({ ...prev, itemsPerBox: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                             min="1"
                             placeholder="e.g., 100"
                           />
@@ -7960,7 +7979,7 @@ Medicana Stock Management System`;
                             type="number"
                             value={addMedForm.individualQuantity}
                             onChange={(e) => setAddMedForm(prev => ({ ...prev, individualQuantity: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                             min="0"
                             placeholder="0"
                           />
@@ -8004,7 +8023,7 @@ Medicana Stock Management System`;
                               type="number"
                               value={addMedForm.minLevelBoxes}
                               onChange={(e) => setAddMedForm(prev => ({ ...prev, minLevelBoxes: e.target.value, error: '' }))}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                               min="0"
                               placeholder="e.g., 2"
                             />
@@ -8013,7 +8032,7 @@ Medicana Stock Management System`;
                               type="number"
                               value={addMedForm.minLevel}
                               onChange={(e) => setAddMedForm(prev => ({ ...prev, minLevel: e.target.value, error: '' }))}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
                               min="0"
                               placeholder="e.g., 200"
                             />
@@ -8029,7 +8048,7 @@ Medicana Stock Management System`;
                       className={`sm:px-6 py-2 rounded-lg transition-colors font-medium text-sm ${
                         addMedForm.isSubmitting 
                           ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
-                          : 'bg-cyan-500 text-white hover:bg-cyan-600'
+                          : 'bg-brand-mid text-white hover:bg-brand-dark'
                       }`}
                     >
                       {addMedForm.isSubmitting ? 'Adding Medication...' : 'Add New Medication'}
@@ -8112,7 +8131,7 @@ Medicana Stock Management System`;
                                     setModals(prev => ({ ...prev, showLowStockAlert: false }));
                                     setUi(prev => ({ ...prev, activeTab: 'lowstock' }));
                                   }}
-                                  className="px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition-colors text-sm font-medium"
+                                  className="px-4 py-2 bg-brand-mid text-white rounded-lg hover:bg-brand-dark transition-colors text-sm font-medium"
                                 >
                                   View Details
                                 </button>
@@ -8156,7 +8175,7 @@ Medicana Stock Management System`;
                       </button>
                       <button
                         onClick={() => setModals(prev => ({ ...prev, showLowStockAlert: false }))}
-                        className="px-6 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition-colors font-medium"
+                        className="px-6 py-2 bg-brand-mid text-white rounded-lg hover:bg-brand-dark transition-colors font-medium"
                       >
                         Dismiss
                       </button>
@@ -8248,11 +8267,11 @@ Medicana Stock Management System`;
                   </div>
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Min stock (boxes) <span className="text-red-600">*</span></label>
-                    <input type="number" value={editMinLevel.boxes} onChange={(e) => setEditMinLevel(prev => ({ ...prev, boxes: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Enter number of boxes" min="0" />
+                    <input type="number" value={editMinLevel.boxes} onChange={(e) => setEditMinLevel(prev => ({ ...prev, boxes: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="Enter number of boxes" min="0" />
                   </div>
                   <p className="text-xs text-gray-500 mb-4">This will trigger alerts when stock falls below this level.</p>
                   <div className="flex gap-2">
-                    <button onClick={handleUpdateMinLevel} className="flex-1 bg-cyan-500 text-white py-2 rounded-lg hover:bg-cyan-600 transition-colors font-medium">Update</button>
+                    <button onClick={handleUpdateMinLevel} className="flex-1 bg-brand-mid text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium">Update</button>
                     <button onClick={() => setEditMinLevel({ editing: null, newLevel: '', type: 'boxes', boxes: '', error: '' })} className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors font-medium">Cancel</button>
                   </div>
                 </div>
@@ -8272,7 +8291,7 @@ Medicana Stock Management System`;
                     </div>
                     <div className="mb-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Order Quantity <span className="text-red-600">*</span></label>
-                      <input type="number" value={orderForm.quantity} onChange={(e) => setOrderForm(prev => ({ ...prev, quantity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder={`Enter quantity in ${orderForm.med.unit}`} min="1" />
+                      <input type="number" value={orderForm.quantity} onChange={(e) => setOrderForm(prev => ({ ...prev, quantity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder={`Enter quantity in ${orderForm.med.unit}`} min="1" />
                     </div>
                     <div className="mb-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Urgency</label>
@@ -8307,14 +8326,14 @@ Medicana Stock Management System`;
                     </div>
                     <div className="mb-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Additional Notes (optional)</label>
-                      <textarea value={orderForm.notes} onChange={(e) => setOrderForm(prev => ({ ...prev, notes: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Any additional information..." rows="3" />
+                      <textarea value={orderForm.notes} onChange={(e) => setOrderForm(prev => ({ ...prev, notes: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="Any additional information..." rows="3" />
                     </div>
                     <div className="mb-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Pharmacist Email <span className="text-red-600">*</span></label>
-                      <input type="email" value={orderForm.pharmacistEmail} onChange={(e) => setOrderForm(prev => ({ ...prev, pharmacistEmail: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="pharmacist@example.com" />
+                      <input type="email" value={orderForm.pharmacistEmail} onChange={(e) => setOrderForm(prev => ({ ...prev, pharmacistEmail: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="pharmacist@example.com" />
                     </div>
                     {orderForm.quantity && parseInt(orderForm.quantity) > 0 && (
-                      <div className="mb-4 p-4 bg-slate-50 border border-slate-300 rounded-lg">
+                      <div className="mb-4 p-4 bg-off-white border border-slate-300 rounded-lg">
                         <h3 className="text-sm font-bold text-gray-800 mb-3">Email Preview</h3>
                         <div className="space-y-2 text-sm">
                           <div><span className="font-semibold text-gray-700">To:</span> <span className="text-gray-900">{orderForm.pharmacistEmail}</span></div>
@@ -8328,8 +8347,8 @@ Medicana Stock Management System`;
                   </div>
                   <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0">
                     <div className="flex gap-2">
-                      <button onClick={handleOpenOutlook} className="flex-1 bg-cyan-500 text-white py-2 rounded-lg hover:bg-cyan-600 transition-colors font-medium">Open in Outlook</button>
-                      <button onClick={handleCopyToClipboard} className="flex-1 bg-slate-800 text-white py-2 rounded-lg hover:bg-slate-700 transition-colors font-medium">Copy to Clipboard</button>
+                      <button onClick={handleOpenOutlook} className="flex-1 bg-brand-mid text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium">Open in Outlook</button>
+                      <button onClick={handleCopyToClipboard} className="flex-1 bg-near-black text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium">Copy to Clipboard</button>
                       <button onClick={() => setOrderForm({ med: null, quantity: '', urgency: 'routine', notes: '', pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk' })} className="px-6 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors font-medium">Cancel</button>
                     </div>
                   </div>
@@ -8346,9 +8365,9 @@ Medicana Stock Management System`;
                     <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded"><p className="text-sm text-amber-800">This will generate an email report for {lowStockMedications.length} medication{lowStockMedications.length !== 1 ? 's' : ''} below minimum stock level.</p></div>
                     <div className="mb-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Pharmacist Email <span className="text-red-600">*</span></label>
-                      <input type="email" value={orderForm.pharmacistEmail} onChange={(e) => setOrderForm(prev => ({ ...prev, pharmacistEmail: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="pharmacist@example.com" />
+                      <input type="email" value={orderForm.pharmacistEmail} onChange={(e) => setOrderForm(prev => ({ ...prev, pharmacistEmail: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="pharmacist@example.com" />
                     </div>
-                    <div className="mb-4 p-4 bg-slate-50 border border-slate-300 rounded-lg">
+                    <div className="mb-4 p-4 bg-off-white border border-slate-300 rounded-lg">
                       <h3 className="text-sm font-bold text-gray-800 mb-3">Email Preview</h3>
                       <div className="space-y-2 text-sm">
                         <div><span className="font-semibold text-gray-700">To:</span> <span className="text-gray-900">{orderForm.pharmacistEmail}</span></div>
@@ -8361,8 +8380,8 @@ Medicana Stock Management System`;
                   </div>
                   <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0">
                     <div className="flex gap-2">
-                      <button onClick={handleOpenOutlookLowStock} className="flex-1 bg-cyan-500 text-white py-2 rounded-lg hover:bg-cyan-600 transition-colors font-medium">Open in Outlook</button>
-                      <button onClick={handleCopyLowStockReport} className="flex-1 bg-slate-800 text-white py-2 rounded-lg hover:bg-slate-700 transition-colors font-medium">Copy to Clipboard</button>
+                      <button onClick={handleOpenOutlookLowStock} className="flex-1 bg-brand-mid text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium">Open in Outlook</button>
+                      <button onClick={handleCopyLowStockReport} className="flex-1 bg-near-black text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium">Copy to Clipboard</button>
                       <button onClick={() => setModals(prev => ({ ...prev, showLowStockReport: false }))} className="px-6 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors font-medium">Cancel</button>
                     </div>
                   </div>
@@ -8396,20 +8415,20 @@ Medicana Stock Management System`;
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showIntelligenceReport: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
                   <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full flex flex-col" style={{maxHeight: '90vh'}}>
                     {/* Header */}
-                    <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0 bg-gradient-to-r from-cyan-600 to-blue-600">
+                    <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0 bg-gradient-to-r from-brand-mid to-brand-dark">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center">
                           <BarChart className="w-6 h-6 text-white mr-3" />
                           <div>
                             <h2 className="text-xl font-bold text-white">Stock Intelligence Report</h2>
-                            <p className="text-sm text-cyan-100">Usage analytics and smart stock recommendations</p>
+                            <p className="text-sm text-brand-pale">Usage analytics and smart stock recommendations</p>
                           </div>
                         </div>
-                        <button onClick={() => setModals(prev => ({ ...prev, showIntelligenceReport: false }))} className="text-white hover:text-cyan-200 text-2xl">&times;</button>
+                        <button onClick={() => setModals(prev => ({ ...prev, showIntelligenceReport: false }))} className="text-white hover:text-brand-light text-2xl">&times;</button>
                       </div>
                       {/* Location selector within modal */}
                       <div className="mt-3 flex items-center gap-3">
-                        <label className="text-sm text-cyan-100 font-medium">Location:</label>
+                        <label className="text-sm text-brand-pale font-medium">Location:</label>
                         <select
                           value={(() => {
                             // Find location ID matching current app location
@@ -8421,7 +8440,7 @@ Medicana Stock Management System`;
                             const locId = e.target.value ? parseInt(e.target.value) : null;
                             fetchIntelligenceReport(locId);
                           }}
-                          className="px-3 py-1.5 rounded text-sm bg-white text-gray-900 border-0 focus:ring-2 focus:ring-cyan-300"
+                          className="px-3 py-1.5 rounded text-sm bg-white text-gray-900 border-0 focus:ring-2 focus:ring-brand-light"
                         >
                           <option value="">All Locations</option>
                           {locations.map(loc => (
@@ -8436,7 +8455,7 @@ Medicana Stock Management System`;
                       {isLoading && (
                         <div className="flex items-center justify-center py-16">
                           <div className="text-center">
-                            <div className="inline-block w-8 h-8 border-4 border-cyan-200 border-t-cyan-600 rounded-full animate-spin mb-4"></div>
+                            <div className="inline-block w-8 h-8 border-4 border-brand-light border-t-brand-mid rounded-full animate-spin mb-4"></div>
                             <p className="text-gray-600">Generating intelligence report...</p>
                           </div>
                         </div>
@@ -8461,7 +8480,7 @@ Medicana Stock Management System`;
                             maturity.color === 'blue' ? 'bg-blue-50 border-blue-300' :
                             maturity.color === 'amber' ? 'bg-amber-50 border-amber-300' :
                             maturity.color === 'green' ? 'bg-green-50 border-green-300' :
-                            'bg-cyan-50 border-cyan-300'
+                            'bg-brand-pale border-brand-light'
                           }`}>
                             <div className="flex items-center gap-3">
                               <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
@@ -8469,7 +8488,7 @@ Medicana Stock Management System`;
                                 maturity.color === 'blue' ? 'bg-blue-200 text-blue-800' :
                                 maturity.color === 'amber' ? 'bg-amber-200 text-amber-800' :
                                 maturity.color === 'green' ? 'bg-green-200 text-green-800' :
-                                'bg-cyan-200 text-cyan-800'
+                                'bg-brand-light text-brand-deepest'
                               }`}>{maturity.label}</span>
                               <span className="text-sm text-gray-700">{maturity.desc}</span>
                             </div>
@@ -8505,7 +8524,7 @@ Medicana Stock Management System`;
                                     className={`px-3 py-1 rounded text-xs font-medium ${
                                       report.goLiveDate
                                         ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                        : 'bg-cyan-600 text-white hover:bg-cyan-700'
+                                        : 'bg-brand-mid text-white hover:bg-brand-dark'
                                     }`}
                                   >
                                     {report.goLiveDate ? 'Change Date' : 'Set Go-Live Date'}
@@ -8517,8 +8536,8 @@ Medicana Stock Management System`;
 
                           {/* Executive Summary */}
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-                            <div className="bg-white p-4 rounded-lg border-2 border-cyan-200 shadow-sm">
-                              <div className="text-2xl font-bold text-cyan-600">{allMeds.length}</div>
+                            <div className="bg-white p-4 rounded-lg border-2 border-brand-light shadow-sm">
+                              <div className="text-2xl font-bold text-brand-mid">{allMeds.length}</div>
                               <div className="text-sm text-gray-600">Medications Tracked</div>
                             </div>
                             <div className="bg-white p-4 rounded-lg border-2 border-red-200 shadow-sm">
@@ -8609,9 +8628,9 @@ Medicana Stock Management System`;
                                       )}
 
                                       {/* Recommendation */}
-                                      <div className="bg-gradient-to-r from-cyan-50 to-blue-50 p-3 rounded border border-cyan-200">
+                                      <div className="bg-gradient-to-r from-brand-pale to-brand-pale p-3 rounded border border-brand-light">
                                         <div className="flex items-start">
-                                          <TrendingUp className="w-5 h-5 text-cyan-600 mr-2 mt-0.5 flex-shrink-0" />
+                                          <TrendingUp className="w-5 h-5 text-brand-mid mr-2 mt-0.5 flex-shrink-0" />
                                           <div className="flex-1">
                                             <div className="flex items-center gap-2 mb-1">
                                               <span className="font-semibold text-gray-900">Recommendation</span>
@@ -8635,7 +8654,7 @@ Medicana Stock Management System`;
                                             <div className="text-sm text-gray-700 mb-2">{med.recommendation.reason}</div>
                                             {med.recommendation.action !== 'maintain' && med.recommendation.action !== 'collecting_data' && med.recommendation.action !== 'not_configured' && med.recommendation.suggestedMinLevel !== med.currentMinLevel && (
                                               <div className="flex items-center gap-3">
-                                                <span className="text-sm font-semibold text-cyan-800">
+                                                <span className="text-sm font-semibold text-brand-deepest">
                                                   Suggested: {med.recommendation.suggestedMinLevel} {med.recommendation.suggestedMinLevel === 1 ? 'box' : 'boxes'}
                                                 </span>
                                                 <button
@@ -8647,7 +8666,7 @@ Medicana Stock Management System`;
                                                     med.currentMinLevel,
                                                     med.locationName
                                                   )}
-                                                  className="px-3 py-1 bg-cyan-600 text-white text-xs font-medium rounded hover:bg-cyan-700 transition-colors"
+                                                  className="px-3 py-1 bg-brand-mid text-white text-xs font-medium rounded hover:bg-brand-dark transition-colors"
                                                 >
                                                   Apply Recommendation
                                                 </button>
@@ -8839,7 +8858,7 @@ Medicana Stock Management System`;
                                 `  ${m.medicationName} @ ${m.locationName}: ${m.recommendation.reason} (suggest ${m.recommendation.suggestedMinLevel} boxes)`
                               ).join('\n')}` : '');
                             navigator.clipboard.writeText(reportText).then(() => alert('Report copied to clipboard!'));
-                          }} className="flex-1 bg-slate-800 text-white py-2 rounded-lg hover:bg-slate-700 transition-colors font-medium">
+                          }} className="flex-1 bg-near-black text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium">
                             Copy Summary
                           </button>
                         )}
@@ -8898,10 +8917,10 @@ Medicana Stock Management System`;
                     
                     <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0">
                       <div className="flex gap-2">
-                        <button onClick={handleOpenOutlookNewMedication} className="flex-1 bg-cyan-500 text-white py-2 rounded-lg hover:bg-cyan-600 transition-colors font-medium">
+                        <button onClick={handleOpenOutlookNewMedication} className="flex-1 bg-brand-mid text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium">
                           Open in Outlook
                         </button>
-                        <button onClick={handleCopyNewMedicationOrder} className="flex-1 bg-slate-800 text-white py-2 rounded-lg hover:bg-slate-700 transition-colors font-medium">
+                        <button onClick={handleCopyNewMedicationOrder} className="flex-1 bg-near-black text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium">
                           Copy to Clipboard
                         </button>
                         <button onClick={() => setModals(prev => ({ ...prev, showNewMedicationOrder: false }))} className="px-6 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors font-medium">
@@ -8998,7 +9017,7 @@ Medicana Stock Management System`;
                                       m.location === location.displayName
                                     );
                                     return (
-                                      <option key={location.id} value={location.id} style={medAtLocation ? { color: '#059669', fontWeight: '600' } : {}}>
+                                      <option key={location.id} value={location.id} style={medAtLocation ? { color: '#0F6E56', fontWeight: '600' } : {}}>
                                         {location.displayName}{medAtLocation ? ' ✓' : ''}
                                       </option>
                                     );
@@ -9017,7 +9036,7 @@ Medicana Stock Management System`;
                                 m.location === location.displayName
                               );
                               elements.push(
-                                <option key={location.id} value={location.id} style={medAtLocation ? { color: '#059669', fontWeight: '600' } : {}}>
+                                <option key={location.id} value={location.id} style={medAtLocation ? { color: '#0F6E56', fontWeight: '600' } : {}}>
                                   {location.displayName}{medAtLocation ? ' ✓' : ''}
                                 </option>
                               );
@@ -9334,19 +9353,19 @@ Medicana Stock Management System`;
                   {changePasswordForm.error && (<div className="mb-4 p-3 bg-red-50 border border-red-300 rounded text-sm text-red-700">{changePasswordForm.error}</div>)}
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Current Password <span className="text-red-600">*</span></label>
-                    <input type="password" value={changePasswordForm.currentPassword} onChange={(e) => setChangePasswordForm(prev => ({ ...prev, currentPassword: e.target.value, error: '' }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Enter current password" />
+                    <input type="password" value={changePasswordForm.currentPassword} onChange={(e) => setChangePasswordForm(prev => ({ ...prev, currentPassword: e.target.value, error: '' }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="Enter current password" />
                   </div>
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">New Password <span className="text-red-600">*</span></label>
-                    <input type="password" value={changePasswordForm.newPassword} onChange={(e) => setChangePasswordForm(prev => ({ ...prev, newPassword: e.target.value, error: '' }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Enter new password" />
+                    <input type="password" value={changePasswordForm.newPassword} onChange={(e) => setChangePasswordForm(prev => ({ ...prev, newPassword: e.target.value, error: '' }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="Enter new password" />
                     <p className="text-xs text-gray-500 mt-1">Password must be at least 8 characters long</p>
                   </div>
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Confirm New Password <span className="text-red-600">*</span></label>
-                    <input type="password" value={changePasswordForm.confirmPassword} onChange={(e) => setChangePasswordForm(prev => ({ ...prev, confirmPassword: e.target.value, error: '' }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent" placeholder="Confirm new password" />
+                    <input type="password" value={changePasswordForm.confirmPassword} onChange={(e) => setChangePasswordForm(prev => ({ ...prev, confirmPassword: e.target.value, error: '' }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="Confirm new password" />
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={handleChangePassword} className="flex-1 bg-cyan-500 text-white py-2 rounded-lg hover:bg-cyan-600 transition-colors font-medium">Change Password</button>
+                    <button onClick={handleChangePassword} className="flex-1 bg-brand-mid text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium">Change Password</button>
                     <button onClick={() => { setModals(prev => ({ ...prev, showChangePassword: false })); setChangePasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '', error: '' }); }} className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors font-medium">Cancel</button>
                   </div>
                 </div>
@@ -9377,7 +9396,7 @@ Medicana Stock Management System`;
                     <div className="flex gap-3">
                       <button 
                         onClick={() => window.resetSessionActivity && window.resetSessionActivity()}
-                        className="flex-1 bg-cyan-500 text-white py-3 px-4 rounded-lg hover:bg-cyan-600 transition-colors font-medium text-lg"
+                        className="flex-1 bg-brand-mid text-white py-3 px-4 rounded-lg hover:bg-brand-dark transition-colors font-medium text-lg"
                       >
                         Stay Logged In
                       </button>
@@ -9481,7 +9500,7 @@ Medicana Stock Management System`;
                       {!cameraScanner.isScanning && !cameraScanner.error && (
                         <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-50 rounded-lg">
                           <div className="text-white text-center">
-                            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 border-t-cyan-500 mb-3"></div>
+                            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 border-t-brand-mid mb-3"></div>
                             <p className="text-sm font-medium">Starting camera...</p>
                           </div>
                         </div>
