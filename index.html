@@ -6262,6 +6262,10 @@ Medicana Stock Management System`;
                             onChange={(e) => {
                               if (!barcodeNewMedForm.medicationLocked) {
                                 setBarcodeNewMedForm(prev => ({ ...prev, type: e.target.value, error: '' }));
+                                setTimeout(() => {
+                                  const nextEl = document.getElementById('barcodeNewMed-itemsPerBox');
+                                  if (nextEl && !nextEl.readOnly) nextEl.focus();
+                                }, 50);
                               }
                             }}
                             disabled={barcodeNewMedForm.medicationLocked}
@@ -6369,6 +6373,12 @@ Medicana Stock Management System`;
                               onChange={(e) => {
                                 if (!barcodeNewMedForm.batchLocked) {
                                   setBarcodeNewMedForm(prev => ({ ...prev, expiryMonth: e.target.value, error: '' }));
+                                  if (e.target.value) {
+                                    setTimeout(() => {
+                                      const yearEl = document.getElementById('barcodeNewMed-expiryYear');
+                                      if (yearEl && !yearEl.disabled) yearEl.focus();
+                                    }, 50);
+                                  }
                                 }
                               }}
                               disabled={barcodeNewMedForm.batchLocked}
