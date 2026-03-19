@@ -661,6 +661,7 @@
           medicationLocked: false, // When true, medication name/strength/type/itemsPerBox are locked (from barcode lookup)
           location: '',
           error: '',
+          successMessage: '',
           isSubmitting: false
         });
 
@@ -1713,6 +1714,7 @@
           medicationLocked: false,
           location: '',
           error: '',
+          successMessage: '',
           isSubmitting: false
         });
       };
@@ -2693,7 +2695,9 @@ Medicana Stock Management System`;
           setTransactions(data.transactions || []);
           setLocations(data.locations || []);
 
-          // Reset form and close modal
+          // Continuous add: reset form but keep modal open for next scan
+          const successMsg = `Added ${barcodeNewMedForm.boxQuantity} ${parseInt(barcodeNewMedForm.boxQuantity) === 1 ? 'box' : 'boxes'} of ${barcodeNewMedForm.name}${barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''}`;
+          const persistedLocation = barcodeNewMedForm.location;
           setBarcodeNewMedForm({
             barcode: '',
             medicationId: null,
@@ -2712,16 +2716,19 @@ Medicana Stock Management System`;
             minLevelBoxes: '',
             brand: '',
             batchNumber: '',
+            serial: '',
             existingBatchId: null,
             existingBatches: [],
+            enteringNewBatch: false,
             batchLocked: false,
             batchExists: false,
             medicationLocked: false,
-            location: '',
+            location: persistedLocation,
             error: '',
+            successMessage: successMsg,
             isSubmitting: false
           });
-          setModals(prev => ({ ...prev, showBarcodeNewMedication: false }));
+          setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100);
         } catch (err) {
           console.error('Failed to add medication/batch via barcode:', err);
           setBarcodeNewMedForm(prev => ({ ...prev, error: err.message || 'Failed to add medication', isSubmitting: false }));
@@ -6100,6 +6107,11 @@ Medicana Stock Management System`;
                   </div>
                   <form onSubmit={(e) => { e.preventDefault(); handleBarcodeNewMedication(); }} className="flex flex-col flex-1 overflow-hidden">
                   <div className="overflow-y-auto px-4 sm:px-6 py-3 sm:py-4 flex-1">
+                    {barcodeNewMedForm.successMessage && (
+                      <div className="mb-4 p-3 bg-green-50 border border-green-300 rounded text-sm text-green-700">
+                        {barcodeNewMedForm.successMessage}
+                      </div>
+                    )}
                     {barcodeNewMedForm.error && (
                       <div className="mb-4 p-3 bg-red-50 border border-red-300 rounded text-sm text-red-700">
                         {barcodeNewMedForm.error}
@@ -6116,7 +6128,7 @@ Medicana Stock Management System`;
                           value={barcodeNewMedForm.barcode}
                           onChange={(e) => {
                             const barcode = e.target.value;
-                            setBarcodeNewMedForm(prev => ({ ...prev, barcode, error: '' }));
+                            setBarcodeNewMedForm(prev => ({ ...prev, barcode, error: '', successMessage: '' }));
                             if (barcodeLookupTimeoutRef.current) {
                               clearTimeout(barcodeLookupTimeoutRef.current);
                               barcodeLookupTimeoutRef.current = null;
@@ -6551,7 +6563,7 @@ Medicana Stock Management System`;
                           resetBarcodeNewMedForm();
                           setModals(prev => ({ ...prev, showBarcodeNewMedication: false }));
                         }}
-                        className="px-4 sm:px-6 bg-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-400 transition-colors font-medium text-sm">Cancel</button>
+                        className="px-4 sm:px-6 bg-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-400 transition-colors font-medium text-sm">{barcodeNewMedForm.successMessage ? 'Done' : 'Cancel'}</button>
                     </div>
                   </div>
                   </form>
