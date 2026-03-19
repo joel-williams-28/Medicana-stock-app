@@ -1611,6 +1611,26 @@
         }
       };
 
+      // Field order for Enter-key navigation in the barcode new medication modal
+      const BARCODE_NEW_MED_FIELD_ORDER = [
+        'barcodeNewMed-name', 'barcodeNewMed-strength', 'barcodeNewMed-type',
+        'barcodeNewMed-itemsPerBox', 'barcodeNewMed-batchNumber',
+        'barcodeNewMed-expiryMonth', 'barcodeNewMed-expiryYear',
+        'barcodeNewMed-brand', 'barcodeNewMed-boxQuantity', 'barcodeNewMed-location'
+      ];
+
+      const focusNextBarcodeField = (currentId) => {
+        const idx = BARCODE_NEW_MED_FIELD_ORDER.indexOf(currentId);
+        if (idx === -1) return;
+        for (let i = idx + 1; i < BARCODE_NEW_MED_FIELD_ORDER.length; i++) {
+          const el = document.getElementById(BARCODE_NEW_MED_FIELD_ORDER[i]);
+          if (el && !el.disabled && !el.readOnly) {
+            el.focus();
+            return;
+          }
+        }
+      };
+
       // Reset barcode new medication form to initial state
       const resetBarcodeNewMedForm = () => {
         setBarcodeNewMedForm({
@@ -3721,16 +3741,15 @@ Medicana Stock Management System`;
                             <>
                               <button
                                 onClick={() => {
-                                  if (ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') {
-                                    alert('Please select a specific location (Cupboard 1, 2, or 3) from the dropdown above before adding stock.');
-                                  } else {
-                                    // Open barcode modal first, then immediately start camera
-                                    setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
-                                    // Start camera after a small delay to ensure modal is rendered
-                                    setTimeout(() => {
-                                      startCameraScanner();
-                                    }, 200);
-                                  }
+                                  // Pre-fill location if a specific one is selected, otherwise leave blank for user to choose
+                                  const prefillLocation = (ui.currentLocation !== 'All' && !isGroupName(ui.currentLocation, locations)) ? ui.currentLocation : '';
+                                  setBarcodeNewMedForm(prev => ({ ...prev, location: prefillLocation }));
+                                  // Open barcode modal first, then immediately start camera
+                                  setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
+                                  // Start camera after a small delay to ensure modal is rendered
+                                  setTimeout(() => {
+                                    startCameraScanner();
+                                  }, 200);
                                 }}
                                 className="bg-green-500 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-green-600 transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2"
                                 title="Scan barcode with camera"
@@ -3739,7 +3758,7 @@ Medicana Stock Management System`;
                                 <span className="hidden sm:inline">Scan Barcode</span>
                                 <span className="sm:hidden">Scan</span>
                               </button>
-                              <button onClick={() => { if (ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') { alert('Please select a specific location (Cupboard 1, 2, or 3) from the dropdown above before adding stock.'); } else { setModals(prev => ({ ...prev, showAddMedication: true })); } }} className="bg-cyan-500 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-cyan-600 transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2">
+                              <button onClick={() => { setModals(prev => ({ ...prev, showAddMedication: true })); }} className="bg-cyan-500 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-cyan-600 transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2">
                                 <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
                                 <span className="hidden sm:inline">Add New Stock</span>
                                 <span className="sm:hidden">Add</span>
@@ -6060,6 +6079,8 @@ Medicana Stock Management System`;
                               if (barcode) {
                                 handleBarcodeLookup(barcode);
                               }
+                              // Advance to name field
+                              setTimeout(() => { const el = document.getElementById('barcodeNewMed-name'); if (el && !el.readOnly) el.focus(); }, 50);
                             }
                           }}
                           onBlur={(e) => {
@@ -6091,22 +6112,25 @@ Medicana Stock Management System`;
                       )}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                       {/* Medication Identity — what is this drug? */}
-                      <div className="space-y-4">
-                        <h3 className="text-md font-semibold text-gray-700 border-b pb-2">Medication</h3>
+                      <div className="space-y-3 sm:space-y-4">
+                        <h3 className="hidden md:block text-md font-semibold text-gray-700 border-b pb-2">Medication</h3>
 
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
                           <input
                             type="text"
+                            id="barcodeNewMed-name"
                             value={barcodeNewMedForm.name}
                             onChange={(e) => {
                               if (!barcodeNewMedForm.medicationLocked) {
                                 setBarcodeNewMedForm(prev => ({ ...prev, name: e.target.value, error: '' }));
                               }
                             }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-name'); } }}
                             readOnly={barcodeNewMedForm.medicationLocked}
+                            autoFocus={!barcodeNewMedForm.medicationLocked}
                             className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.medicationLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             placeholder="e.g., Paracetamol"
                           />
@@ -6153,12 +6177,14 @@ Medicana Stock Management System`;
                           {barcodeNewMedForm.strengthType === 'value' && (
                             <input
                               type="text"
+                              id="barcodeNewMed-strength"
                               value={barcodeNewMedForm.strength}
                               onChange={(e) => {
                                 if (!barcodeNewMedForm.medicationLocked) {
                                   setBarcodeNewMedForm(prev => ({ ...prev, strength: e.target.value, error: '' }));
                                 }
                               }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-strength'); } }}
                               readOnly={barcodeNewMedForm.medicationLocked}
                               className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.medicationLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                               placeholder="e.g., 500mg"
@@ -6169,6 +6195,7 @@ Medicana Stock Management System`;
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Form *</label>
                           <select
+                            id="barcodeNewMed-type"
                             value={barcodeNewMedForm.type}
                             onChange={(e) => {
                               if (!barcodeNewMedForm.medicationLocked) {
@@ -6188,12 +6215,15 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Items per Box *</label>
                           <input
                             type="number"
+                            id="barcodeNewMed-itemsPerBox"
+                            inputMode="numeric"
                             value={barcodeNewMedForm.itemsPerBox}
                             onChange={(e) => {
                               if (!barcodeNewMedForm.batchLocked && !barcodeNewMedForm.medicationLocked) {
                                 setBarcodeNewMedForm(prev => ({ ...prev, itemsPerBox: e.target.value, error: '' }));
                               }
                             }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-itemsPerBox'); } }}
                             readOnly={barcodeNewMedForm.batchLocked || barcodeNewMedForm.medicationLocked}
                             className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${(barcodeNewMedForm.batchLocked || barcodeNewMedForm.medicationLocked) ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             min="1"
@@ -6203,15 +6233,17 @@ Medicana Stock Management System`;
                       </div>
 
                       {/* Batch & Stock — what production run, how much, where? */}
-                      <div className="space-y-4">
-                        <h3 className="text-md font-semibold text-gray-700 border-b pb-2">Batch & Stock</h3>
+                      <div className="space-y-3 sm:space-y-4">
+                        <h3 className="hidden md:block text-md font-semibold text-gray-700 border-b pb-2">Batch & Stock</h3>
 
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Batch / Lot Number *{barcodeNewMedForm.existingBatches && barcodeNewMedForm.existingBatches.length > 0 ? ' (select existing or type new)' : ''}</label>
                           <input
                             type="text"
+                            id="barcodeNewMed-batchNumber"
                             list="existingBatchesList"
                             value={barcodeNewMedForm.batchNumber}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-batchNumber'); } }}
                             onChange={(e) => {
                               const inputValue = e.target.value;
                               setBarcodeNewMedForm(prev => ({ ...prev, batchNumber: inputValue, error: '' }));
@@ -6268,6 +6300,7 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date *</label>
                           <div className="grid grid-cols-2 gap-2">
                             <select
+                              id="barcodeNewMed-expiryMonth"
                               value={barcodeNewMedForm.expiryMonth}
                               onChange={(e) => {
                                 if (!barcodeNewMedForm.batchLocked) {
@@ -6293,12 +6326,15 @@ Medicana Stock Management System`;
                             </select>
                             <input
                               type="number"
+                              id="barcodeNewMed-expiryYear"
+                              inputMode="numeric"
                               value={barcodeNewMedForm.expiryYear}
                               onChange={(e) => {
                                 if (!barcodeNewMedForm.batchLocked) {
                                   setBarcodeNewMedForm(prev => ({ ...prev, expiryYear: e.target.value, error: '' }));
                                 }
                               }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-expiryYear'); } }}
                               disabled={barcodeNewMedForm.batchLocked}
                               className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                               placeholder="YYYY"
@@ -6312,12 +6348,14 @@ Medicana Stock Management System`;
                           <label className="block text-sm font-medium text-gray-700 mb-1">Manufacturer / Brand *</label>
                           <input
                             type="text"
+                            id="barcodeNewMed-brand"
                             value={barcodeNewMedForm.brand}
                             onChange={(e) => {
                               if (!barcodeNewMedForm.batchLocked) {
                                 setBarcodeNewMedForm(prev => ({ ...prev, brand: e.target.value, error: '' }));
                               }
                             }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-brand'); } }}
                             readOnly={barcodeNewMedForm.batchLocked}
                             className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                             placeholder="e.g., Pfizer"
@@ -6330,8 +6368,11 @@ Medicana Stock Management System`;
                           </label>
                           <input
                             type="number"
+                            id="barcodeNewMed-boxQuantity"
+                            inputMode="numeric"
                             value={barcodeNewMedForm.boxQuantity}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, boxQuantity: e.target.value, error: '' }))}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-boxQuantity'); } }}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
                             min="1"
                             placeholder="e.g., 2"
@@ -6341,6 +6382,7 @@ Medicana Stock Management System`;
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Location *</label>
                           <select
+                            id="barcodeNewMed-location"
                             value={barcodeNewMedForm.location}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, location: e.target.value, error: '' }))}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
@@ -6396,14 +6438,14 @@ Medicana Stock Management System`;
                       </div>
                     </div>
                   </div>
-                  <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0">
+                  <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 flex-shrink-0">
                     <div className="flex gap-2">
-                      <button 
-                        onClick={handleBarcodeNewMedication} 
+                      <button
+                        onClick={handleBarcodeNewMedication}
                         disabled={barcodeNewMedForm.isSubmitting}
-                        className={`flex-1 py-2 rounded-lg transition-colors font-medium ${
-                          barcodeNewMedForm.isSubmitting 
-                            ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
+                        className={`flex-1 py-3 rounded-lg transition-colors font-medium text-sm sm:text-base ${
+                          barcodeNewMedForm.isSubmitting
+                            ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
                             : 'bg-cyan-500 text-white hover:bg-cyan-600'
                         }`}
                       >
@@ -6411,12 +6453,12 @@ Medicana Stock Management System`;
                           ? (barcodeNewMedForm.medicationLocked ? 'Adding Stock...' : 'Adding Medication...')
                           : (barcodeNewMedForm.medicationLocked ? 'Add Stock' : 'Add Medication & Stock')}
                       </button>
-                      <button 
-                        onClick={() => { 
+                      <button
+                        onClick={() => {
                           resetBarcodeNewMedForm();
-                          setModals(prev => ({ ...prev, showBarcodeNewMedication: false })); 
+                          setModals(prev => ({ ...prev, showBarcodeNewMedication: false }));
                         }}
-                        className="sm:px-6 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors font-medium text-sm">Cancel</button>
+                        className="px-4 sm:px-6 bg-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-400 transition-colors font-medium text-sm">Cancel</button>
                     </div>
                   </div>
                 </div>
