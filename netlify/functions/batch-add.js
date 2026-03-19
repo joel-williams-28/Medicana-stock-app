@@ -82,6 +82,10 @@ exports.handler = async (event) => {
 
           if (existingBatch.rows.length > 0) {
             // Batch code exists - use existing values to maintain batch integrity
+            // Safety: if the caller specified a different medication, warn but still use canonical batch
+            if (medicationId && existingBatch.rows[0].medication_id !== medicationId) {
+              console.warn(`batch-add: batch_code "${batchCodeToUse}" belongs to medication ${existingBatch.rows[0].medication_id}, but caller sent medicationId ${medicationId}. Using canonical medication.`);
+            }
             batchIdResult = existingBatch.rows[0].id;
             canonicalMedicationId = existingBatch.rows[0].medication_id;
           } else {

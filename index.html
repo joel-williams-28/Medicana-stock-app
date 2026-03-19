@@ -2476,8 +2476,16 @@ Medicana Stock Management System`;
           setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter medication strength or select N/A' }));
           return;
         }
-        if (!barcodeNewMedForm.expiryMonth || !barcodeNewMedForm.expiryYear || !barcodeNewMedForm.brand.trim()) {
-          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter expiry date and brand' }));
+        if (!barcodeNewMedForm.expiryMonth || !barcodeNewMedForm.expiryYear) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter expiry date' }));
+          return;
+        }
+        if (!barcodeNewMedForm.brand.trim()) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter manufacturer / brand' }));
+          return;
+        }
+        if (!barcodeNewMedForm.batchNumber.trim() && !barcodeNewMedForm.existingBatchId) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter the batch/lot number from the packaging' }));
           return;
         }
         if (!barcodeNewMedForm.location.trim()) {
@@ -6003,7 +6011,12 @@ Medicana Stock Management System`;
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4" style={{zIndex: 9999}} onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; resetBarcodeNewMedForm(); setModals(prev => ({ ...prev, showBarcodeNewMedication: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
                 <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-2xl w-full flex flex-col m-2 sm:m-4" style={{maxHeight: '90vh'}}>
                   <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex-shrink-0">
-                    <h2 className="text-base sm:text-lg font-bold text-gray-800">Add New Medication by Barcode</h2>
+                    <h2 className="text-base sm:text-lg font-bold text-gray-800">
+                      {barcodeNewMedForm.medicationLocked ? 'Add Stock to Existing Medication' : 'Add New Medication'}
+                    </h2>
+                    {!barcodeNewMedForm.medicationLocked && barcodeNewMedForm.barcode && (
+                      <p className="text-xs text-amber-700 mt-1">Barcode not recognised — enter medication details below.</p>
+                    )}
                   </div>
                   <div className="overflow-y-auto px-4 sm:px-6 py-3 sm:py-4 flex-1">
                     {barcodeNewMedForm.error && (
@@ -6012,85 +6025,79 @@ Medicana Stock Management System`;
                       </div>
                     )}
                     
+                    {/* Barcode field — always at top, full width */}
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          id="barcodeInput"
+                          value={barcodeNewMedForm.barcode}
+                          onChange={(e) => {
+                            const barcode = e.target.value;
+                            setBarcodeNewMedForm(prev => ({ ...prev, barcode, error: '' }));
+                            if (barcodeLookupTimeoutRef.current) {
+                              clearTimeout(barcodeLookupTimeoutRef.current);
+                              barcodeLookupTimeoutRef.current = null;
+                            }
+                            if (barcode.trim()) {
+                              barcodeLookupTimeoutRef.current = setTimeout(() => {
+                                handleBarcodeLookup(barcode);
+                                barcodeLookupTimeoutRef.current = null;
+                              }, 500);
+                            } else {
+                              handleBarcodeLookup('');
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              if (barcodeLookupTimeoutRef.current) {
+                                clearTimeout(barcodeLookupTimeoutRef.current);
+                                barcodeLookupTimeoutRef.current = null;
+                              }
+                              const barcode = e.target.value.trim();
+                              if (barcode) {
+                                handleBarcodeLookup(barcode);
+                              }
+                            }
+                          }}
+                          onBlur={(e) => {
+                            if (barcodeLookupTimeoutRef.current) {
+                              clearTimeout(barcodeLookupTimeoutRef.current);
+                              barcodeLookupTimeoutRef.current = null;
+                            }
+                            const barcode = e.target.value.trim();
+                            if (barcode) {
+                              handleBarcodeLookup(barcode);
+                            }
+                          }}
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                          placeholder="Scan or enter barcode"
+                          autoComplete="off"
+                        />
+                        <button
+                          type="button"
+                          onClick={startCameraScanner}
+                          className="px-3 py-2 bg-cyan-500 text-white rounded-md hover:bg-cyan-600 transition-colors flex items-center gap-1 text-sm font-medium whitespace-nowrap"
+                          title="Scan barcode with camera"
+                        >
+                          <Camera className="w-4 h-4" />
+                          <span className="hidden sm:inline">Scan</span>
+                        </button>
+                      </div>
+                      {barcodeNewMedForm.medicationLocked && (
+                        <p className="text-xs text-green-700 mt-1">Medication found — details auto-filled.</p>
+                      )}
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Medication Details */}
+                      {/* Medication Identity — what is this drug? */}
                       <div className="space-y-4">
-                        <h3 className="text-md font-semibold text-gray-700 border-b pb-2">Medication Details</h3>
-                        
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              id="barcodeInput"
-                              value={barcodeNewMedForm.barcode}
-                              onChange={(e) => {
-                                const barcode = e.target.value;
-                                setBarcodeNewMedForm(prev => ({ ...prev, barcode, error: '' }));
-                                // Clear any existing timeout
-                                if (barcodeLookupTimeoutRef.current) {
-                                  clearTimeout(barcodeLookupTimeoutRef.current);
-                                  barcodeLookupTimeoutRef.current = null;
-                                }
-                                // Trigger lookup when barcode changes (debounced for typing)
-                                if (barcode.trim()) {
-                                  barcodeLookupTimeoutRef.current = setTimeout(() => {
-                                    handleBarcodeLookup(barcode);
-                                    barcodeLookupTimeoutRef.current = null;
-                                  }, 500);
-                                } else {
-                                  handleBarcodeLookup('');
-                                }
-                              }}
-                              onKeyDown={(e) => {
-                                // Handle Enter key (barcode scanners typically send Enter after scan)
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  // Clear any pending debounced timeout
-                                  if (barcodeLookupTimeoutRef.current) {
-                                    clearTimeout(barcodeLookupTimeoutRef.current);
-                                    barcodeLookupTimeoutRef.current = null;
-                                  }
-                                  // Trigger immediate lookup
-                                  const barcode = e.target.value.trim();
-                                  if (barcode) {
-                                    handleBarcodeLookup(barcode);
-                                  }
-                                }
-                              }}
-                              onBlur={(e) => {
-                                // Clear any pending timeout
-                                if (barcodeLookupTimeoutRef.current) {
-                                  clearTimeout(barcodeLookupTimeoutRef.current);
-                                  barcodeLookupTimeoutRef.current = null;
-                                }
-                                // Also trigger lookup on blur to ensure it runs if user tabs away
-                                const barcode = e.target.value.trim();
-                                if (barcode) {
-                                  handleBarcodeLookup(barcode);
-                                }
-                              }}
-                              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                              placeholder="Scan or enter barcode"
-                              autoComplete="off"
-                            />
-                            <button
-                              type="button"
-                              onClick={startCameraScanner}
-                              className="px-3 py-2 bg-cyan-500 text-white rounded-md hover:bg-cyan-600 transition-colors flex items-center gap-1 text-sm font-medium whitespace-nowrap"
-                              title="Scan barcode with camera"
-                            >
-                              <Camera className="w-4 h-4" />
-                              <span className="hidden sm:inline">Scan</span>
-                            </button>
-                          </div>
-                          {barcodeNewMedForm.medicationLocked && (
-                            <p className="text-xs text-green-700 mt-1">✓ Medication found — details auto-filled.</p>
-                          )}
-                        </div>
+                        <h3 className="text-md font-semibold text-gray-700 border-b pb-2">Medication</h3>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Medication Name *</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
                           <input
                             type="text"
                             value={barcodeNewMedForm.name}
@@ -6106,15 +6113,15 @@ Medicana Stock Management System`;
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Strength/Concentration *</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Strength *</label>
                           <div className="mb-2">
                             <div className="flex gap-4">
                               <label className={`flex items-center ${barcodeNewMedForm.medicationLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
-                                <input 
-                                  type="radio" 
-                                  name="barcodeStrengthType" 
-                                  value="value" 
-                                  checked={barcodeNewMedForm.strengthType === 'value'} 
+                                <input
+                                  type="radio"
+                                  name="barcodeStrengthType"
+                                  value="value"
+                                  checked={barcodeNewMedForm.strengthType === 'value'}
                                   onClick={(e) => {
                                     if (!barcodeNewMedForm.medicationLocked) {
                                       setBarcodeNewMedForm(prev => ({ ...prev, strengthType: 'value', error: '' }));
@@ -6126,11 +6133,11 @@ Medicana Stock Management System`;
                                 <span className="text-sm text-gray-700">Value</span>
                               </label>
                               <label className={`flex items-center ${barcodeNewMedForm.medicationLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
-                                <input 
-                                  type="radio" 
-                                  name="barcodeStrengthType" 
-                                  value="na" 
-                                  checked={barcodeNewMedForm.strengthType === 'na'} 
+                                <input
+                                  type="radio"
+                                  name="barcodeStrengthType"
+                                  value="na"
+                                  checked={barcodeNewMedForm.strengthType === 'na'}
                                   onClick={(e) => {
                                     if (!barcodeNewMedForm.medicationLocked) {
                                       setBarcodeNewMedForm(prev => ({ ...prev, strengthType: 'na', strength: '', error: '' }));
@@ -6160,7 +6167,7 @@ Medicana Stock Management System`;
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Form *</label>
                           <select
                             value={barcodeNewMedForm.type}
                             onChange={(e) => {
@@ -6178,118 +6185,29 @@ Medicana Stock Management System`;
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Items per Box *</label>
                           <input
-                            type="text"
-                            value={barcodeNewMedForm.brand}
+                            type="number"
+                            value={barcodeNewMedForm.itemsPerBox}
                             onChange={(e) => {
-                              if (!barcodeNewMedForm.batchLocked) {
-                                setBarcodeNewMedForm(prev => ({ ...prev, brand: e.target.value, error: '' }));
+                              if (!barcodeNewMedForm.batchLocked && !barcodeNewMedForm.medicationLocked) {
+                                setBarcodeNewMedForm(prev => ({ ...prev, itemsPerBox: e.target.value, error: '' }));
                               }
                             }}
-                            readOnly={barcodeNewMedForm.batchLocked}
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                            placeholder="e.g., Pfizer"
+                            readOnly={barcodeNewMedForm.batchLocked || barcodeNewMedForm.medicationLocked}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${(barcodeNewMedForm.batchLocked || barcodeNewMedForm.medicationLocked) ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            min="1"
+                            placeholder="e.g., 28"
                           />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Location *</label>
-                          <select
-                            value={barcodeNewMedForm.location}
-                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, location: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                          >
-                            <option value="">Select Location</option>
-                            {(() => {
-                              // Group locations by groupName
-                              const grouped = {};
-                              locations.forEach(loc => {
-                                if (loc.groupName) {
-                                  if (!grouped[loc.groupName]) grouped[loc.groupName] = [];
-                                  grouped[loc.groupName].push(loc);
-                                } else {
-                                  if (!grouped['_ungrouped']) grouped['_ungrouped'] = [];
-                                  grouped['_ungrouped'].push(loc);
-                                }
-                              });
-
-                              const elements = [];
-                              // Render grouped locations
-                              Object.keys(grouped).forEach(groupName => {
-                                if (groupName !== '_ungrouped') {
-                                  elements.push(
-                                    <optgroup key={groupName} label={groupName}>
-                                      <option value={groupName}>{groupName} (All)</option>
-                                      {grouped[groupName].map(loc => (
-                                        <option key={loc.id} value={loc.displayName}>{loc.displayName}</option>
-                                      ))}
-                                    </optgroup>
-                                  );
-                                }
-                              });
-                              // Render ungrouped locations
-                              if (grouped['_ungrouped']) {
-                                grouped['_ungrouped'].forEach(loc => {
-                                  elements.push(<option key={loc.id} value={loc.displayName}>{loc.displayName}</option>);
-                                });
-                              }
-                              return elements;
-                            })()}
-                          </select>
                         </div>
                       </div>
 
-                      {/* Stock Details */}
+                      {/* Batch & Stock — what production run, how much, where? */}
                       <div className="space-y-4">
-                        <h3 className="text-md font-semibold text-gray-700 border-b pb-2">Stock Details</h3>
-                        
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date *</label>
-                          <div className="grid grid-cols-2 gap-2">
-                            <select
-                              value={barcodeNewMedForm.expiryMonth}
-                              onChange={(e) => {
-                                if (!barcodeNewMedForm.batchLocked) {
-                                  setBarcodeNewMedForm(prev => ({ ...prev, expiryMonth: e.target.value, error: '' }));
-                                }
-                              }}
-                              disabled={barcodeNewMedForm.batchLocked}
-                              className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                            >
-                              <option value="">Select Month</option>
-                              <option value="01">January</option>
-                              <option value="02">February</option>
-                              <option value="03">March</option>
-                              <option value="04">April</option>
-                              <option value="05">May</option>
-                              <option value="06">June</option>
-                              <option value="07">July</option>
-                              <option value="08">August</option>
-                              <option value="09">September</option>
-                              <option value="10">October</option>
-                              <option value="11">November</option>
-                              <option value="12">December</option>
-                            </select>
-                            <input
-                              type="number"
-                              value={barcodeNewMedForm.expiryYear}
-                              onChange={(e) => {
-                                if (!barcodeNewMedForm.batchLocked) {
-                                  setBarcodeNewMedForm(prev => ({ ...prev, expiryYear: e.target.value, error: '' }));
-                                }
-                              }}
-                              disabled={barcodeNewMedForm.batchLocked}
-                              className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                              placeholder="YYYY"
-                              min={new Date().getFullYear()}
-                              max={new Date().getFullYear() + 20}
-                            />
-                          </div>
-                        </div>
+                        <h3 className="text-md font-semibold text-gray-700 border-b pb-2">Batch & Stock</h3>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Batch Number {barcodeNewMedForm.existingBatches && barcodeNewMedForm.existingBatches.length > 0 ? '(select existing or type new)' : ''}</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Batch / Lot Number *{barcodeNewMedForm.existingBatches && barcodeNewMedForm.existingBatches.length > 0 ? ' (select existing or type new)' : ''}</label>
                           <input
                             type="text"
                             list="existingBatchesList"
@@ -6297,7 +6215,7 @@ Medicana Stock Management System`;
                             onChange={(e) => {
                               const inputValue = e.target.value;
                               setBarcodeNewMedForm(prev => ({ ...prev, batchNumber: inputValue, error: '' }));
-                              
+
                               // Check if the input matches an existing batch by batchCode
                               if (barcodeNewMedForm.existingBatches && barcodeNewMedForm.existingBatches.length > 0) {
                                 const matchingBatch = barcodeNewMedForm.existingBatches.find(b => b.batchCode === inputValue);
@@ -6342,42 +6260,127 @@ Medicana Stock Management System`;
                             </datalist>
                           )}
                           {barcodeNewMedForm.batchExists && (
-                            <p className="text-xs text-blue-700 mt-1">✓ Batch code already exists — existing details applied.</p>
+                            <p className="text-xs text-blue-700 mt-1">Batch exists — details applied automatically.</p>
                           )}
                         </div>
 
                         <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date *</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <select
+                              value={barcodeNewMedForm.expiryMonth}
+                              onChange={(e) => {
+                                if (!barcodeNewMedForm.batchLocked) {
+                                  setBarcodeNewMedForm(prev => ({ ...prev, expiryMonth: e.target.value, error: '' }));
+                                }
+                              }}
+                              disabled={barcodeNewMedForm.batchLocked}
+                              className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            >
+                              <option value="">Month</option>
+                              <option value="01">January</option>
+                              <option value="02">February</option>
+                              <option value="03">March</option>
+                              <option value="04">April</option>
+                              <option value="05">May</option>
+                              <option value="06">June</option>
+                              <option value="07">July</option>
+                              <option value="08">August</option>
+                              <option value="09">September</option>
+                              <option value="10">October</option>
+                              <option value="11">November</option>
+                              <option value="12">December</option>
+                            </select>
+                            <input
+                              type="number"
+                              value={barcodeNewMedForm.expiryYear}
+                              onChange={(e) => {
+                                if (!barcodeNewMedForm.batchLocked) {
+                                  setBarcodeNewMedForm(prev => ({ ...prev, expiryYear: e.target.value, error: '' }));
+                                }
+                              }}
+                              disabled={barcodeNewMedForm.batchLocked}
+                              className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                              placeholder="YYYY"
+                              min={new Date().getFullYear()}
+                              max={new Date().getFullYear() + 20}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Manufacturer / Brand *</label>
+                          <input
+                            type="text"
+                            value={barcodeNewMedForm.brand}
+                            onChange={(e) => {
+                              if (!barcodeNewMedForm.batchLocked) {
+                                setBarcodeNewMedForm(prev => ({ ...prev, brand: e.target.value, error: '' }));
+                              }
+                            }}
+                            readOnly={barcodeNewMedForm.batchLocked}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                            placeholder="e.g., Pfizer"
+                          />
+                        </div>
+
+                        <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Number of {barcodeNewMedForm.boxQuantity && parseInt(barcodeNewMedForm.boxQuantity) === 1 ? 'Box' : 'Boxes'}
+                            Number of {barcodeNewMedForm.boxQuantity && parseInt(barcodeNewMedForm.boxQuantity) === 1 ? 'Box' : 'Boxes'} *
                           </label>
                           <input
                             type="number"
                             value={barcodeNewMedForm.boxQuantity}
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, boxQuantity: e.target.value, error: '' }))}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                            min="0"
-                            placeholder="0"
+                            min="1"
+                            placeholder="e.g., 2"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Items per Box {barcodeNewMedForm.medicationLocked ? '*' : ''}</label>
-                          <input
-                            type="number"
-                            value={barcodeNewMedForm.itemsPerBox}
-                            onChange={(e) => {
-                              if (!barcodeNewMedForm.batchLocked && !barcodeNewMedForm.medicationLocked) {
-                                setBarcodeNewMedForm(prev => ({ ...prev, itemsPerBox: e.target.value, error: '' }));
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Location *</label>
+                          <select
+                            value={barcodeNewMedForm.location}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, location: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                          >
+                            <option value="">Select Location</option>
+                            {(() => {
+                              const grouped = {};
+                              locations.forEach(loc => {
+                                if (loc.groupName) {
+                                  if (!grouped[loc.groupName]) grouped[loc.groupName] = [];
+                                  grouped[loc.groupName].push(loc);
+                                } else {
+                                  if (!grouped['_ungrouped']) grouped['_ungrouped'] = [];
+                                  grouped['_ungrouped'].push(loc);
+                                }
+                              });
+                              const elements = [];
+                              Object.keys(grouped).forEach(groupName => {
+                                if (groupName !== '_ungrouped') {
+                                  elements.push(
+                                    <optgroup key={groupName} label={groupName}>
+                                      <option value={groupName}>{groupName} (All)</option>
+                                      {grouped[groupName].map(loc => (
+                                        <option key={loc.id} value={loc.displayName}>{loc.displayName}</option>
+                                      ))}
+                                    </optgroup>
+                                  );
+                                }
+                              });
+                              if (grouped['_ungrouped']) {
+                                grouped['_ungrouped'].forEach(loc => {
+                                  elements.push(<option key={loc.id} value={loc.displayName}>{loc.displayName}</option>);
+                                });
                               }
-                            }}
-                            readOnly={barcodeNewMedForm.batchLocked || barcodeNewMedForm.medicationLocked}
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${(barcodeNewMedForm.batchLocked || barcodeNewMedForm.medicationLocked) ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                            min="1"
-                            placeholder="e.g., 100"
-                          />
+                              return elements;
+                            })()}
+                          </select>
                         </div>
 
-
+                        {barcodeNewMedForm.medicationLocked && (
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Min stock (boxes)</label>
                           <input
@@ -6386,9 +6389,10 @@ Medicana Stock Management System`;
                             onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, minLevelBoxes: e.target.value, error: '' }))}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
                             min="0"
-                            placeholder="Enter number of boxes (optional)"
+                            placeholder="Optional"
                           />
                         </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -6403,7 +6407,9 @@ Medicana Stock Management System`;
                             : 'bg-cyan-500 text-white hover:bg-cyan-600'
                         }`}
                       >
-                        {barcodeNewMedForm.isSubmitting ? 'Adding Medication...' : 'Add New Medication'}
+                        {barcodeNewMedForm.isSubmitting
+                          ? (barcodeNewMedForm.medicationLocked ? 'Adding Stock...' : 'Adding Medication...')
+                          : (barcodeNewMedForm.medicationLocked ? 'Add Stock' : 'Add Medication & Stock')}
                       </button>
                       <button 
                         onClick={() => { 
