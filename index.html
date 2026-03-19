@@ -761,7 +761,11 @@
           orderQuantity: '',
           orderUrgency: 'routine',
           orderNotes: '',
-          orderPharmacistEmail: 'Aasit.Badiani@Medicana.co.uk'
+          orderPharmacistEmail: 'Aasit.Badiani@Medicana.co.uk',
+          // Manual mode fields (for Add New Stock button without scanner)
+          manualMode: false, // true when opened via Add New Stock button (not scan)
+          stockMode: 'new', // 'new' | 'existing' — for the Add Stock tab toggle
+          searchTerm: '' // search query for existing medication lookup
         });
 
         // Intelligence Report state - server-driven analytics
@@ -1762,7 +1766,10 @@
           orderQuantity: '',
           orderUrgency: 'routine',
           orderNotes: '',
-          orderPharmacistEmail: 'Aasit.Badiani@Medicana.co.uk'
+          orderPharmacistEmail: 'Aasit.Badiani@Medicana.co.uk',
+          manualMode: false,
+          stockMode: 'new',
+          searchTerm: ''
         });
       };
 
@@ -1929,7 +1936,8 @@
               batchNumber: '', serial: '', existingBatchId: null, existingBatches: [],
               enteringNewBatch: false, batchLocked: false, batchExists: false,
               medicationLocked: false, medicationId: null, location: '',
-              error: '', successMessage: '', isSubmitting: false, activeTab: 'addStock'
+              error: '', successMessage: '', isSubmitting: false, activeTab: 'addStock',
+              manualMode: false, stockMode: 'new', searchTerm: ''
             }));
           }
         }
@@ -4130,7 +4138,7 @@ Medicana Stock Management System`;
                               </button>
                               <button onClick={() => {
                                 const prefillLocation = (ui.currentLocation !== 'All' && !isGroupName(ui.currentLocation, locations)) ? ui.currentLocation : '';
-                                setBarcodeNewMedForm(prev => ({ ...prev, location: prefillLocation }));
+                                setBarcodeNewMedForm(prev => ({ ...prev, location: prefillLocation, manualMode: true, stockMode: 'new', searchTerm: '' }));
                                 setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
                               }} className="bg-brand-mid text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2">
                                 <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
@@ -5562,13 +5570,13 @@ Medicana Stock Management System`;
                           <span className="hidden sm:inline">Scan</span>
                         </button>
                       </div>
-                      {barcodeNewMedForm.medicationLocked && (
+                      {barcodeNewMedForm.medicationLocked && !barcodeNewMedForm.manualMode && (
                         <p className="text-xs text-brand-dark mt-1">Medication found — details auto-filled.</p>
                       )}
                     </div>
 
-                    {/* Tab bar — only when medication is recognised */}
-                    {barcodeNewMedForm.medicationLocked && (
+                    {/* Tab bar — shown when medication is recognised OR in manual mode */}
+                    {(barcodeNewMedForm.medicationLocked || barcodeNewMedForm.manualMode) && (
                       <div className="flex border-b border-bdr-default mb-4 overflow-x-auto -mx-1">
                         {[
                           { key: 'addStock', label: 'Add Stock' },
@@ -5589,12 +5597,155 @@ Medicana Stock Management System`;
                       </div>
                     )}
 
-                    {/* Tab 1: Add Stock (existing form) — also shown for unrecognised barcodes */}
+                    {/* Tab 1: Add Stock (existing form) — also shown for unrecognised barcodes and manual mode */}
                     {(!barcodeNewMedForm.medicationLocked || barcodeNewMedForm.activeTab === 'addStock') && (
+                    <div>
+                      {/* New / Existing medication toggle — only in manual mode before medication is selected */}
+                      {barcodeNewMedForm.manualMode && !barcodeNewMedForm.medicationLocked && (
+                        <div className="mb-4">
+                          <div className="flex gap-1 p-1 bg-off-white rounded-lg w-fit">
+                            <button type="button"
+                              onClick={() => setBarcodeNewMedForm(prev => ({ ...prev, stockMode: 'new', searchTerm: '' }))}
+                              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                                barcodeNewMedForm.stockMode === 'new'
+                                  ? 'bg-white text-brand-mid shadow-sm'
+                                  : 'text-txt-tertiary hover:text-txt-secondary'
+                              }`}
+                            >New Medication</button>
+                            <button type="button"
+                              onClick={() => setBarcodeNewMedForm(prev => ({ ...prev, stockMode: 'existing', searchTerm: '' }))}
+                              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                                barcodeNewMedForm.stockMode === 'existing'
+                                  ? 'bg-white text-brand-mid shadow-sm'
+                                  : 'text-txt-tertiary hover:text-txt-secondary'
+                              }`}
+                            >Existing Medication</button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Existing medication search — shown when stockMode is 'existing' and no medication selected */}
+                      {barcodeNewMedForm.manualMode && barcodeNewMedForm.stockMode === 'existing' && !barcodeNewMedForm.medicationLocked && (() => {
+                        const searchVal = (barcodeNewMedForm.searchTerm || '').toLowerCase().trim();
+                        // Deduplicate medications by name+strength+type (they repeat per location)
+                        const seen = new Set();
+                        const uniqueMeds = medications.filter(med => {
+                          const key = `${(med.medicationName || med.name || '').toLowerCase()}|${(med.strengthRaw || '').toLowerCase()}|${(med.type || '').toLowerCase()}`;
+                          if (seen.has(key)) return false;
+                          seen.add(key);
+                          return true;
+                        });
+                        const filtered = searchVal.length >= 1
+                          ? uniqueMeds.filter(med =>
+                              (med.medicationName || med.name || '').toLowerCase().includes(searchVal) ||
+                              (med.strengthRaw || '').toLowerCase().includes(searchVal) ||
+                              (med.barcode || '').toLowerCase().includes(searchVal)
+                            ).slice(0, 20)
+                          : [];
+                        return (
+                          <div className="mb-4">
+                            <label className="block text-sm font-medium text-txt-secondary mb-1">Search Existing Medications</label>
+                            <input
+                              type="text"
+                              value={barcodeNewMedForm.searchTerm || ''}
+                              onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, searchTerm: e.target.value }))}
+                              className="w-full px-3 py-2 border border-bdr-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid"
+                              placeholder="Type medication name to search..."
+                              autoFocus
+                            />
+                            {searchVal.length >= 1 && (
+                              <div className="mt-1 max-h-56 overflow-y-auto border border-bdr-default rounded-md bg-white shadow-sm">
+                                {filtered.length === 0 ? (
+                                  <div className="px-3 py-4 text-sm text-txt-tertiary text-center">No matching medications found</div>
+                                ) : (
+                                  filtered.map((med, idx) => (
+                                    <button
+                                      key={med.internalId || idx}
+                                      type="button"
+                                      onClick={() => {
+                                        // Gather all batches for this medication across all locations
+                                        const allBatches = medications
+                                          .filter(m => m.internalId === med.internalId)
+                                          .flatMap(m => (m.batches || []).map(b => ({
+                                            id: b.id,
+                                            batchNumber: b.batchNumber,
+                                            expiryDate: b.expiryDate,
+                                            brand: b.brand || b.manufacturer || '',
+                                            quantity: b.quantity
+                                          })));
+                                        // Deduplicate batches by id
+                                        const seenBatches = new Set();
+                                        const uniqueBatches = allBatches.filter(b => {
+                                          if (seenBatches.has(b.id)) return false;
+                                          seenBatches.add(b.id);
+                                          return true;
+                                        });
+                                        setBarcodeNewMedForm(prev => ({
+                                          ...prev,
+                                          medicationId: med.internalId,
+                                          medicationLocked: true,
+                                          name: med.medicationName || med.name || '',
+                                          strength: med.strengthRaw || '',
+                                          strengthType: med.strengthRaw ? 'value' : 'na',
+                                          type: (med.type || 'tablet').toLowerCase(),
+                                          itemsPerBox: med.standardItemsPerBox ? String(med.standardItemsPerBox) : '',
+                                          existingBatches: uniqueBatches,
+                                          existingBatchId: null,
+                                          searchTerm: ''
+                                        }));
+                                      }}
+                                      className="w-full text-left px-3 py-2 hover:bg-brand-mid/10 border-b border-bdr-default last:border-b-0 transition-colors"
+                                    >
+                                      <div className="font-medium text-sm text-txt-primary">{med.medicationName || med.name}</div>
+                                      <div className="text-xs text-txt-tertiary">
+                                        {med.strengthRaw && <span>{med.strengthRaw}</span>}
+                                        {med.strengthRaw && med.type && <span> · </span>}
+                                        {med.type && <span className="capitalize">{med.type}</span>}
+                                        {med.standardItemsPerBox && <span> · {med.standardItemsPerBox}/box</span>}
+                                      </div>
+                                    </button>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                    {/* Hide form fields when in existing mode but no medication selected yet */}
+                    {!(barcodeNewMedForm.manualMode && barcodeNewMedForm.stockMode === 'existing' && !barcodeNewMedForm.medicationLocked) && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                       {/* Medication Identity — what is this drug? */}
                       <div className="space-y-3 sm:space-y-4">
-                        <h3 className="hidden md:block text-md font-semibold text-txt-secondary border-b pb-2">Medication</h3>
+                        <div className={`items-center justify-between border-b pb-2 ${barcodeNewMedForm.manualMode && barcodeNewMedForm.medicationLocked ? 'flex' : 'hidden md:flex'}`}>
+                          <h3 className="text-md font-semibold text-txt-secondary">Medication</h3>
+                          {barcodeNewMedForm.manualMode && barcodeNewMedForm.medicationLocked && (
+                            <button type="button"
+                              onClick={() => setBarcodeNewMedForm(prev => ({
+                                ...prev,
+                                medicationLocked: false,
+                                medicationId: null,
+                                name: '',
+                                strength: '',
+                                strengthType: 'value',
+                                type: 'tablet',
+                                itemsPerBox: '',
+                                existingBatches: [],
+                                existingBatchId: null,
+                                enteringNewBatch: false,
+                                batchLocked: false,
+                                batchExists: false,
+                                batchNumber: '',
+                                brand: '',
+                                expiryMonth: '',
+                                expiryYear: '',
+                                stockMode: 'existing',
+                                searchTerm: ''
+                              }))}
+                              className="text-xs text-brand-mid hover:text-brand-dark font-medium"
+                            >Change medication</button>
+                          )}
+                        </div>
 
                         <div>
                           <label className="block text-sm font-medium text-txt-secondary mb-1">Name *</label>
@@ -5946,8 +6097,15 @@ Medicana Stock Management System`;
                       </div>
                     </div>
                     )}
+                    </div>
+                    )}
 
                     {/* Tab 2: Transfer */}
+                    {barcodeNewMedForm.activeTab === 'transfer' && !barcodeNewMedForm.medicationLocked && barcodeNewMedForm.manualMode && (
+                      <div className="text-center py-8 text-txt-tertiary">
+                        <p className="text-sm">Select or create a medication on the Add Stock tab first.</p>
+                      </div>
+                    )}
                     {barcodeNewMedForm.medicationLocked && barcodeNewMedForm.activeTab === 'transfer' && (() => {
                       const scannedMedInv = getScannedMedInventory();
                       const sourceLocBatches = scannedMedInv.find(m => String(m.locationId) === String(barcodeNewMedForm.transferSourceLocation))?.batches || [];
@@ -6041,6 +6199,11 @@ Medicana Stock Management System`;
                     })()}
 
                     {/* Tab 3: Patient Use */}
+                    {barcodeNewMedForm.activeTab === 'patientUse' && !barcodeNewMedForm.medicationLocked && barcodeNewMedForm.manualMode && (
+                      <div className="text-center py-8 text-txt-tertiary">
+                        <p className="text-sm">Select or create a medication on the Add Stock tab first.</p>
+                      </div>
+                    )}
                     {barcodeNewMedForm.medicationLocked && barcodeNewMedForm.activeTab === 'patientUse' && (() => {
                       const scannedMedInv = getScannedMedInventory();
                       const useLocMed = scannedMedInv.find(m => String(m.locationId) === String(barcodeNewMedForm.useLocation));
@@ -6166,6 +6329,11 @@ Medicana Stock Management System`;
                     })()}
 
                     {/* Tab 4: Transfer & Use */}
+                    {barcodeNewMedForm.activeTab === 'transferAndUse' && !barcodeNewMedForm.medicationLocked && barcodeNewMedForm.manualMode && (
+                      <div className="text-center py-8 text-txt-tertiary">
+                        <p className="text-sm">Select or create a medication on the Add Stock tab first.</p>
+                      </div>
+                    )}
                     {barcodeNewMedForm.medicationLocked && barcodeNewMedForm.activeTab === 'transferAndUse' && (() => {
                       const scannedMedInv = getScannedMedInventory();
                       const sourceLocBatches = scannedMedInv.find(m => String(m.locationId) === String(barcodeNewMedForm.transferSourceLocation))?.batches || [];
@@ -6345,6 +6513,11 @@ Medicana Stock Management System`;
                     })()}
 
                     {/* Tab 5: Order */}
+                    {barcodeNewMedForm.activeTab === 'order' && !barcodeNewMedForm.medicationLocked && barcodeNewMedForm.manualMode && (
+                      <div className="text-center py-8 text-txt-tertiary">
+                        <p className="text-sm">Select or create a medication on the Add Stock tab first.</p>
+                      </div>
+                    )}
                     {barcodeNewMedForm.medicationLocked && barcodeNewMedForm.activeTab === 'order' && (
                       <div className="space-y-4">
                         <div className="p-3 bg-off-white rounded-lg border">
