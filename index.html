@@ -1224,11 +1224,19 @@
         
         const availableLocations = [...new Set(medications.map(med => med.location))].sort();
         
+        // Count how many entries each medication name has (across locations/batches)
+        const locationMeds = medications.filter(med => matchesLocationFilter(med, ui.currentLocation, locations));
+        const medNameCounts = {};
+        locationMeds.forEach(med => {
+          const key = med.name;
+          if (!medNameCounts[key]) medNameCounts[key] = 0;
+          medNameCounts[key] += (med.batches ? med.batches.filter(b => b && b.expiryDate).length : 0);
+        });
+        const hasMultipleInstances = (med) => (medNameCounts[med.name] || 0) > 1;
+
         const availableStatuses = (() => {
           const statuses = new Set();
-          medications
-            .filter(med => matchesLocationFilter(med, ui.currentLocation, locations))
-            .forEach(med => {
+          locationMeds.forEach(med => {
               const totalBoxes = getTotalBoxes(med);
               if (totalBoxes === 0 && hasPendingOrder(med)) {
                 statuses.add('Order Pending');
@@ -1239,7 +1247,7 @@
                 statuses.add('OK');
                 if (hasPendingOrder(med)) statuses.add('Ordered');
               }
-              if (med.batches && med.batches.some(b => b && b.expiryDate)) {
+              if (hasMultipleInstances(med)) {
                 statuses.add('Expiring First');
               }
             });
@@ -1268,7 +1276,7 @@
               if (status === 'OK' && isOK) return true;
               if (status === 'Ordered' && isOrdered) return true;
               if (status === 'Order Pending' && isOrderPending) return true;
-              if (status === 'Expiring First' && med.batches && med.batches.some(b => b && b.expiryDate)) return true;
+              if (status === 'Expiring First' && hasMultipleInstances(med)) return true;
               return false;
             });
           })
@@ -4072,7 +4080,7 @@ Medicana Stock Management System`;
                                         )}
                                       </>
                                   )}
-                                  {medicationFilters.statuses.includes('Expiring First') && (() => {
+                                  {medicationFilters.statuses.includes('Expiring First') && hasMultipleInstances(med) && (() => {
                                     const earliest = findEarliestBatch(med.batches);
                                     if (!earliest || !earliest.expiryDate) return null;
                                     const expiryLabel = formatExpiry(earliest.expiryDate);
