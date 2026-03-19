@@ -632,7 +632,6 @@
         statuses: []
       });
       const [modals, setModals] = useState({
-        showAdjustStock: false,
         showAddMedication: false,
         showLowStockReport: false,
           showFefoOverride: false,
@@ -3464,7 +3463,7 @@ Medicana Stock Management System`;
 
       const resetAdjustmentForms = () => {
         setUi(prev => ({ ...prev, selectedMed: null }));
-        setModals(prev => ({ ...prev, showAdjustStock: false, showBarcodeStockAdjust: false }));
+        setModals(prev => ({ ...prev, showBarcodeStockAdjust: false }));
           setAdjustmentForm({ amount: '', note: '', location: '', type: 'boxes', action: 'out', batchId: '', sourceDepartment: '', stockInSource: 'transfer', transferBatchOption: 'existing', deliveryBatchOption: 'new', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' });
           setDeliveryForm({ brand: '', expiryMonth: '', expiryYear: '', quantityType: 'boxes', boxQuantity: '', itemsPerBox: '', individualQuantity: '', batchNumber: '', batchLocked: false, batchExists: false });
       };
@@ -4272,7 +4271,7 @@ Medicana Stock Management System`;
                                     startCameraScanner();
                                   }, 200);
                                 }}
-                                className="bg-brand-mid text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2"
+                                className="bg-brand-mid/75 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2"
                                 title="Scan barcode with camera"
                               >
                                 <Camera className="w-3 h-3 sm:w-4 sm:h-4" />
@@ -4394,13 +4393,12 @@ Medicana Stock Management System`;
                     <table className="w-full min-w-[640px]">
                       <thead className="bg-off-white">
                         <tr>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-txt-tertiary uppercase">Medication</th>
-                            {(ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') && (<th className="px-4 py-3 text-left text-xs font-semibold text-txt-tertiary uppercase">Location</th>)}
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Type</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Current Stock</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Min Level</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Status</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Action</th>
+                          <th className="w-[28%] px-4 py-3 text-left text-xs font-semibold text-txt-tertiary uppercase">Medication</th>
+                            {(ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') && (<th className="w-[16%] px-4 py-3 text-left text-xs font-semibold text-txt-tertiary uppercase">Location</th>)}
+                          <th className="w-[12%] px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Type</th>
+                          <th className="w-[16%] px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Current Stock</th>
+                          <th className="w-[14%] px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Min Level</th>
+                          <th className="w-[14%] px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-bdr-default">
@@ -4413,7 +4411,12 @@ Medicana Stock Management System`;
                               <td className="px-4 py-3 text-sm text-near-black">
                                   <button onClick={() => setUi(prev => ({ ...prev, expandedMedId: prev.expandedMedId === med.id ? null : med.id }))} className="flex items-center gap-2 hover:text-brand-mid text-left w-full">
                                   <span className="flex-shrink-0" style={{color: '#0F6E56'}}>{ui.expandedMedId === med.id ? '▼' : '▶'}</span>
-                                  <span className="break-words">{med.name}</span>
+                                  <span className="break-words">
+                                    <span className="block">{med.medicationName || med.name}</span>
+                                    {med.strengthRaw && med.strengthRaw !== 'N/A' && (
+                                      <span className="block text-xs text-txt-tertiary font-normal">{med.strengthRaw}</span>
+                                    )}
+                                  </span>
                                 </button>
                               </td>
                                 {(ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') && (
@@ -4425,7 +4428,7 @@ Medicana Stock Management System`;
                                         ))}
                                       </div>
                                     ) : (
-                                      med.location
+                                      <span className="px-2 py-0.5 bg-status-ordered-bg text-status-ordered-text rounded text-xs">{med.location}</span>
                                     )}
                                   </td>
                                 )}
@@ -4481,26 +4484,10 @@ Medicana Stock Management System`;
                                   })()}
                                 </div>
                               </td>
-                              <td className="px-2 sm:px-4 py-2 sm:py-3 text-center">
-                                <div className="flex gap-1 sm:gap-2 justify-center">
-                                  <button onClick={() => {
-                                    // Check if this is a grouped medication (multiple locations)
-                                    if (ui.currentLocation === 'All' && med.locations && med.locations.length > 1) {
-                                      alert(`This medication is in multiple locations: ${med.locations.sort().join(', ')}. Please select a specific location to adjust stock.`);
-                                      return;
-                                    }
-                                    const defaultQuantityType = med.standardItemsPerBox ? 'boxes' : 'individuals';
-                                    setUi(prev => ({ ...prev, selectedMed: med }));
-                                    setModals(prev => ({ ...prev, showAdjustStock: true }));
-                                    setAdjustmentForm({ amount: '', note: '', location: '', type: defaultQuantityType, action: 'out', batchId: '', sourceDepartment: '', stockInSource: 'transfer', transferBatchOption: 'existing', deliveryBatchOption: 'new', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' });
-                                    setDeliveryForm({ brand: '', expiryMonth: '', expiryYear: '', quantityType: defaultQuantityType, boxQuantity: '', itemsPerBox: '', individualQuantity: '', batchNumber: '' });
-                                  }} className="text-brand-mid hover:text-brand-dark font-medium text-xs sm:text-sm">Adjust</button>
-                                </div>
-                              </td>
                             </tr>
                             {ui.expandedMedId === med.id && (
                               <tr className="bg-off-white">
-                                <td colSpan={(ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') ? "7" : "6"} className="px-2 sm:px-4 py-2 sm:py-3">
+                                <td colSpan={(ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') ? "6" : "5"} className="px-2 sm:px-4 py-2 sm:py-3">
                                   <div className="ml-8">
                                     {med.barcode && (
                                       <div className="mb-3 p-2 bg-status-ordered-bg border border-status-ordered-bg rounded">
@@ -5139,651 +5126,6 @@ Medicana Stock Management System`;
               )}
             </div>
           </div>
-
-            {/* Adjust Stock Modal */}
-          {modals.showAdjustStock && ui.selectedMed && !modals.showFefoOverride && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4" style={{zIndex: 9999}} onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showAdjustStock: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
-              <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-xl w-full flex flex-col m-2 sm:m-4" style={{maxHeight: '90vh'}}>
-                <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-bdr-default flex-shrink-0">
-                  <h2 className="text-base sm:text-lg font-bold text-near-black">Adjust Stock</h2>
-                  <p className="text-xs text-txt-tertiary mt-1">Location: {ui.selectedMed.location}</p>
-                </div>
-
-                {/* Tab Navigation */}
-                <div className="border-b border-bdr-default flex-shrink-0">
-                  <div className="flex">
-                    <button
-                      type="button"
-                      onClick={() => setAdjustmentForm(prev => ({ ...prev, action: 'out', stockInSource: 'transfer', transferBatchOption: 'existing', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' }))}
-                      className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                        adjustmentForm.action === 'out'
-                          ? 'border-brand-mid text-brand-dark bg-brand-pale'
-                          : 'border-transparent text-txt-tertiary hover:text-near-black hover:bg-off-white'
-                      }`}
-                    >
-                      Transfer Location
-                    </button>
-                    {getUserRole() !== 'Basic User' && (
-                      <button
-                        type="button"
-                        onClick={() => setAdjustmentForm(prev => ({ ...prev, action: 'in', stockInSource: 'delivery', deliveryBatchOption: 'new', error: '' }))}
-                        className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                          adjustmentForm.action === 'in'
-                            ? 'border-brand-mid text-brand-dark bg-status-ok-bg'
-                            : 'border-transparent text-txt-tertiary hover:text-near-black hover:bg-off-white'
-                        }`}
-                      >
-                        Stock In (Add)
-                      </button>
-                    )}
-                    {getUserRole() === 'Basic User' && (
-                      <button
-                        type="button"
-                        onClick={() => setAdjustmentForm(prev => ({ ...prev, action: 'in', stockInSource: 'transfer', transferBatchOption: 'existing', error: '' }))}
-                        className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                          adjustmentForm.action === 'in'
-                            ? 'border-brand-mid text-brand-dark bg-status-ok-bg'
-                            : 'border-transparent text-txt-tertiary hover:text-near-black hover:bg-off-white'
-                        }`}
-                      >
-                        Receive Transfer
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="overflow-y-auto px-4 sm:px-6 py-3 sm:py-4 flex-1">
-                    {adjustmentForm.error && (<div className="mb-4 p-3 bg-danger-ghost-bg border border-status-critical-text rounded text-sm text-danger-ghost-text">{adjustmentForm.error}</div>)}
-                <div className="mb-4 p-3 bg-off-white border border-bdr-default rounded">
-                  <p className="text-sm font-medium text-near-black mb-1">{ui.selectedMed.name}</p>
-                  <p className="text-lg font-bold text-near-black">Current Stock: {formatStockDisplay(ui.selectedMed)}</p>
-                  <p className="text-xs text-txt-tertiary">Minimum Level: {formatMinLevelDisplay(ui.selectedMed)}</p>
-                </div>
-
-                {adjustmentForm.action === 'out' && ui.currentLocation !== 'All' && ui.currentLocation !== 'Medication Stock L1' && (
-                  <div className="mb-4">
-                    <label className="block text-sm font-medium text-txt-secondary mb-2">Stock Out Purpose</label>
-                    <div className="flex gap-4 mb-3">
-                      <label className="flex items-center cursor-pointer">
-                        <input 
-                          type="radio" 
-                          name="stockOutPurpose" 
-                          value="transfer" 
-                          checked={adjustmentForm.stockOutPurpose === 'transfer'} 
-                          onClick={(e) => { 
-                            setAdjustmentForm(prev => ({ ...prev, stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' })); 
-                          }} 
-                          className="mr-2" 
-                        />
-                        Transfer Location
-                      </label>
-                      <label className="flex items-center cursor-pointer">
-                        <input 
-                          type="radio" 
-                          name="stockOutPurpose" 
-                          value="patient" 
-                          checked={adjustmentForm.stockOutPurpose === 'patient'} 
-                          onClick={(e) => { 
-                            setAdjustmentForm(prev => ({ ...prev, stockOutPurpose: 'patient', patientLastName: '', patientLocalId: '', useReason: '', error: '' })); 
-                          }} 
-                          className="mr-2" 
-                        />
-                        Patient Use
-                      </label>
-                    </div>
-                  </div>
-                )}
-
-                {adjustmentForm.action === 'in' && (
-                  <>
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-txt-secondary mb-2">Stock Source</label>
-                      <div className="flex gap-4 mb-3">
-                        {getUserRole() !== 'Basic User' && (
-                          <label className="flex items-center cursor-pointer">
-                            <input 
-                              type="radio" 
-                              name="stockInSource" 
-                              value="delivery" 
-                              checked={adjustmentForm.stockInSource === 'delivery'} 
-                              onClick={(e) => { 
-                                setAdjustmentForm(prev => ({ ...prev, stockInSource: 'delivery', batchId: '', sourceDepartment: '', error: '' }));
-                              }} 
-                              className="mr-2" 
-                            />
-                            New Delivery
-                          </label>
-                        )}
-                        <label className="flex items-center cursor-pointer">
-                          <input 
-                            type="radio" 
-                            name="stockInSource" 
-                            value="transfer" 
-                            checked={adjustmentForm.stockInSource === 'transfer'} 
-                            onClick={(e) => { 
-                              setAdjustmentForm(prev => ({ ...prev, stockInSource: 'transfer', transferBatchOption: 'existing', batchId: '', sourceDepartment: '', error: '' }));
-                            }} 
-                            className="mr-2" 
-                          />
-                          Internal Transfer
-                        </label>
-                      </div>
-                    </div>
-
-                    {adjustmentForm.stockInSource === 'transfer' && (
-                      <div className="mb-4">
-                        <label className="block text-sm font-medium text-txt-secondary mb-2">Batch Option</label>
-                        <div className="flex gap-4 mb-3">
-                          <label className="flex items-center cursor-pointer">
-                            <input 
-                              type="radio" 
-                              name="transferBatchOption" 
-                              value="existing" 
-                              checked={adjustmentForm.transferBatchOption === 'existing'} 
-                              onClick={(e) => { 
-                                setAdjustmentForm(prev => ({ ...prev, transferBatchOption: 'existing', batchId: '', error: '' }));
-                              }} 
-                              className="mr-2" 
-                            />
-                            Add to Existing Batch
-                          </label>
-                          <label className="flex items-center cursor-pointer">
-                            <input 
-                              type="radio" 
-                              name="transferBatchOption" 
-                              value="new" 
-                              checked={adjustmentForm.transferBatchOption === 'new'} 
-                              onClick={(e) => { 
-                                setAdjustmentForm(prev => ({ ...prev, transferBatchOption: 'new', batchId: '', error: '' }));
-                              }} 
-                              className="mr-2" 
-                            />
-                            New Batch
-                          </label>
-                        </div>
-                      </div>
-                    )}
-
-                    {adjustmentForm.stockInSource === 'delivery' && (
-                      <div className="mb-4">
-                        <label className="block text-sm font-medium text-txt-secondary mb-2">Batch Option</label>
-                        <div className="flex gap-4 mb-3">
-                          <label className="flex items-center cursor-pointer">
-                            <input 
-                              type="radio" 
-                              name="deliveryBatchOption" 
-                              value="new" 
-                              checked={adjustmentForm.deliveryBatchOption === 'new'} 
-                              onClick={(e) => { 
-                                setAdjustmentForm(prev => ({ ...prev, deliveryBatchOption: 'new', batchId: '', error: '' }));
-                              }} 
-                              className="mr-2" 
-                            />
-                            New Batch
-                          </label>
-                          <label className="flex items-center cursor-pointer">
-                            <input 
-                              type="radio" 
-                              name="deliveryBatchOption" 
-                              value="existing" 
-                              checked={adjustmentForm.deliveryBatchOption === 'existing'} 
-                              onClick={(e) => { 
-                                setAdjustmentForm(prev => ({ ...prev, deliveryBatchOption: 'existing', batchId: '', error: '' }));
-                              }} 
-                              className="mr-2" 
-                            />
-                            Add to Existing Batch
-                          </label>
-                        </div>
-                      </div>
-                    )}
-
-                    {adjustmentForm.stockInSource === 'transfer' && (
-                      <div className="mb-4">
-                            <label className="block text-sm font-medium text-txt-secondary mb-2">Department (Stock Coming From) <span className="text-danger-ghost-text">*</span></label>
-                            <select value={adjustmentForm.sourceDepartment} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, sourceDepartment: e.target.value, batchId: '' })); }} className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent">
-                          <option value="">Select department...</option>
-                          {(() => {
-                            // Group locations by groupName
-                            const grouped = {};
-                            locations.forEach(loc => {
-                              if (loc.groupName) {
-                                if (!grouped[loc.groupName]) grouped[loc.groupName] = [];
-                                grouped[loc.groupName].push(loc);
-                              } else {
-                                if (!grouped['_ungrouped']) grouped['_ungrouped'] = [];
-                                grouped['_ungrouped'].push(loc);
-                              }
-                            });
-
-                            const elements = [];
-                            // Render grouped locations
-                            Object.keys(grouped).forEach(groupName => {
-                              if (groupName !== '_ungrouped') {
-                                elements.push(
-                                  <optgroup key={groupName} label={groupName}>
-                                    {grouped[groupName].map(location => {
-                                      // Check if location has the same medication (name, strength, type)
-                                      const medInLocation = medications.find(m =>
-                                        m.medicationName === ui.selectedMed.medicationName &&
-                                        m.strengthRaw === ui.selectedMed.strengthRaw &&
-                                        m.type === ui.selectedMed.type &&
-                                        m.location === location.displayName
-                                      );
-                                      const hasBatches = medInLocation && medInLocation.batches.length > 0 && location.displayName !== ui.selectedMed.location;
-                                      return (
-                                        <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#0F6E56', fontWeight: '600' } : {}}>
-                                          {location.displayName}{hasBatches ? ' ✓' : ''}
-                                        </option>
-                                      );
-                                    })}
-                                  </optgroup>
-                                );
-                              }
-                            });
-                            // Render ungrouped locations
-                            if (grouped['_ungrouped']) {
-                              grouped['_ungrouped'].forEach(location => {
-                                const medInLocation = medications.find(m =>
-                                  m.medicationName === ui.selectedMed.medicationName &&
-                                  m.strengthRaw === ui.selectedMed.strengthRaw &&
-                                  m.type === ui.selectedMed.type &&
-                                  m.location === location.displayName
-                                );
-                                const hasBatches = medInLocation && medInLocation.batches.length > 0 && location.displayName !== ui.selectedMed.location;
-                                elements.push(
-                                  <option key={location.id} value={location.displayName} style={hasBatches ? { color: '#0F6E56', fontWeight: '600' } : {}}>
-                                    {location.displayName}{hasBatches ? ' ✓' : ''}
-                                  </option>
-                                );
-                              });
-                            }
-                            return elements;
-                          })()}
-                        </select>
-                            <p className="text-xs text-txt-tertiary mt-1"><span className="text-brand-mid font-semibold">Green departments ✓</span> contain batches of {ui.selectedMed.name}</p>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {((adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'transfer') || (adjustmentForm.action === 'in' && ((adjustmentForm.stockInSource === 'transfer' && adjustmentForm.transferBatchOption === 'existing') || (adjustmentForm.stockInSource === 'delivery' && adjustmentForm.deliveryBatchOption === 'existing')))) && (
-                  <div className="mb-4">
-                        <label className="block text-sm font-medium text-txt-secondary mb-2">Select Batch <span className="text-danger-ghost-text">*</span></label>
-                        <select value={adjustmentForm.batchId} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, batchId: e.target.value, error: '' })); }} className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent">
-                      <option value="">Select batch...</option>
-                      {(() => {
-                        let batchSource = ui.selectedMed;
-                        if (adjustmentForm.action === 'in' && adjustmentForm.stockInSource === 'transfer' && adjustmentForm.transferBatchOption === 'existing' && adjustmentForm.sourceDepartment) {
-                              const sourceMed = medications.find(m => m.name === ui.selectedMed.name && m.location === adjustmentForm.sourceDepartment);
-                              if (!sourceMed) { return (<option value="" disabled>No batches available - {ui.selectedMed.name} does not exist in {adjustmentForm.sourceDepartment}</option>); }
-                          batchSource = sourceMed;
-                        }
-                            return batchSource.batches.sort((a, b) => new Date(a.expiryDate + '-01') - new Date(b.expiryDate + '-01')).map((batch, idx) => {
-                            const formattedExpiry = formatExpiry(batch.expiryDate);
-                            const batchDetails = formatBatchDetails(batch, batchSource.unit);
-                              return (<option key={batch.id} value={batch.id}>Batch {idx + 1}: {batch.brand} - {batchDetails} - Exp: {formattedExpiry}</option>);
-                          });
-                      })()}
-                    </select>
-                  </div>
-                )}
-
-                {adjustmentForm.action === 'in' && ((adjustmentForm.stockInSource === 'delivery' && adjustmentForm.deliveryBatchOption === 'new') || (adjustmentForm.stockInSource === 'transfer' && adjustmentForm.transferBatchOption === 'new')) ? (
-                  <>
-                    <div className="mb-4 p-3 bg-status-ordered-bg border border-status-ordered-bg rounded">
-                          <p className="text-sm text-status-ordered-text">{adjustmentForm.stockInSource === 'delivery' ? 'Adding new stock from delivery. Enter the batch details below.' : 'Adding stock from a new batch. Enter the batch details below.'}</p>
-                    </div>
-                    {ui.selectedMed.batches.length > 0 && (
-                      <div className="mb-4 p-3 bg-status-low-bg border border-status-low-bg rounded">
-                        <p className="text-sm font-semibold text-status-low-text mb-2">Existing Batches for {ui.selectedMed.name}:</p>
-                        <div className="space-y-1">
-                          {ui.selectedMed.batches.sort((a, b) => new Date(a.expiryDate + '-01') - new Date(b.expiryDate + '-01')).map((batch, idx) => (
-                            <div key={batch.id} className="text-xs text-status-low-text bg-white p-2 rounded">
-                              <span className="font-medium">Batch {idx + 1}:</span>
-                              {batch.batchNumber && <span className="ml-2">#{batch.batchNumber}</span>}
-                              <span className="ml-2">• Exp: {formatExpiry(batch.expiryDate)}</span>
-                            </div>
-                          ))}
-                        </div>
-                        <p className="text-xs text-status-low-text mt-2">⚠️ Only create a new batch if the batch number or expiry date differs from above</p>
-                      </div>
-                    )}
-                    <div className="mb-4">
-                          <label className="block text-sm font-medium text-txt-secondary mb-2">Brand <span className="text-danger-ghost-text">*</span></label>
-                          <input type="text" list="adjustBrandList" value={deliveryForm.brand} onChange={(e) => setDeliveryForm(prev => ({ ...prev, brand: e.target.value }))} className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="e.g. Actavis, Accord, Teva" />
-                          <datalist id="adjustBrandList">
-                            {[...new Set(ui.selectedMed.batches.map(b => b.brand))].map(brand => (
-                              <option key={brand} value={brand} />
-                            ))}
-                          </datalist>
-                          <p className="text-xs text-txt-tertiary mt-1">Select an existing brand or type a new one</p>
-                    </div>
-                    <div className="mb-4">
-                          <label className="block text-sm font-medium text-txt-secondary mb-2">Batch Number</label>
-                          <input type="text" value={deliveryForm.batchNumber} onChange={(e) => setDeliveryForm(prev => ({ ...prev, batchNumber: e.target.value }))} className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="e.g. BN123456" />
-                    </div>
-                    <div className="mb-4">
-                          <label className="block text-sm font-medium text-txt-secondary mb-2">Expiry Date <span className="text-danger-ghost-text">*</span></label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-xs text-txt-tertiary mb-1">Month</label>
-                              <select value={deliveryForm.expiryMonth} onChange={(e) => setDeliveryForm(prev => ({ ...prev, expiryMonth: e.target.value }))} className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent">
-                            <option value="">Select...</option>
-                                {['January','February','March','April','May','June','July','August','September','October','November','December'].map((month, idx) => (<option key={month} value={String(idx + 1).padStart(2, '0')}>{month}</option>))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs text-txt-tertiary mb-1">Year</label>
-                          <div className="flex items-center gap-2">
-                                <button type="button" onClick={() => setDeliveryForm(prev => { const year = prev.expiryYear ? parseInt(prev.expiryYear) : new Date().getFullYear(); return { ...prev, expiryYear: String(year - 1) }; })} className="text-txt-secondary hover:text-near-black text-2xl leading-none p-0 border-0 bg-transparent">←</button>
-                                <input type="number" value={deliveryForm.expiryYear} onChange={(e) => setDeliveryForm(prev => ({ ...prev, expiryYear: e.target.value }))} placeholder={String(new Date().getFullYear())} className="flex-1 px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-center" min="2024" max="2099" />
-                                <button type="button" onClick={() => setDeliveryForm(prev => { const year = prev.expiryYear ? parseInt(prev.expiryYear) : new Date().getFullYear(); return { ...prev, expiryYear: String(year + 1) }; })} className="text-txt-secondary hover:text-near-black text-2xl leading-none p-0 border-0 bg-transparent">→</button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-txt-secondary mb-2">Quantity Type</label>
-                      <div className="flex gap-4">
-                            <label className="flex items-center cursor-pointer">
-                              <input 
-                                type="radio" 
-                                name="deliveryQuantityType" 
-                                value="boxes" 
-                                checked={deliveryForm.quantityType === 'boxes'} 
-                                onClick={(e) => {
-                                  setDeliveryForm(prev => ({ ...prev, quantityType: 'boxes', boxQuantity: '', itemsPerBox: '' }));
-                                }} 
-                                className="mr-2" 
-                              />
-                              Boxes
-                            </label>
-                            <label className="flex items-center cursor-pointer">
-                              <input 
-                                type="radio" 
-                                name="deliveryQuantityType" 
-                                value="individual" 
-                                checked={deliveryForm.quantityType === 'individual'} 
-                                onClick={(e) => {
-                                  setDeliveryForm(prev => ({ ...prev, quantityType: 'individual', individualQuantity: '' }));
-                                }} 
-                                className="mr-2" 
-                              />
-                              Individual {getIndividualUnitLabel(ui.selectedMed.unit)}
-                            </label>
-                      </div>
-                    </div>
-                    {deliveryForm.quantityType === 'boxes' ? (
-                      <div className="grid grid-cols-2 gap-3 mb-4">
-                        <div>
-                              <label className="block text-sm font-medium text-txt-secondary mb-2">
-                                Number of {deliveryForm.boxQuantity && parseInt(deliveryForm.boxQuantity) === 1 ? 'Box' : 'Boxes'} <span className="text-danger-ghost-text">*</span>
-                              </label>
-                              <input type="number" value={deliveryForm.boxQuantity} onChange={(e) => setDeliveryForm(prev => ({ ...prev, boxQuantity: e.target.value }))} className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="e.g. 5" min="1" />
-                        </div>
-                        <div>
-                              <label className="block text-sm font-medium text-txt-secondary mb-2">Items per Box <span className="text-danger-ghost-text">*</span></label>
-                              <input 
-                                type="number" 
-                                value={deliveryForm.itemsPerBox} 
-                                onChange={(e) => {
-                                  if (!deliveryForm.batchLocked) {
-                                    setDeliveryForm(prev => ({ ...prev, itemsPerBox: e.target.value }));
-                                  }
-                                }}
-                                readOnly={deliveryForm.batchLocked}
-                                className={`w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent ${deliveryForm.batchLocked ? 'bg-off-white cursor-not-allowed' : ''}`}
-                                placeholder="e.g. 100" 
-                                min="1" 
-                              />
-                        </div>
-                        {deliveryForm.boxQuantity && deliveryForm.itemsPerBox && (
-                          <div className="col-span-2 p-2 bg-status-ordered-bg border border-status-ordered-bg rounded">
-                                <p className="text-sm text-status-ordered-text">Total: <span className="font-bold">{parseInt(deliveryForm.boxQuantity) * parseInt(deliveryForm.itemsPerBox)} {ui.selectedMed.unit}</span></p>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="mb-4">
-                            <label className="block text-sm font-medium text-txt-secondary mb-2">Quantity <span className="text-danger-ghost-text">*</span></label>
-                            <input type="number" value={deliveryForm.individualQuantity} onChange={(e) => setDeliveryForm(prev => ({ ...prev, individualQuantity: e.target.value }))} onClick={(e) => e.stopPropagation()} className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="Enter quantity" min="1" />
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  ((adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'transfer') || (adjustmentForm.action === 'in' && ((adjustmentForm.transferBatchOption === 'existing' && adjustmentForm.stockInSource === 'transfer') || (adjustmentForm.deliveryBatchOption === 'existing' && adjustmentForm.stockInSource === 'delivery')))) && adjustmentForm.batchId && (
-                    <>
-                      <div className="mb-4">
-                        <label className="block text-sm font-medium text-txt-secondary mb-2">Quantity Type</label>
-                        <div className="flex gap-4 mb-3">
-                          {(() => {
-                            let batchToCheck = null;
-                            if (adjustmentForm.action === 'in' && adjustmentForm.stockInSource === 'transfer' && adjustmentForm.transferBatchOption === 'existing' && adjustmentForm.sourceDepartment) {
-                                  const sourceMed = medications.find(m => m.name === ui.selectedMed.name && m.location === adjustmentForm.sourceDepartment);
-                              batchToCheck = sourceMed?.batches.find(b => b.id === parseInt(adjustmentForm.batchId));
-                            } else {
-                              batchToCheck = ui.selectedMed.batches.find(b => b.id === parseInt(adjustmentForm.batchId));
-                            }
-                            return (
-                              <>
-                                {batchToCheck?.itemsPerBox && (
-                                      <label className="flex items-center cursor-pointer">
-                                        <input 
-                                          type="radio" 
-                                          name="adjustmentType" 
-                                          value="boxes" 
-                                          checked={adjustmentForm.type === 'boxes'} 
-                                          onClick={(e) => {
-                                            setAdjustmentForm(prev => ({ ...prev, type: 'boxes', amount: '' }));
-                                          }} 
-                                          className="mr-2" 
-                                        />
-                                        Whole Boxes
-                                      </label>
-                                    )}
-                                    <label className="flex items-center cursor-pointer">
-                                      <input 
-                                        type="radio" 
-                                        name="adjustmentType" 
-                                        value="individual" 
-                                        checked={adjustmentForm.type === 'individual'} 
-                                        onClick={(e) => { 
-                                          setAdjustmentForm(prev => ({ ...prev, type: 'individual', amount: '' }));
-                                        }} 
-                                        className="mr-2" 
-                                      />
-                                      Individual {getIndividualUnitLabel(ui.selectedMed.unit)}
-                                    </label>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                      <div className="mb-4">
-                            <label className="block text-sm font-medium text-txt-secondary mb-2">Quantity <span className="text-danger-ghost-text">*</span></label>
-                            <input type="number" value={adjustmentForm.amount} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, amount: e.target.value })); }} onClick={(e) => e.stopPropagation()} className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder={adjustmentForm.type === 'boxes' ? 'Enter number of boxes' : 'Enter amount'} min="1" />
-                        {adjustmentForm.type === 'boxes' && adjustmentForm.amount && adjustmentForm.batchId && (() => {
-                          let itemsPerBox = 0;
-                          if (adjustmentForm.action === 'in' && adjustmentForm.stockInSource === 'transfer' && adjustmentForm.transferBatchOption === 'existing' && adjustmentForm.sourceDepartment) {
-                                const sourceMed = medications.find(m => m.name === ui.selectedMed.name && m.location === adjustmentForm.sourceDepartment);
-                            itemsPerBox = sourceMed?.batches.find(b => b.id === parseInt(adjustmentForm.batchId))?.itemsPerBox || 0;
-                          } else {
-                            itemsPerBox = ui.selectedMed.batches.find(b => b.id === parseInt(adjustmentForm.batchId))?.itemsPerBox || 0;
-                          }
-                              return (<p className="text-sm text-txt-tertiary mt-2">= {parseInt(adjustmentForm.amount) * itemsPerBox} {ui.selectedMed.unit}</p>);
-                        })()}
-                      </div>
-                    </>
-                  )
-                )}
-
-                {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'patient' && (
-                  <div className="mb-4">
-                        <label className="block text-sm font-medium text-txt-secondary mb-2">Select Batch <span className="text-danger-ghost-text">*</span></label>
-                        <select value={adjustmentForm.batchId} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, batchId: e.target.value, error: '' })); }} className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent">
-                      <option value="">Select batch...</option>
-                      {ui.selectedMed.batches.map(batch => (
-                        <option key={batch.id} value={batch.id}>
-                          Brand: {batch.brand}, Expiry: {formatExpiry(batch.expiryDate)}, Qty: {formatBatchDetails(batch, ui.selectedMed.unit)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'patient' && adjustmentForm.batchId && (
-                  <div className="mb-4">
-                        <label className="block text-sm font-medium text-txt-secondary mb-2">Quantity Type</label>
-                        <div className="flex gap-4 mb-3">
-                          {(() => {
-                            let batchToCheck = ui.selectedMed.batches.find(b => b.id === parseInt(adjustmentForm.batchId));
-                            return (
-                              <>
-                                {batchToCheck?.itemsPerBox && (
-                                      <label className="flex items-center cursor-pointer">
-                                        <input 
-                                          type="radio" 
-                                          name="adjustmentType" 
-                                          value="boxes" 
-                                          checked={adjustmentForm.type === 'boxes'} 
-                                          onClick={(e) => {
-                                            setAdjustmentForm(prev => ({ ...prev, type: 'boxes', amount: '' }));
-                                          }} 
-                                          className="mr-2" 
-                                        />
-                                        Whole Boxes
-                                      </label>
-                                    )}
-                                    <label className="flex items-center cursor-pointer">
-                                      <input 
-                                        type="radio" 
-                                        name="adjustmentType" 
-                                        value="individual" 
-                                        checked={adjustmentForm.type === 'individual'} 
-                                        onClick={(e) => { 
-                                          setAdjustmentForm(prev => ({ ...prev, type: 'individual', amount: '' }));
-                                        }} 
-                                        className="mr-2" 
-                                      />
-                                      Individual {getIndividualUnitLabel(ui.selectedMed.unit)}
-                                    </label>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                    )}
-
-                {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'patient' && adjustmentForm.batchId && (
-                  <div className="mb-4">
-                            <label className="block text-sm font-medium text-txt-secondary mb-2">Quantity <span className="text-danger-ghost-text">*</span></label>
-                            <input type="number" value={adjustmentForm.amount} onChange={(e) => { setAdjustmentForm(prev => ({ ...prev, amount: e.target.value })); }} onClick={(e) => e.stopPropagation()} className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder={adjustmentForm.type === 'boxes' ? 'Enter number of boxes' : 'Enter amount'} min="1" />
-                        {adjustmentForm.type === 'boxes' && adjustmentForm.amount && adjustmentForm.batchId && (() => {
-                          let itemsPerBox = 0;
-                          itemsPerBox = ui.selectedMed.batches.find(b => b.id === parseInt(adjustmentForm.batchId))?.itemsPerBox || 0;
-                              return (<p className="text-sm text-txt-tertiary mt-2">= {parseInt(adjustmentForm.amount) * itemsPerBox} {ui.selectedMed.unit}</p>);
-                        })()}
-                      </div>
-                    )}
-
-                {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'patient' && (
-                  <div className="mb-4">
-                        <label className="block text-sm font-medium text-txt-secondary mb-2">Patient Last Name <span className="text-danger-ghost-text">*</span></label>
-                        <input type="text" value={adjustmentForm.patientLastName} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, patientLastName: e.target.value }))} className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="Enter patient's last name" />
-                  </div>
-                )}
-
-                {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'patient' && (
-                  <div className="mb-4">
-                        <label className="block text-sm font-medium text-txt-secondary mb-2">Local ID No. <span className="text-danger-ghost-text">*</span></label>
-                        <input type="text" value={adjustmentForm.patientLocalId} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, patientLocalId: e.target.value }))} className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="Enter patient's local ID number" />
-                  </div>
-                )}
-
-                {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'patient' && (
-                  <div className="mb-4">
-                        <label className="block text-sm font-medium text-txt-secondary mb-2">Usage Type</label>
-                        <div className="grid grid-cols-1 gap-2">
-                          {(() => {
-                            const options = getUsageOptionsForLocation(ui.currentLocation);
-
-                            return options.map(option => (
-                              <label key={option.value} className="flex items-center cursor-pointer">
-                                <input 
-                                  type="radio" 
-                                  name="useReason" 
-                                  value={option.value} 
-                                  checked={adjustmentForm.useReason === option.value} 
-                                  onClick={(e) => { 
-                                    setAdjustmentForm(prev => ({ ...prev, useReason: option.value, error: '' })); 
-                                  }} 
-                                  className="mr-2" 
-                                />
-                                {option.label}
-                              </label>
-                            ));
-                          })()}
-                        </div>
-                  </div>
-                )}
-
-                {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'patient' && (
-                  <div className="mb-4">
-                        <label className="block text-sm font-medium text-txt-secondary mb-2">Additional Details (optional)</label>
-                        <input type="text" value={adjustmentForm.note} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, note: e.target.value }))} className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="Additional notes (e.g., procedure, ward, special instructions)" />
-                  </div>
-                )}
-
-                {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'transfer' && (
-                  <div className="mb-4">
-                        <label className="block text-sm font-medium text-txt-secondary mb-2">Location <span className="text-danger-ghost-text">*</span></label>
-                        <select value={adjustmentForm.location} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, location: e.target.value }))} className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent">
-                      <option value="">Select location...</option>
-                      {locations.map(location => {
-                        const isInternalLocation = true; // All locations from backend are internal
-                            // Check if location has the same medication (name, strength, type)
-                            const medInLocation = medications.find(m => 
-                              m.medicationName === ui.selectedMed.medicationName && 
-                              m.strengthRaw === ui.selectedMed.strengthRaw && 
-                              m.type === ui.selectedMed.type && 
-                              m.location === location.displayName
-                            );
-                        const hasStock = isInternalLocation && medInLocation && medInLocation.batches.length > 0;
-                        return (
-                              <option key={location.id} value={location.displayName} style={hasStock ? { color: '#0F6E56', fontWeight: '600' } : {}}>
-                            {location.displayName}{hasStock ? ' ✓' : ''}
-                          </option>
-                        );
-                      })}
-                    </select>
-                        <p className="text-xs text-txt-tertiary mt-1"><span className="text-brand-mid font-semibold">Green locations ✓</span> already have stock of {ui.selectedMed.name}</p>
-                  </div>
-                )}
-
-                {(adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'transfer') || (adjustmentForm.action === 'in' && adjustmentForm.stockInSource === 'transfer' && adjustmentForm.transferBatchOption === 'existing') || (adjustmentForm.action === 'in' && adjustmentForm.stockInSource === 'delivery' && adjustmentForm.deliveryBatchOption === 'existing') && (
-                  <div className="mb-4">
-                        <label className="block text-sm font-medium text-txt-secondary mb-2">Additional Note (optional)</label>
-                        <input type="text" value={adjustmentForm.note} onChange={(e) => setAdjustmentForm(prev => ({ ...prev, note: e.target.value }))} className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent" placeholder="e.g. Emergency surgery" />
-                  </div>
-                )}
-                </div>
-                <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-bdr-default flex-shrink-0">
-                  <div className="flex flex-col sm:flex-row gap-2">
-                      {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'transfer' && (<button onClick={() => handleStockAdjustment('out')} className="flex-1 bg-brand-mid text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium flex items-center justify-center text-sm"><Minus className="w-4 h-4 mr-1" />Remove Stock</button>)}
-                      {adjustmentForm.action === 'out' && adjustmentForm.stockOutPurpose === 'patient' && (<button onClick={() => handleStockAdjustment('out')} className="flex-1 bg-urgent text-white py-2 rounded-lg hover:bg-urgent-hover transition-colors font-medium flex items-center justify-center"><Minus className="w-4 h-4 mr-1" />Record Patient Use</button>)}
-                  {adjustmentForm.action === 'in' && (
-                        <button onClick={() => handleStockAdjustment('in')} className="flex-1 bg-brand-mid text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium flex items-center justify-center">
-                      <Plus className="w-4 h-4 mr-1" />
-                          {adjustmentForm.stockInSource === 'delivery' ? (adjustmentForm.deliveryBatchOption === 'new' ? 'Receive Delivery' : 'Add to Batch') : (adjustmentForm.transferBatchOption === 'new' ? 'Add New Batch' : 'Add Stock')}
-                    </button>
-                  )}
-                      <button onClick={resetAdjustmentForms} className="px-6 bg-btn-secondary text-txt-secondary py-2 rounded-lg hover:bg-bdr-hover transition-colors font-medium">Cancel</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Barcode Stock Adjustment Modal */}
             {modals.showBarcodeStockAdjust && ui.selectedMed && !modals.showFefoOverride && (
