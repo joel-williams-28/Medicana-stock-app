@@ -1247,7 +1247,7 @@
                 statuses.add('OK');
                 if (hasPendingOrder(med)) statuses.add('Ordered');
               }
-              if (hasMultipleInstances(med)) {
+              if (med.batches && med.batches.some(b => b && b.expiryDate)) {
                 statuses.add('Expiring First');
               }
             });
@@ -1276,7 +1276,7 @@
               if (status === 'OK' && isOK) return true;
               if (status === 'Ordered' && isOrdered) return true;
               if (status === 'Order Pending' && isOrderPending) return true;
-              if (status === 'Expiring First' && hasMultipleInstances(med)) return true;
+              if (status === 'Expiring First' && med.batches && med.batches.some(b => b && b.expiryDate)) return true;
               return false;
             });
           })
