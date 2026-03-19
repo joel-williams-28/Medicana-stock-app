@@ -145,8 +145,11 @@
     ];
 
     const formatExpiry = (expiryDate, format = 'short') => {
-      const date = new Date(expiryDate + '-01');
-      return format === 'short' 
+      // Handle both YYYY-MM and YYYY-MM-DD formats
+      const parts = expiryDate.split('-');
+      const dateStr = parts.length === 2 ? expiryDate + '-01' : `${parts[0]}-${parts[1]}-01`;
+      const date = new Date(dateStr);
+      return format === 'short'
         ? date.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
         : date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
     };
