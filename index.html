@@ -1265,18 +1265,20 @@
           .filter(med => medicationFilters.locations.length === 0 || medicationFilters.locations.includes(med.location))
           .filter(med => {
             if (medicationFilters.statuses.length === 0) return true;
+            // "Expiring First" is a sort mode, not a filter — show all medications
+            const nonSortStatuses = medicationFilters.statuses.filter(s => s !== 'Expiring First');
+            if (nonSortStatuses.length === 0) return true;
             const totalBoxes = getTotalBoxes(med);
             const isLowStock = totalBoxes < med.minLevelBoxes && totalBoxes > 0;
             const isOK = totalBoxes >= med.minLevelBoxes;
             const isOrdered = hasPendingOrder(med) && totalBoxes > 0;
             const isOrderPending = totalBoxes === 0 && hasPendingOrder(med);
 
-            return medicationFilters.statuses.some(status => {
+            return nonSortStatuses.some(status => {
               if (status === 'Low Stock' && isLowStock) return true;
               if (status === 'OK' && isOK) return true;
               if (status === 'Ordered' && isOrdered) return true;
               if (status === 'Order Pending' && isOrderPending) return true;
-              if (status === 'Expiring First' && med.batches && med.batches.some(b => b && b.expiryDate)) return true;
               return false;
             });
           })
