@@ -4433,11 +4433,11 @@ Medicana Stock Management System`;
                                   </td>
                                 )}
                               <td className="px-4 py-3 text-sm text-txt-tertiary text-center capitalize">{med.type}</td>
-                                <td className="px-4 py-3 text-sm text-center"><span className={`font-semibold ${getTotalBoxes(med) < med.minLevelBoxes ? 'text-danger-ghost-text' : 'text-near-black'}`}>{formatStockDisplay(med)}</span></td>
+                                <td className="px-4 py-3 text-sm text-center"><span className={`${getTotalBoxes(med) < med.minLevelBoxes ? 'text-danger-ghost-text' : 'text-txt-tertiary'}`}>{formatStockDisplay(med)}</span></td>
                               <td className="px-4 py-3 text-sm text-txt-tertiary text-center">
                                 <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
                                   <span>{formatMinLevelDisplay(med)}</span>
-                                    <button onClick={() => setEditMinLevel({ editing: med, newLevel: '', type: 'boxes', boxes: (med.minLevelBoxes || 0).toString(), error: '' })} className="text-brand-mid hover:text-brand-dark text-xs underline">Edit</button>
+                                    {ui.currentLocation !== 'All' && <button onClick={() => setEditMinLevel({ editing: med, newLevel: '', type: 'boxes', boxes: (med.minLevelBoxes || 0).toString(), error: '' })} className="text-brand-mid hover:text-brand-dark text-xs underline">Edit</button>}
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-center">
