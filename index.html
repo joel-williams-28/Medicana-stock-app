@@ -623,7 +623,8 @@
         lastScannedCode: '',
         lastScanTime: 0,
         torchOn: false,
-        torchSupported: false
+        torchSupported: false,
+        openedViaScan: false
       });
       const cameraScannerRef = useRef(null); // Reference to Html5Qrcode instance
       const [medicationFilters, setMedicationFilters] = useState({
@@ -1773,13 +1774,14 @@
       // Mobile support: Optimized for iOS Safari and Android Chrome
 
       const startCameraScanner = async () => {
-        setCameraScanner({
+        setCameraScanner(prev => ({
+          ...prev,
           isOpen: true,
           isScanning: false,
           error: '',
           lastScannedCode: '',
           lastScanTime: 0
-        });
+        }));
 
         // Wait for DOM to render the video element
         setTimeout(async () => {
@@ -1899,6 +1901,7 @@
       };
 
       const stopCameraScanner = async () => {
+        const wasOpenedViaScan = cameraScanner.openedViaScan;
         try {
           if (cameraScannerRef.current && cameraScannerRef.current.isScanning) {
             await cameraScannerRef.current.stop();
@@ -1913,8 +1916,22 @@
             lastScannedCode: '',
             lastScanTime: 0,
             torchOn: false,
-            torchSupported: false
+            torchSupported: false,
+            openedViaScan: false
           });
+          // If camera was opened via Scan Barcode button and no medication was found, close the modal too
+          if (wasOpenedViaScan && !barcodeNewMedForm.medicationLocked) {
+            setModals(prev => ({ ...prev, showBarcodeNewMedication: false }));
+            setBarcodeNewMedForm(prev => ({
+              ...prev,
+              barcode: '', name: '', strength: '', strengthType: 'value', type: 'tablet',
+              expiryMonth: '', expiryYear: '', boxQuantity: '', itemsPerBox: '', brand: '',
+              batchNumber: '', serial: '', existingBatchId: null, existingBatches: [],
+              enteringNewBatch: false, batchLocked: false, batchExists: false,
+              medicationLocked: false, medicationId: null, location: '',
+              error: '', successMessage: '', isSubmitting: false, activeTab: 'addStock'
+            }));
+          }
         }
       };
 
@@ -4098,9 +4115,8 @@ Medicana Stock Management System`;
                                   // Pre-fill location if a specific one is selected, otherwise leave blank for user to choose
                                   const prefillLocation = (ui.currentLocation !== 'All' && !isGroupName(ui.currentLocation, locations)) ? ui.currentLocation : '';
                                   setBarcodeNewMedForm(prev => ({ ...prev, location: prefillLocation }));
-                                  // Open barcode modal first, then immediately start camera
+                                  setCameraScanner(prev => ({ ...prev, openedViaScan: true }));
                                   setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
-                                  // Start camera after a small delay to ensure modal is rendered
                                   setTimeout(() => {
                                     startCameraScanner();
                                   }, 200);
