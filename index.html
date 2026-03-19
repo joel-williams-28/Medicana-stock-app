@@ -655,6 +655,7 @@
           serial: '', // GS1 serial number (AI 21) from 2D medicine pack barcodes
           existingBatchId: null, // If user selects an existing batch
           existingBatches: [], // List of existing batches for the medication
+          enteringNewBatch: false, // When true, show text input for new batch code instead of select
           batchLocked: false, // Batch integrity safeguard — do not remove. When true, brand/expiry/itemsPerBox are locked
           batchExists: false, // Whether the batch code exists in the system
           medicationLocked: false, // When true, medication name/strength/type/itemsPerBox are locked (from barcode lookup)
@@ -1444,7 +1445,7 @@
             // Parse expiry date
             const expiryDate = batch.expiryDateFull ? new Date(batch.expiryDateFull) : null;
             const expiryMonth = expiryDate ? String(expiryDate.getMonth() + 1).padStart(2, '0') : '';
-            const expiryYear = expiryDate ? expiryDate.getFullYear() : '';
+            const expiryYear = expiryDate ? String(expiryDate.getFullYear()) : '';
 
             // Auto-fill and lock fields
             if (formType === 'addMed') {
@@ -1666,7 +1667,7 @@
       // Field order for Enter-key navigation in the barcode new medication modal
       const BARCODE_NEW_MED_FIELD_ORDER = [
         'barcodeNewMed-name', 'barcodeNewMed-strength', 'barcodeNewMed-type',
-        'barcodeNewMed-itemsPerBox', 'barcodeNewMed-batchNumber',
+        'barcodeNewMed-itemsPerBox', 'barcodeNewMed-batchSelect', 'barcodeNewMed-batchNumber',
         'barcodeNewMed-expiryMonth', 'barcodeNewMed-expiryYear',
         'barcodeNewMed-brand', 'barcodeNewMed-boxQuantity', 'barcodeNewMed-location'
       ];
@@ -1706,6 +1707,7 @@
           serial: '', // GS1 serial number
           existingBatchId: null,
           existingBatches: [],
+          enteringNewBatch: false,
           batchLocked: false,
           batchExists: false,
           medicationLocked: false,
@@ -2034,7 +2036,7 @@
           // Parse expiry date
           const expiryDate = selectedBatch.expiryDate ? new Date(selectedBatch.expiryDate) : null;
           const expiryMonth = expiryDate ? String(expiryDate.getMonth() + 1).padStart(2, '0') : '';
-          const expiryYear = expiryDate ? expiryDate.getFullYear() : '';
+          const expiryYear = expiryDate ? String(expiryDate.getFullYear()) : '';
 
           setBarcodeNewMedForm(prev => ({
             ...prev,
@@ -6304,26 +6306,43 @@ Medicana Stock Management System`;
                         <h3 className="hidden md:block text-md font-semibold text-gray-700 border-b pb-2">Batch & Stock</h3>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Batch / Lot Number *{barcodeNewMedForm.existingBatches && barcodeNewMedForm.existingBatches.length > 0 ? ' (select existing or type new)' : ''}</label>
-                          <input
-                            type="text"
-                            id="barcodeNewMed-batchNumber"
-                            list="existingBatchesList"
-                            value={barcodeNewMedForm.batchNumber}
-                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-batchNumber'); } }}
-                            onChange={(e) => {
-                              const inputValue = e.target.value;
-                              setBarcodeNewMedForm(prev => ({ ...prev, batchNumber: inputValue, error: '' }));
-
-                              // Check if the input matches an existing batch by batchCode
-                              if (barcodeNewMedForm.existingBatches && barcodeNewMedForm.existingBatches.length > 0) {
-                                const matchingBatch = barcodeNewMedForm.existingBatches.find(b => b.batchCode === inputValue);
-                                if (matchingBatch) {
-                                  // User selected an existing batch
-                                  handleExistingBatchSelect(matchingBatch.id);
-                                } else {
-                                  // User is typing a new batch number
-                                  setBarcodeNewMedForm(prev => ({ ...prev, existingBatchId: null, batchLocked: false, batchExists: false }));
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Batch / Lot Number *</label>
+                          {/* Hybrid batch selector: select dropdown when existing batches available, text input for new */}
+                          {barcodeNewMedForm.existingBatches && barcodeNewMedForm.existingBatches.length > 0 && !barcodeNewMedForm.enteringNewBatch && !barcodeNewMedForm.batchLocked ? (
+                            <select
+                              id="barcodeNewMed-batchSelect"
+                              value={barcodeNewMedForm.existingBatchId ? String(barcodeNewMedForm.existingBatchId) : ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === '__new__') {
+                                  setBarcodeNewMedForm(prev => ({ ...prev, enteringNewBatch: true, batchNumber: '', existingBatchId: null, batchLocked: false, batchExists: false }));
+                                  setTimeout(() => document.getElementById('barcodeNewMed-batchNumber')?.focus(), 50);
+                                } else if (val) {
+                                  handleExistingBatchSelect(parseInt(val));
+                                  setTimeout(() => document.getElementById('barcodeNewMed-boxQuantity')?.focus(), 50);
+                                }
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            >
+                              <option value="">Select batch...</option>
+                              {barcodeNewMedForm.existingBatches.map(batch => {
+                                const expiryStr = batch.expiryDate ? new Date(batch.expiryDate).toISOString().slice(0, 7) : 'N/A';
+                                return (
+                                  <option key={batch.id} value={String(batch.id)}>{batch.batchCode} — {batch.brand || 'N/A'} — Exp: {expiryStr}</option>
+                                );
+                              })}
+                              <option value="__new__">+ Enter new batch code</option>
+                            </select>
+                          ) : (
+                            <React.Fragment>
+                              <input
+                                type="text"
+                                id="barcodeNewMed-batchNumber"
+                                value={barcodeNewMedForm.batchNumber}
+                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-batchNumber'); } }}
+                                onChange={(e) => {
+                                  const inputValue = e.target.value;
+                                  setBarcodeNewMedForm(prev => ({ ...prev, batchNumber: inputValue, error: '' }));
                                   // Batch integrity safeguard — do not remove.
                                   // Check batch code after user stops typing (debounce)
                                   const code = inputValue.trim();
@@ -6332,32 +6351,18 @@ Medicana Stock Management System`;
                                   } else {
                                     setBarcodeNewMedForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
                                   }
-                                }
-                              } else {
-                                // No existing batches, just check if batch exists in system
-                                const code = inputValue.trim();
-                                if (code) {
-                                  setTimeout(() => checkBatchCode(code, 'barcode'), 500);
-                                } else {
-                                  setBarcodeNewMedForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
-                                }
-                              }
-                            }}
-                            disabled={barcodeNewMedForm.batchLocked}
-                            enterKeyHint="next"
-                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                            placeholder="e.g., BN123456"
-                          />
-                          {barcodeNewMedForm.existingBatches && barcodeNewMedForm.existingBatches.length > 0 && (
-                            <datalist id="existingBatchesList">
-                              {barcodeNewMedForm.existingBatches.map(batch => {
-                                const expiryStr = batch.expiryDate ? new Date(batch.expiryDate).toISOString().slice(0, 7) : 'N/A';
-                                const displayText = `${batch.batchCode} — ${batch.brand || 'N/A'} — Exp: ${expiryStr} — Items/Box: ${batch.itemsPerBox || 'N/A'}`;
-                                return (
-                                  <option key={batch.id} value={batch.batchCode}>{displayText}</option>
-                                );
-                              })}
-                            </datalist>
+                                }}
+                                disabled={barcodeNewMedForm.batchLocked}
+                                enterKeyHint="next"
+                                className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                placeholder="e.g., BN123456"
+                              />
+                              {barcodeNewMedForm.enteringNewBatch && barcodeNewMedForm.existingBatches.length > 0 && !barcodeNewMedForm.batchLocked && (
+                                <button type="button" onClick={() => setBarcodeNewMedForm(prev => ({
+                                  ...prev, enteringNewBatch: false, batchNumber: '', existingBatchId: null, batchLocked: false, batchExists: false, brand: '', expiryMonth: '', expiryYear: ''
+                                }))} className="text-xs text-cyan-600 hover:text-cyan-800 mt-1">← Back to existing batches</button>
+                              )}
+                            </React.Fragment>
                           )}
                           {barcodeNewMedForm.batchExists && (
                             <p className="text-xs text-blue-700 mt-1">Batch exists — details applied automatically.</p>
@@ -6398,24 +6403,28 @@ Medicana Stock Management System`;
                               <option value="11">November</option>
                               <option value="12">December</option>
                             </select>
-                            <input
-                              type="number"
+                            <select
                               id="barcodeNewMed-expiryYear"
-                              inputMode="numeric"
                               value={barcodeNewMedForm.expiryYear}
                               onChange={(e) => {
                                 if (!barcodeNewMedForm.batchLocked) {
                                   setBarcodeNewMedForm(prev => ({ ...prev, expiryYear: e.target.value, error: '' }));
+                                  if (e.target.value) {
+                                    setTimeout(() => {
+                                      const nextEl = document.getElementById('barcodeNewMed-brand');
+                                      if (nextEl && !nextEl.readOnly) nextEl.focus();
+                                    }, 50);
+                                  }
                                 }
                               }}
-                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-expiryYear'); } }}
                               disabled={barcodeNewMedForm.batchLocked}
-                              enterKeyHint="next"
                               className={`px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                              placeholder="YYYY"
-                              min={new Date().getFullYear()}
-                              max={new Date().getFullYear() + 20}
-                            />
+                            >
+                              <option value="">Year</option>
+                              {Array.from({ length: 21 }, (_, i) => new Date().getFullYear() + i).map(y => (
+                                <option key={y} value={String(y)}>{y}</option>
+                              ))}
+                            </select>
                           </div>
                         </div>
 
@@ -6461,7 +6470,15 @@ Medicana Stock Management System`;
                           <select
                             id="barcodeNewMed-location"
                             value={barcodeNewMedForm.location}
-                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, location: e.target.value, error: '' }))}
+                            onChange={(e) => {
+                              setBarcodeNewMedForm(prev => ({ ...prev, location: e.target.value, error: '' }));
+                              if (e.target.value && barcodeNewMedForm.medicationLocked) {
+                                setTimeout(() => {
+                                  const minStockEl = document.querySelector('#barcodeNewMed-location')?.closest('.space-y-3, .space-y-4')?.querySelector('[placeholder="Optional"]');
+                                  if (minStockEl) minStockEl.focus();
+                                }, 50);
+                              }
+                            }}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
                           >
                             <option value="">Select Location</option>
