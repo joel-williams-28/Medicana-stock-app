@@ -50,7 +50,7 @@ FROM inventory i
 INNER JOIN batches b ON i.batch_id = b.id
 INNER JOIN medications m ON b.medication_id = m.id
 INNER JOIN locations l ON i.location_id = l.id
-LEFT JOIN location_min_levels lml ON lml.medication_id = m.id AND lml.location_id = i.location_id
+LEFT JOIN location_min_levels lml ON lml.medication_id = m.id::integer AND lml.location_id = i.location_id
 WHERE m.is_active = true;
 
 -- Create indexes for better performance
