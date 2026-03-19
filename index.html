@@ -285,6 +285,58 @@
       return unitMap[normalizedUnit] || normalizedUnit || 'unit';
     };
 
+    const getUsageOptionsForLocation = (locationName) => {
+      if (locationName === 'PACU') {
+        return [
+          { value: 'post-op', label: 'Post-op use' },
+          { value: 'pain-relief', label: 'Pain relief' },
+          { value: 'nausea', label: 'Nausea' },
+          { value: 'other', label: 'Other' }
+        ];
+      } else if (locationName && locationName.startsWith('Theatre')) {
+        return [
+          { value: 'anaesthesia', label: 'Anaesthesia' },
+          { value: 'antibiotic-prophylaxis', label: 'Antibiotic prophylaxis' },
+          { value: 'emergency-use', label: 'Emergency use' },
+          { value: 'other', label: 'Other' }
+        ];
+      } else if (locationName && locationName.startsWith('Ward')) {
+        return [
+          { value: 'regular-dose', label: 'Regular dose' },
+          { value: 'prn-use', label: 'PRN use' },
+          { value: 'tto', label: 'TTOs' },
+          { value: 'other', label: 'Other' }
+        ];
+      } else if (locationName === 'Sapphire Clinic') {
+        return [
+          { value: 'pre-op-prep', label: 'Pre-op prep' },
+          { value: 'local-anaesthetic', label: 'Local anaesthetic' },
+          { value: 'post-op-drop', label: 'Post-op drop' },
+          { value: 'other', label: 'Other' }
+        ];
+      } else if (locationName === 'Radiology') {
+        return [
+          { value: 'contrast', label: 'Contrast' },
+          { value: 'sedation', label: 'Sedation' },
+          { value: 'allergy-prophylaxis', label: 'Allergy prophylaxis' },
+          { value: 'other', label: 'Other' }
+        ];
+      } else if (locationName === 'Pharmacy') {
+        return [
+          { value: 'supply', label: 'Supply' },
+          { value: 'restock', label: 'Re-stock' },
+          { value: 'disposal', label: 'Disposal' },
+          { value: 'other', label: 'Other' }
+        ];
+      }
+      return [
+        { value: 'general-use', label: 'General use' },
+        { value: 'emergency', label: 'Emergency use' },
+        { value: 'routine', label: 'Routine use' },
+        { value: 'other', label: 'Other' }
+      ];
+    };
+
     const createTransaction = (baseData, nextId) => ({
       id: nextId,
       timestamp: new Date().toISOString(),
@@ -678,7 +730,30 @@
           location: '',
           error: '',
           successMessage: '',
-          isSubmitting: false
+          isSubmitting: false,
+          // Tab state (only used when medicationLocked)
+          activeTab: 'addStock', // 'addStock' | 'transfer' | 'patientUse' | 'transferAndUse' | 'order'
+          // Transfer fields (Tab 2 + 4)
+          transferSourceLocation: '',
+          transferTargetLocation: '',
+          transferBatchId: '',
+          transferQuantity: '',
+          transferQuantityType: 'boxes',
+          // Patient Use fields (Tab 3 + 4)
+          patientFirstName: '',
+          patientLastName: '',
+          patientLocalId: '',
+          useLocation: '',
+          useBatchId: '',
+          useQuantity: '',
+          useQuantityType: 'boxes',
+          useReason: '',
+          useNotes: '',
+          // Order fields (Tab 5)
+          orderQuantity: '',
+          orderUrgency: 'routine',
+          orderNotes: '',
+          orderPharmacistEmail: 'Aasit.Badiani@Medicana.co.uk'
         });
 
         // Low Stock Intelligence System - Track stock events and usage patterns
@@ -1752,7 +1827,26 @@
           location: '',
           error: '',
           successMessage: '',
-          isSubmitting: false
+          isSubmitting: false,
+          activeTab: 'addStock',
+          transferSourceLocation: '',
+          transferTargetLocation: '',
+          transferBatchId: '',
+          transferQuantity: '',
+          transferQuantityType: 'boxes',
+          patientFirstName: '',
+          patientLastName: '',
+          patientLocalId: '',
+          useLocation: '',
+          useBatchId: '',
+          useQuantity: '',
+          useQuantityType: 'boxes',
+          useReason: '',
+          useNotes: '',
+          orderQuantity: '',
+          orderUrgency: 'routine',
+          orderNotes: '',
+          orderPharmacistEmail: 'Aasit.Badiani@Medicana.co.uk'
         });
       };
 
@@ -2792,12 +2886,412 @@ Medicana Stock Management System`;
             location: persistedLocation,
             error: '',
             successMessage: successMsg,
-            isSubmitting: false
+            isSubmitting: false,
+            activeTab: 'addStock',
+            transferSourceLocation: '',
+            transferTargetLocation: '',
+            transferBatchId: '',
+            transferQuantity: '',
+            transferQuantityType: 'boxes',
+            patientFirstName: '',
+            patientLastName: '',
+            patientLocalId: '',
+            useLocation: '',
+            useBatchId: '',
+            useQuantity: '',
+            useQuantityType: 'boxes',
+            useReason: '',
+            useNotes: '',
+            orderQuantity: '',
+            orderUrgency: 'routine',
+            orderNotes: '',
+            orderPharmacistEmail: 'Aasit.Badiani@Medicana.co.uk'
           });
           setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100);
         } catch (err) {
           console.error('Failed to add medication/batch via barcode:', err);
           setBarcodeNewMedForm(prev => ({ ...prev, error: err.message || 'Failed to add medication', isSubmitting: false }));
+        }
+      };
+
+      // --- Barcode Modal Tab Handlers ---
+      // Derive inventory for the scanned medication (used by transfer/patient use tabs)
+      const getScannedMedInventory = () => {
+        if (!barcodeNewMedForm.medicationId) return [];
+        return medications.filter(m => m.internalId === barcodeNewMedForm.medicationId);
+      };
+
+      const handleBarcodeTransfer = async () => {
+        if (barcodeNewMedForm.isSubmitting) return;
+        if (!barcodeNewMedForm.transferSourceLocation) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please select a source location' }));
+          return;
+        }
+        if (!barcodeNewMedForm.transferBatchId) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please select a batch' }));
+          return;
+        }
+        if (!barcodeNewMedForm.transferTargetLocation) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please select a destination location' }));
+          return;
+        }
+        if (String(barcodeNewMedForm.transferSourceLocation) === String(barcodeNewMedForm.transferTargetLocation)) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Source and destination must be different' }));
+          return;
+        }
+        const qty = parseInt(barcodeNewMedForm.transferQuantity);
+        if (!qty || qty <= 0) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter a valid quantity' }));
+          return;
+        }
+
+        // Find batch to get details and validate stock
+        const inventory = getScannedMedInventory();
+        const sourceMed = inventory.find(m => String(m.locationId) === String(barcodeNewMedForm.transferSourceLocation));
+        const batch = sourceMed?.batches?.find(b => String(b.id) === String(barcodeNewMedForm.transferBatchId));
+        if (!batch) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Selected batch not found' }));
+          return;
+        }
+
+        // Convert quantity
+        const itemsPerBox = batch.itemsPerBox || parseInt(barcodeNewMedForm.itemsPerBox) || 1;
+        const transferQty = barcodeNewMedForm.transferQuantityType === 'boxes' ? qty * itemsPerBox : qty;
+
+        if (transferQty > batch.quantity) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: `Insufficient stock. Available: ${batch.quantity} items (${batch.numberOfBoxes || Math.floor(batch.quantity / itemsPerBox)} boxes)` }));
+          return;
+        }
+
+        setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
+
+        try {
+          const currentUser = getCurrentUserInfo();
+          if (!currentUser?.id) throw new Error('User not logged in');
+
+          await window.api.transferStock({
+            userId: currentUser.id,
+            batchId: parseInt(barcodeNewMedForm.transferBatchId),
+            sourceLocationId: parseInt(barcodeNewMedForm.transferSourceLocation),
+            targetLocationId: parseInt(barcodeNewMedForm.transferTargetLocation),
+            quantity: transferQty,
+            reason: 'Transfer via barcode scan',
+            medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
+            batchCode: batch.batchNumber || null
+          });
+
+          const data = await window.api.fetchAllData();
+          setMedications(data.medications || []);
+          setTransactions(data.transactions || []);
+
+          const displayQty = barcodeNewMedForm.transferQuantityType === 'boxes' ? `${qty} ${qty === 1 ? 'box' : 'boxes'}` : `${qty} items`;
+          const sourceName = sourceMed?.location || 'source';
+          const targetLoc = locations.find(l => String(l.id) === String(barcodeNewMedForm.transferTargetLocation));
+          const targetName = targetLoc?.displayName || 'destination';
+
+          setBarcodeNewMedForm(prev => ({
+            ...prev,
+            isSubmitting: false,
+            successMessage: `Transferred ${displayQty} of ${prev.name} from ${sourceName} to ${targetName}`,
+            transferSourceLocation: '', transferTargetLocation: '', transferBatchId: '', transferQuantity: '', transferQuantityType: 'boxes'
+          }));
+        } catch (err) {
+          console.error('Transfer via barcode failed:', err);
+          setBarcodeNewMedForm(prev => ({ ...prev, error: err.message || 'Transfer failed', isSubmitting: false }));
+        }
+      };
+
+      const handleBarcodePatientUse = async () => {
+        if (barcodeNewMedForm.isSubmitting) return;
+        if (!barcodeNewMedForm.useLocation) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please select a location' }));
+          return;
+        }
+        if (!barcodeNewMedForm.useBatchId) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please select a batch' }));
+          return;
+        }
+        const qty = parseInt(barcodeNewMedForm.useQuantity);
+        if (!qty || qty <= 0) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter a valid quantity' }));
+          return;
+        }
+        if (!barcodeNewMedForm.patientFirstName.trim()) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter patient first name' }));
+          return;
+        }
+        if (!barcodeNewMedForm.patientLastName.trim()) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter patient last name' }));
+          return;
+        }
+        if (!barcodeNewMedForm.patientLocalId.trim()) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter patient local ID' }));
+          return;
+        }
+
+        const inventory = getScannedMedInventory();
+        const locMed = inventory.find(m => String(m.locationId) === String(barcodeNewMedForm.useLocation));
+        const batch = locMed?.batches?.find(b => String(b.id) === String(barcodeNewMedForm.useBatchId));
+        if (!batch) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Selected batch not found' }));
+          return;
+        }
+
+        const itemsPerBox = batch.itemsPerBox || parseInt(barcodeNewMedForm.itemsPerBox) || 1;
+        const useQty = barcodeNewMedForm.useQuantityType === 'boxes' ? qty * itemsPerBox : qty;
+
+        if (useQty > batch.quantity) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: `Insufficient stock. Available: ${batch.quantity} items` }));
+          return;
+        }
+
+        setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
+
+        try {
+          const currentUser = getCurrentUserInfo();
+          if (!currentUser?.id) throw new Error('User not logged in');
+
+          const usageLabel = barcodeNewMedForm.useReason ? getUsageOptionsForLocation(locMed?.location).find(o => o.value === barcodeNewMedForm.useReason)?.label || barcodeNewMedForm.useReason : '';
+          const reason = `Patient use — Patient: ${barcodeNewMedForm.patientFirstName.trim()} ${barcodeNewMedForm.patientLastName.trim()}, ID: ${barcodeNewMedForm.patientLocalId.trim()}${usageLabel ? ', Reason: ' + usageLabel : ''}${barcodeNewMedForm.useNotes ? ', Notes: ' + barcodeNewMedForm.useNotes : ''}`;
+
+          await window.api.adjustStock({
+            userId: currentUser.id,
+            locationId: parseInt(barcodeNewMedForm.useLocation),
+            batchId: parseInt(barcodeNewMedForm.useBatchId),
+            delta: -useQty,
+            reason: reason,
+            medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
+            batchCode: batch.batchNumber || null
+          });
+
+          const data = await window.api.fetchAllData();
+          setMedications(data.medications || []);
+          setTransactions(data.transactions || []);
+
+          const displayQty = barcodeNewMedForm.useQuantityType === 'boxes' ? `${qty} ${qty === 1 ? 'box' : 'boxes'}` : `${qty} items`;
+
+          setBarcodeNewMedForm(prev => ({
+            ...prev,
+            isSubmitting: false,
+            successMessage: `Recorded patient use: ${displayQty} of ${prev.name} at ${locMed?.location || 'location'}`,
+            patientFirstName: '', patientLastName: '', patientLocalId: '',
+            useLocation: '', useBatchId: '', useQuantity: '', useQuantityType: 'boxes', useReason: '', useNotes: ''
+          }));
+        } catch (err) {
+          console.error('Patient use via barcode failed:', err);
+          setBarcodeNewMedForm(prev => ({ ...prev, error: err.message || 'Failed to record patient use', isSubmitting: false }));
+        }
+      };
+
+      const handleBarcodeTransferAndUse = async () => {
+        if (barcodeNewMedForm.isSubmitting) return;
+        // Validate transfer fields
+        if (!barcodeNewMedForm.transferSourceLocation) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please select a source location' }));
+          return;
+        }
+        if (!barcodeNewMedForm.transferBatchId) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please select a batch' }));
+          return;
+        }
+        if (!barcodeNewMedForm.transferTargetLocation) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please select a destination location' }));
+          return;
+        }
+        if (String(barcodeNewMedForm.transferSourceLocation) === String(barcodeNewMedForm.transferTargetLocation)) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Source and destination must be different' }));
+          return;
+        }
+        const qty = parseInt(barcodeNewMedForm.transferQuantity);
+        if (!qty || qty <= 0) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter a valid quantity' }));
+          return;
+        }
+        // Validate patient fields
+        if (!barcodeNewMedForm.patientFirstName.trim()) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter patient first name' }));
+          return;
+        }
+        if (!barcodeNewMedForm.patientLastName.trim()) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter patient last name' }));
+          return;
+        }
+        if (!barcodeNewMedForm.patientLocalId.trim()) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter patient local ID' }));
+          return;
+        }
+
+        const inventory = getScannedMedInventory();
+        const sourceMed = inventory.find(m => String(m.locationId) === String(barcodeNewMedForm.transferSourceLocation));
+        const batch = sourceMed?.batches?.find(b => String(b.id) === String(barcodeNewMedForm.transferBatchId));
+        if (!batch) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Selected batch not found' }));
+          return;
+        }
+
+        const itemsPerBox = batch.itemsPerBox || parseInt(barcodeNewMedForm.itemsPerBox) || 1;
+        const transferQty = barcodeNewMedForm.transferQuantityType === 'boxes' ? qty * itemsPerBox : qty;
+
+        if (transferQty > batch.quantity) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: `Insufficient stock. Available: ${batch.quantity} items` }));
+          return;
+        }
+
+        setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
+
+        try {
+          const currentUser = getCurrentUserInfo();
+          if (!currentUser?.id) throw new Error('User not logged in');
+
+          const medFullName = barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : '');
+
+          // Step 1: Transfer stock
+          await window.api.transferStock({
+            userId: currentUser.id,
+            batchId: parseInt(barcodeNewMedForm.transferBatchId),
+            sourceLocationId: parseInt(barcodeNewMedForm.transferSourceLocation),
+            targetLocationId: parseInt(barcodeNewMedForm.transferTargetLocation),
+            quantity: transferQty,
+            reason: 'Transfer for patient use via barcode scan',
+            medicationName: medFullName,
+            batchCode: batch.batchNumber || null
+          });
+
+          // Step 2: Record patient use at target (same batchId — transfer reuses batch row)
+          const targetLoc = locations.find(l => String(l.id) === String(barcodeNewMedForm.transferTargetLocation));
+          const usageLabel = barcodeNewMedForm.useReason ? getUsageOptionsForLocation(targetLoc?.displayName).find(o => o.value === barcodeNewMedForm.useReason)?.label || barcodeNewMedForm.useReason : '';
+          const reason = `Patient use — Patient: ${barcodeNewMedForm.patientFirstName.trim()} ${barcodeNewMedForm.patientLastName.trim()}, ID: ${barcodeNewMedForm.patientLocalId.trim()}${usageLabel ? ', Reason: ' + usageLabel : ''}${barcodeNewMedForm.useNotes ? ', Notes: ' + barcodeNewMedForm.useNotes : ''}`;
+
+          await window.api.adjustStock({
+            userId: currentUser.id,
+            locationId: parseInt(barcodeNewMedForm.transferTargetLocation),
+            batchId: parseInt(barcodeNewMedForm.transferBatchId),
+            delta: -transferQty,
+            reason: reason,
+            medicationName: medFullName,
+            batchCode: batch.batchNumber || null
+          });
+
+          const data = await window.api.fetchAllData();
+          setMedications(data.medications || []);
+          setTransactions(data.transactions || []);
+
+          const displayQty = barcodeNewMedForm.transferQuantityType === 'boxes' ? `${qty} ${qty === 1 ? 'box' : 'boxes'}` : `${qty} items`;
+          const sourceName = sourceMed?.location || 'source';
+          const targetName = targetLoc?.displayName || 'destination';
+
+          setBarcodeNewMedForm(prev => ({
+            ...prev,
+            isSubmitting: false,
+            successMessage: `Transferred ${displayQty} of ${prev.name} from ${sourceName} to ${targetName} and recorded patient use`,
+            transferSourceLocation: '', transferTargetLocation: '', transferBatchId: '', transferQuantity: '', transferQuantityType: 'boxes',
+            patientFirstName: '', patientLastName: '', patientLocalId: '', useReason: '', useNotes: ''
+          }));
+        } catch (err) {
+          console.error('Transfer & use via barcode failed:', err);
+          const errorMsg = err.message || 'Failed to complete transfer and patient use';
+          setBarcodeNewMedForm(prev => ({ ...prev, error: errorMsg, isSubmitting: false }));
+        }
+      };
+
+      const handleBarcodeOrderCopy = async () => {
+        if (barcodeNewMedForm.isSubmitting) return;
+        const qty = parseInt(barcodeNewMedForm.orderQuantity);
+        if (!qty || qty <= 0) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter a valid quantity' }));
+          return;
+        }
+
+        setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
+
+        try {
+          const currentUser = getCurrentUserInfo();
+          if (!currentUser?.id) throw new Error('User not logged in');
+
+          const medFullName = barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : '');
+
+          await window.api.placeOrder({
+            medicationId: barcodeNewMedForm.medicationId,
+            userId: currentUser.id,
+            quantity: qty,
+            urgency: barcodeNewMedForm.orderUrgency,
+            notes: barcodeNewMedForm.orderNotes || '',
+            pharmacistEmail: barcodeNewMedForm.orderPharmacistEmail,
+            medicationName: medFullName
+          });
+
+          // Generate email content for clipboard
+          const inventory = getScannedMedInventory();
+          const totalBoxes = inventory.reduce((sum, m) => sum + (m.batches || []).reduce((bs, b) => bs + (b.numberOfBoxes || 0), 0), 0);
+          const subject = `STOCK ORDER REQUEST: ${medFullName}`;
+          const body = `Dear Ash,\n\nPlease find below the requested stock order for ${medFullName}.\n\nMEDICATION STOCK ORDER REQUEST\n\nMedication: ${medFullName}\nCurrent Stock Level: ${totalBoxes} ${totalBoxes === 1 ? 'box' : 'boxes'} (across all locations)\n\nREQUESTED ORDER QUANTITY: ${qty} boxes\nURGENCY: ${barcodeNewMedForm.orderUrgency.toUpperCase()}\n\n${barcodeNewMedForm.orderNotes ? `Additional Notes:\n${barcodeNewMedForm.orderNotes}\n\n` : ''}Requested by: ${currentUser.fullName || auth.currentUser}\nDate: ${new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}\n\nPlease process this order at your earliest convenience.`;
+          const fullText = `To: ${barcodeNewMedForm.orderPharmacistEmail}\nSubject: ${subject}\n\n${body}`;
+          await navigator.clipboard.writeText(fullText);
+
+          const data = await window.api.fetchAllData();
+          setMedications(data.medications || []);
+          setTransactions(data.transactions || []);
+          setOrders(data.orders || []);
+
+          setBarcodeNewMedForm(prev => ({
+            ...prev,
+            isSubmitting: false,
+            successMessage: `Order placed for ${qty} ${qty === 1 ? 'box' : 'boxes'} of ${medFullName} — copied to clipboard`,
+            orderQuantity: '', orderUrgency: 'routine', orderNotes: ''
+          }));
+        } catch (err) {
+          console.error('Order via barcode failed:', err);
+          setBarcodeNewMedForm(prev => ({ ...prev, error: err.message || 'Failed to place order', isSubmitting: false }));
+        }
+      };
+
+      const handleBarcodeOrderEmail = async () => {
+        if (barcodeNewMedForm.isSubmitting) return;
+        const qty = parseInt(barcodeNewMedForm.orderQuantity);
+        if (!qty || qty <= 0) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter a valid quantity' }));
+          return;
+        }
+
+        setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
+
+        try {
+          const currentUser = getCurrentUserInfo();
+          if (!currentUser?.id) throw new Error('User not logged in');
+
+          const medFullName = barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : '');
+
+          await window.api.placeOrder({
+            medicationId: barcodeNewMedForm.medicationId,
+            userId: currentUser.id,
+            quantity: qty,
+            urgency: barcodeNewMedForm.orderUrgency,
+            notes: barcodeNewMedForm.orderNotes || '',
+            pharmacistEmail: barcodeNewMedForm.orderPharmacistEmail,
+            medicationName: medFullName
+          });
+
+          const inventory = getScannedMedInventory();
+          const totalBoxes = inventory.reduce((sum, m) => sum + (m.batches || []).reduce((bs, b) => bs + (b.numberOfBoxes || 0), 0), 0);
+          const subject = `STOCK ORDER REQUEST: ${medFullName}`;
+          const body = `Dear Ash,\n\nPlease find below the requested stock order for ${medFullName}.\n\nMEDICATION STOCK ORDER REQUEST\n\nMedication: ${medFullName}\nCurrent Stock Level: ${totalBoxes} ${totalBoxes === 1 ? 'box' : 'boxes'} (across all locations)\n\nREQUESTED ORDER QUANTITY: ${qty} boxes\nURGENCY: ${barcodeNewMedForm.orderUrgency.toUpperCase()}\n\n${barcodeNewMedForm.orderNotes ? `Additional Notes:\n${barcodeNewMedForm.orderNotes}\n\n` : ''}Requested by: ${currentUser.fullName || auth.currentUser}\nDate: ${new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}\n\nPlease process this order at your earliest convenience.`;
+          const mailtoLink = `mailto:${barcodeNewMedForm.orderPharmacistEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+          window.location.href = mailtoLink;
+
+          const data = await window.api.fetchAllData();
+          setMedications(data.medications || []);
+          setTransactions(data.transactions || []);
+          setOrders(data.orders || []);
+
+          setBarcodeNewMedForm(prev => ({
+            ...prev,
+            isSubmitting: false,
+            successMessage: `Order placed for ${qty} ${qty === 1 ? 'box' : 'boxes'} of ${medFullName} — email opened`,
+            orderQuantity: '', orderUrgency: 'routine', orderNotes: ''
+          }));
+        } catch (err) {
+          console.error('Order via barcode email failed:', err);
+          setBarcodeNewMedForm(prev => ({ ...prev, error: err.message || 'Failed to place order', isSubmitting: false }));
         }
       };
 
@@ -5347,61 +5841,8 @@ Medicana Stock Management System`;
                         <label className="block text-sm font-medium text-gray-700 mb-2">Usage Type</label>
                         <div className="grid grid-cols-1 gap-2">
                           {(() => {
-                            const location = ui.currentLocation;
-                            let options = [];
-                            
-                            if (location === 'PACU') {
-                              options = [
-                                { value: 'post-op', label: 'Post-op use' },
-                                { value: 'pain-relief', label: 'Pain relief' },
-                                { value: 'nausea', label: 'Nausea' },
-                                { value: 'other', label: 'Other' }
-                              ];
-                            } else if (location.startsWith('Theatre')) {
-                              options = [
-                                { value: 'anaesthesia', label: 'Anaesthesia' },
-                                { value: 'antibiotic-prophylaxis', label: 'Antibiotic prophylaxis' },
-                                { value: 'emergency-use', label: 'Emergency use' },
-                                { value: 'other', label: 'Other' }
-                              ];
-                            } else if (location.startsWith('Ward')) {
-                              options = [
-                                { value: 'regular-dose', label: 'Regular dose' },
-                                { value: 'prn-use', label: 'PRN use' },
-                                { value: 'tto', label: 'TTOs' },
-                                { value: 'other', label: 'Other' }
-                              ];
-                            } else if (location === 'Sapphire Clinic') {
-                              options = [
-                                { value: 'pre-op-prep', label: 'Pre-op prep' },
-                                { value: 'local-anaesthetic', label: 'Local anaesthetic' },
-                                { value: 'post-op-drop', label: 'Post-op drop' },
-                                { value: 'other', label: 'Other' }
-                              ];
-                            } else if (location === 'Radiology') {
-                              options = [
-                                { value: 'contrast', label: 'Contrast' },
-                                { value: 'sedation', label: 'Sedation' },
-                                { value: 'allergy-prophylaxis', label: 'Allergy prophylaxis' },
-                                { value: 'other', label: 'Other' }
-                              ];
-                            } else if (location === 'Pharmacy') {
-                              options = [
-                                { value: 'supply', label: 'Supply' },
-                                { value: 'restock', label: 'Re-stock' },
-                                { value: 'disposal', label: 'Disposal' },
-                                { value: 'other', label: 'Other' }
-                              ];
-                            } else {
-                              // Default options for other locations
-                              options = [
-                                { value: 'general-use', label: 'General use' },
-                                { value: 'emergency', label: 'Emergency use' },
-                                { value: 'routine', label: 'Routine use' },
-                                { value: 'other', label: 'Other' }
-                              ];
-                            }
-                            
+                            const options = getUsageOptionsForLocation(ui.currentLocation);
+
                             return options.map(option => (
                               <label key={option.value} className="flex items-center cursor-pointer">
                                 <input 
@@ -6292,13 +6733,26 @@ Medicana Stock Management System`;
                 <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-2xl w-full flex flex-col m-2 sm:m-4" style={{maxHeight: '90vh'}}>
                   <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex-shrink-0">
                     <h2 className="text-base sm:text-lg font-bold text-gray-800">
-                      {barcodeNewMedForm.medicationLocked ? 'Add Stock to Existing Medication' : 'Add New Medication'}
+                      {barcodeNewMedForm.medicationLocked
+                        ? { addStock: 'Add Stock', transfer: 'Transfer Medication', patientUse: 'Patient Use', transferAndUse: 'Transfer & Patient Use', order: 'Order Medication' }[barcodeNewMedForm.activeTab] || 'Add Stock'
+                        : 'Add New Medication'}
                     </h2>
                     {!barcodeNewMedForm.medicationLocked && barcodeNewMedForm.barcode && (
                       <p className="text-xs text-amber-700 mt-1">Barcode not recognised — enter medication details below.</p>
                     )}
                   </div>
-                  <form onSubmit={(e) => { e.preventDefault(); handleBarcodeNewMedication(); }} className="flex flex-col flex-1 overflow-hidden">
+                  <form onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!barcodeNewMedForm.medicationLocked || barcodeNewMedForm.activeTab === 'addStock') {
+                      handleBarcodeNewMedication();
+                    } else if (barcodeNewMedForm.activeTab === 'transfer') {
+                      handleBarcodeTransfer();
+                    } else if (barcodeNewMedForm.activeTab === 'patientUse') {
+                      handleBarcodePatientUse();
+                    } else if (barcodeNewMedForm.activeTab === 'transferAndUse') {
+                      handleBarcodeTransferAndUse();
+                    }
+                  }} className="flex flex-col flex-1 overflow-hidden">
                   <div className="overflow-y-auto px-4 sm:px-6 py-3 sm:py-4 flex-1">
                     {barcodeNewMedForm.successMessage && (
                       <div className="mb-4 p-3 bg-green-50 border border-green-300 rounded text-sm text-green-700">
@@ -6380,6 +6834,30 @@ Medicana Stock Management System`;
                       )}
                     </div>
 
+                    {/* Tab bar — only when medication is recognised */}
+                    {barcodeNewMedForm.medicationLocked && (
+                      <div className="flex border-b border-gray-200 mb-4 overflow-x-auto -mx-1">
+                        {[
+                          { key: 'addStock', label: 'Add Stock' },
+                          { key: 'transfer', label: 'Transfer' },
+                          { key: 'patientUse', label: 'Patient Use' },
+                          { key: 'transferAndUse', label: 'Transfer & Use' },
+                          { key: 'order', label: 'Order' }
+                        ].map(tab => (
+                          <button key={tab.key} type="button"
+                            onClick={() => setBarcodeNewMedForm(prev => ({ ...prev, activeTab: tab.key, error: '', successMessage: '' }))}
+                            className={`px-3 py-2 text-xs sm:text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                              barcodeNewMedForm.activeTab === tab.key
+                                ? 'border-cyan-500 text-cyan-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700'
+                            }`}
+                          >{tab.label}</button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Tab 1: Add Stock (existing form) — also shown for unrecognised barcodes */}
+                    {(!barcodeNewMedForm.medicationLocked || barcodeNewMedForm.activeTab === 'addStock') && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                       {/* Medication Identity — what is this drug? */}
                       <div className="space-y-3 sm:space-y-4">
@@ -6734,8 +7212,416 @@ Medicana Stock Management System`;
                         )}
                       </div>
                     </div>
+                    )}
+
+                    {/* Tab 2: Transfer */}
+                    {barcodeNewMedForm.medicationLocked && barcodeNewMedForm.activeTab === 'transfer' && (() => {
+                      const scannedMedInv = getScannedMedInventory();
+                      const sourceLocBatches = scannedMedInv.find(m => String(m.locationId) === String(barcodeNewMedForm.transferSourceLocation))?.batches || [];
+                      return (
+                      <div className="space-y-4">
+                        <div className="p-3 bg-gray-50 rounded-lg border">
+                          <div className="text-sm font-medium text-gray-800">{barcodeNewMedForm.name} {barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? barcodeNewMedForm.strength : ''}</div>
+                          <div className="text-xs text-gray-500">Form: {barcodeNewMedForm.type} | Items/box: {barcodeNewMedForm.itemsPerBox || 'N/A'}</div>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">From Location *</label>
+                          <select value={barcodeNewMedForm.transferSourceLocation}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferSourceLocation: e.target.value, transferBatchId: '', error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            <option value="">Select source location...</option>
+                            {scannedMedInv.filter(m => m.batches && m.batches.length > 0).map(m => (
+                              <option key={m.locationId} value={m.locationId}>{m.location}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {barcodeNewMedForm.transferSourceLocation && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Batch *</label>
+                          <select value={barcodeNewMedForm.transferBatchId}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferBatchId: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            <option value="">Select batch...</option>
+                            {sourceLocBatches.map(b => (
+                              <option key={b.id} value={b.id}>
+                                {b.batchNumber || 'Unknown'} — Qty: {b.numberOfBoxes || 0} boxes ({b.quantity} items) — Exp: {b.expiryDate || 'N/A'}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        )}
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">To Location *</label>
+                          <select value={barcodeNewMedForm.transferTargetLocation}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferTargetLocation: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            <option value="">Select destination...</option>
+                            {(() => {
+                              const grouped = {};
+                              locations.filter(loc => String(loc.id) !== String(barcodeNewMedForm.transferSourceLocation)).forEach(loc => {
+                                const group = loc.groupName || '_ungrouped';
+                                if (!grouped[group]) grouped[group] = [];
+                                grouped[group].push(loc);
+                              });
+                              const elements = [];
+                              Object.keys(grouped).forEach(groupName => {
+                                if (groupName !== '_ungrouped') {
+                                  elements.push(
+                                    <optgroup key={groupName} label={groupName}>
+                                      {grouped[groupName].map(loc => (
+                                        <option key={loc.id} value={loc.id}>{loc.displayName}</option>
+                                      ))}
+                                    </optgroup>
+                                  );
+                                }
+                              });
+                              if (grouped['_ungrouped']) {
+                                grouped['_ungrouped'].forEach(loc => {
+                                  elements.push(<option key={loc.id} value={loc.id}>{loc.displayName}</option>);
+                                });
+                              }
+                              return elements;
+                            })()}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
+                          <div className="flex gap-2">
+                            <input type="number" inputMode="numeric" value={barcodeNewMedForm.transferQuantity}
+                              onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferQuantity: e.target.value, error: '' }))}
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              min="1" placeholder="Enter quantity" />
+                            <select value={barcodeNewMedForm.transferQuantityType}
+                              onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferQuantityType: e.target.value, transferQuantity: '' }))}
+                              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                              <option value="boxes">Boxes</option>
+                              <option value="individual">Individual</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                      );
+                    })()}
+
+                    {/* Tab 3: Patient Use */}
+                    {barcodeNewMedForm.medicationLocked && barcodeNewMedForm.activeTab === 'patientUse' && (() => {
+                      const scannedMedInv = getScannedMedInventory();
+                      const useLocMed = scannedMedInv.find(m => String(m.locationId) === String(barcodeNewMedForm.useLocation));
+                      const useLocBatches = useLocMed?.batches || [];
+                      const useLocName = useLocMed?.location || '';
+                      return (
+                      <div className="space-y-4">
+                        <div className="p-3 bg-gray-50 rounded-lg border">
+                          <div className="text-sm font-medium text-gray-800">{barcodeNewMedForm.name} {barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? barcodeNewMedForm.strength : ''}</div>
+                          <div className="text-xs text-gray-500">Form: {barcodeNewMedForm.type} | Items/box: {barcodeNewMedForm.itemsPerBox || 'N/A'}</div>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Location *</label>
+                          <select value={barcodeNewMedForm.useLocation}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, useLocation: e.target.value, useBatchId: '', error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            <option value="">Select location...</option>
+                            {scannedMedInv.filter(m => m.batches && m.batches.length > 0).map(m => (
+                              <option key={m.locationId} value={m.locationId}>{m.location}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {barcodeNewMedForm.useLocation && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Batch *</label>
+                          <select value={barcodeNewMedForm.useBatchId}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, useBatchId: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            <option value="">Select batch...</option>
+                            {useLocBatches.map(b => (
+                              <option key={b.id} value={b.id}>
+                                {b.batchNumber || 'Unknown'} — Qty: {b.numberOfBoxes || 0} boxes ({b.quantity} items) — Exp: {b.expiryDate || 'N/A'}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        )}
+
+                        {barcodeNewMedForm.useBatchId && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
+                          <div className="flex gap-2">
+                            <input type="number" inputMode="numeric" value={barcodeNewMedForm.useQuantity}
+                              onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, useQuantity: e.target.value, error: '' }))}
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              min="1" placeholder="Enter quantity" />
+                            <select value={barcodeNewMedForm.useQuantityType}
+                              onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, useQuantityType: e.target.value, useQuantity: '' }))}
+                              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                              <option value="boxes">Boxes</option>
+                              <option value="individual">Individual</option>
+                            </select>
+                          </div>
+                        </div>
+                        )}
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Patient First Name *</label>
+                          <input type="text" value={barcodeNewMedForm.patientFirstName}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, patientFirstName: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            placeholder="Enter patient's first name" />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Patient Last Name *</label>
+                          <input type="text" value={barcodeNewMedForm.patientLastName}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, patientLastName: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            placeholder="Enter patient's last name" />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Local Patient Source No. *</label>
+                          <input type="text" value={barcodeNewMedForm.patientLocalId}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, patientLocalId: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            placeholder="Enter patient's local ID number" />
+                        </div>
+
+                        {useLocName && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Usage Type</label>
+                          <div className="grid grid-cols-1 gap-2">
+                            {getUsageOptionsForLocation(useLocName).map(option => (
+                              <label key={option.value} className="flex items-center cursor-pointer">
+                                <input type="radio" name="barcodeUseReason" value={option.value}
+                                  checked={barcodeNewMedForm.useReason === option.value}
+                                  onClick={() => setBarcodeNewMedForm(prev => ({ ...prev, useReason: option.value, error: '' }))}
+                                  className="mr-2" />
+                                {option.label}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                        )}
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Additional Notes (optional)</label>
+                          <input type="text" value={barcodeNewMedForm.useNotes}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, useNotes: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            placeholder="e.g., procedure, ward, special instructions" />
+                        </div>
+                      </div>
+                      );
+                    })()}
+
+                    {/* Tab 4: Transfer & Use */}
+                    {barcodeNewMedForm.medicationLocked && barcodeNewMedForm.activeTab === 'transferAndUse' && (() => {
+                      const scannedMedInv = getScannedMedInventory();
+                      const sourceLocBatches = scannedMedInv.find(m => String(m.locationId) === String(barcodeNewMedForm.transferSourceLocation))?.batches || [];
+                      const targetLoc = locations.find(l => String(l.id) === String(barcodeNewMedForm.transferTargetLocation));
+                      const targetLocName = targetLoc?.displayName || '';
+                      return (
+                      <div className="space-y-4">
+                        <div className="p-3 bg-gray-50 rounded-lg border">
+                          <div className="text-sm font-medium text-gray-800">{barcodeNewMedForm.name} {barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? barcodeNewMedForm.strength : ''}</div>
+                          <div className="text-xs text-gray-500">Form: {barcodeNewMedForm.type} | Items/box: {barcodeNewMedForm.itemsPerBox || 'N/A'}</div>
+                        </div>
+
+                        <h4 className="text-sm font-semibold text-gray-700 border-b pb-1">Transfer Details</h4>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">From Location *</label>
+                          <select value={barcodeNewMedForm.transferSourceLocation}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferSourceLocation: e.target.value, transferBatchId: '', error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            <option value="">Select source location...</option>
+                            {scannedMedInv.filter(m => m.batches && m.batches.length > 0).map(m => (
+                              <option key={m.locationId} value={m.locationId}>{m.location}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {barcodeNewMedForm.transferSourceLocation && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Batch *</label>
+                          <select value={barcodeNewMedForm.transferBatchId}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferBatchId: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            <option value="">Select batch...</option>
+                            {sourceLocBatches.map(b => (
+                              <option key={b.id} value={b.id}>
+                                {b.batchNumber || 'Unknown'} — Qty: {b.numberOfBoxes || 0} boxes ({b.quantity} items) — Exp: {b.expiryDate || 'N/A'}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        )}
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">To Location *</label>
+                          <select value={barcodeNewMedForm.transferTargetLocation}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferTargetLocation: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            <option value="">Select destination...</option>
+                            {(() => {
+                              const grouped = {};
+                              locations.filter(loc => String(loc.id) !== String(barcodeNewMedForm.transferSourceLocation)).forEach(loc => {
+                                const group = loc.groupName || '_ungrouped';
+                                if (!grouped[group]) grouped[group] = [];
+                                grouped[group].push(loc);
+                              });
+                              const elements = [];
+                              Object.keys(grouped).forEach(groupName => {
+                                if (groupName !== '_ungrouped') {
+                                  elements.push(
+                                    <optgroup key={groupName} label={groupName}>
+                                      {grouped[groupName].map(loc => (
+                                        <option key={loc.id} value={loc.id}>{loc.displayName}</option>
+                                      ))}
+                                    </optgroup>
+                                  );
+                                }
+                              });
+                              if (grouped['_ungrouped']) {
+                                grouped['_ungrouped'].forEach(loc => {
+                                  elements.push(<option key={loc.id} value={loc.id}>{loc.displayName}</option>);
+                                });
+                              }
+                              return elements;
+                            })()}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
+                          <div className="flex gap-2">
+                            <input type="number" inputMode="numeric" value={barcodeNewMedForm.transferQuantity}
+                              onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferQuantity: e.target.value, error: '' }))}
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              min="1" placeholder="Enter quantity" />
+                            <select value={barcodeNewMedForm.transferQuantityType}
+                              onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferQuantityType: e.target.value, transferQuantity: '' }))}
+                              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                              <option value="boxes">Boxes</option>
+                              <option value="individual">Individual</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <h4 className="text-sm font-semibold text-gray-700 border-b pb-1 mt-2">Patient Details</h4>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Patient First Name *</label>
+                          <input type="text" value={barcodeNewMedForm.patientFirstName}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, patientFirstName: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            placeholder="Enter patient's first name" />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Patient Last Name *</label>
+                          <input type="text" value={barcodeNewMedForm.patientLastName}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, patientLastName: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            placeholder="Enter patient's last name" />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Local Patient Source No. *</label>
+                          <input type="text" value={barcodeNewMedForm.patientLocalId}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, patientLocalId: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            placeholder="Enter patient's local ID number" />
+                        </div>
+
+                        {targetLocName && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Usage Type (at {targetLocName})</label>
+                          <div className="grid grid-cols-1 gap-2">
+                            {getUsageOptionsForLocation(targetLocName).map(option => (
+                              <label key={option.value} className="flex items-center cursor-pointer">
+                                <input type="radio" name="barcodeTransferUseReason" value={option.value}
+                                  checked={barcodeNewMedForm.useReason === option.value}
+                                  onClick={() => setBarcodeNewMedForm(prev => ({ ...prev, useReason: option.value, error: '' }))}
+                                  className="mr-2" />
+                                {option.label}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                        )}
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Additional Notes (optional)</label>
+                          <input type="text" value={barcodeNewMedForm.useNotes}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, useNotes: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            placeholder="e.g., procedure, ward, special instructions" />
+                        </div>
+                      </div>
+                      );
+                    })()}
+
+                    {/* Tab 5: Order */}
+                    {barcodeNewMedForm.medicationLocked && barcodeNewMedForm.activeTab === 'order' && (
+                      <div className="space-y-4">
+                        <div className="p-3 bg-gray-50 rounded-lg border">
+                          <div className="text-sm font-medium text-gray-800">{barcodeNewMedForm.name} {barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? barcodeNewMedForm.strength : ''}</div>
+                          <div className="text-xs text-gray-500">Form: {barcodeNewMedForm.type} | Items/box: {barcodeNewMedForm.itemsPerBox || 'N/A'}</div>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Quantity (boxes) *</label>
+                          <input type="number" inputMode="numeric" value={barcodeNewMedForm.orderQuantity}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, orderQuantity: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            min="1" placeholder="Enter number of boxes to order" />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Urgency</label>
+                          <div className="flex gap-4">
+                            {[
+                              { value: 'routine', label: 'Routine' },
+                              { value: 'urgent', label: 'Urgent' },
+                              { value: 'non-urgent', label: 'Non-urgent' }
+                            ].map(opt => (
+                              <label key={opt.value} className="flex items-center cursor-pointer">
+                                <input type="radio" name="barcodeOrderUrgency" value={opt.value}
+                                  checked={barcodeNewMedForm.orderUrgency === opt.value}
+                                  onClick={() => setBarcodeNewMedForm(prev => ({ ...prev, orderUrgency: opt.value }))}
+                                  className="mr-2" />
+                                <span className="text-sm">{opt.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
+                          <textarea value={barcodeNewMedForm.orderNotes}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, orderNotes: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            rows="2" placeholder="Additional order notes" />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Pharmacist Email</label>
+                          <input type="email" value={barcodeNewMedForm.orderPharmacistEmail}
+                            onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, orderPharmacistEmail: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                        </div>
+                      </div>
+                    )}
+
                   </div>
                   <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 flex-shrink-0">
+                    {/* Dynamic submit button based on active tab */}
+                    {(!barcodeNewMedForm.medicationLocked || barcodeNewMedForm.activeTab === 'addStock') && (
                     <div className="flex gap-2">
                       <button
                         type="submit"
@@ -6758,6 +7644,55 @@ Medicana Stock Management System`;
                         }}
                         className="px-4 sm:px-6 bg-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-400 transition-colors font-medium text-sm">{barcodeNewMedForm.successMessage ? 'Done' : 'Cancel'}</button>
                     </div>
+                    )}
+
+                    {barcodeNewMedForm.medicationLocked && barcodeNewMedForm.activeTab === 'transfer' && (
+                    <div className="flex gap-2">
+                      <button type="button" onClick={handleBarcodeTransfer} disabled={barcodeNewMedForm.isSubmitting}
+                        className={`flex-1 py-3 rounded-lg transition-colors font-medium text-sm sm:text-base ${barcodeNewMedForm.isSubmitting ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-blue-500 text-white hover:bg-blue-600'}`}>
+                        {barcodeNewMedForm.isSubmitting ? 'Transferring...' : 'Transfer Stock'}
+                      </button>
+                      <button type="button" onClick={() => { resetBarcodeNewMedForm(); setModals(prev => ({ ...prev, showBarcodeNewMedication: false })); }}
+                        className="px-4 sm:px-6 bg-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-400 transition-colors font-medium text-sm">{barcodeNewMedForm.successMessage ? 'Done' : 'Cancel'}</button>
+                    </div>
+                    )}
+
+                    {barcodeNewMedForm.medicationLocked && barcodeNewMedForm.activeTab === 'patientUse' && (
+                    <div className="flex gap-2">
+                      <button type="button" onClick={handleBarcodePatientUse} disabled={barcodeNewMedForm.isSubmitting}
+                        className={`flex-1 py-3 rounded-lg transition-colors font-medium text-sm sm:text-base ${barcodeNewMedForm.isSubmitting ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-amber-500 text-white hover:bg-amber-600'}`}>
+                        {barcodeNewMedForm.isSubmitting ? 'Recording...' : 'Record Patient Use'}
+                      </button>
+                      <button type="button" onClick={() => { resetBarcodeNewMedForm(); setModals(prev => ({ ...prev, showBarcodeNewMedication: false })); }}
+                        className="px-4 sm:px-6 bg-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-400 transition-colors font-medium text-sm">{barcodeNewMedForm.successMessage ? 'Done' : 'Cancel'}</button>
+                    </div>
+                    )}
+
+                    {barcodeNewMedForm.medicationLocked && barcodeNewMedForm.activeTab === 'transferAndUse' && (
+                    <div className="flex gap-2">
+                      <button type="button" onClick={handleBarcodeTransferAndUse} disabled={barcodeNewMedForm.isSubmitting}
+                        className={`flex-1 py-3 rounded-lg transition-colors font-medium text-sm sm:text-base ${barcodeNewMedForm.isSubmitting ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-purple-500 text-white hover:bg-purple-600'}`}>
+                        {barcodeNewMedForm.isSubmitting ? 'Processing...' : 'Transfer & Record Use'}
+                      </button>
+                      <button type="button" onClick={() => { resetBarcodeNewMedForm(); setModals(prev => ({ ...prev, showBarcodeNewMedication: false })); }}
+                        className="px-4 sm:px-6 bg-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-400 transition-colors font-medium text-sm">{barcodeNewMedForm.successMessage ? 'Done' : 'Cancel'}</button>
+                    </div>
+                    )}
+
+                    {barcodeNewMedForm.medicationLocked && barcodeNewMedForm.activeTab === 'order' && (
+                    <div className="flex gap-2">
+                      <button type="button" onClick={handleBarcodeOrderCopy} disabled={barcodeNewMedForm.isSubmitting}
+                        className={`flex-1 py-3 rounded-lg transition-colors font-medium text-sm sm:text-base ${barcodeNewMedForm.isSubmitting ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-green-500 text-white hover:bg-green-600'}`}>
+                        {barcodeNewMedForm.isSubmitting ? 'Placing Order...' : 'Copy to Clipboard'}
+                      </button>
+                      <button type="button" onClick={handleBarcodeOrderEmail} disabled={barcodeNewMedForm.isSubmitting}
+                        className={`flex-1 py-3 rounded-lg transition-colors font-medium text-sm sm:text-base ${barcodeNewMedForm.isSubmitting ? 'bg-gray-400 text-gray-600 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}>
+                        {barcodeNewMedForm.isSubmitting ? 'Placing Order...' : 'Send Email'}
+                      </button>
+                      <button type="button" onClick={() => { resetBarcodeNewMedForm(); setModals(prev => ({ ...prev, showBarcodeNewMedication: false })); }}
+                        className="px-4 sm:px-6 bg-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-400 transition-colors font-medium text-sm">{barcodeNewMedForm.successMessage ? 'Done' : 'Cancel'}</button>
+                    </div>
+                    )}
                   </div>
                   </form>
                 </div>
