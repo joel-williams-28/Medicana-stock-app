@@ -6342,22 +6342,20 @@ Medicana Stock Management System`;
                                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-batchNumber'); } }}
                                 onChange={(e) => {
                                   const inputValue = e.target.value;
-                                  setBarcodeNewMedForm(prev => ({ ...prev, batchNumber: inputValue, error: '' }));
+                                  // Unlock batch fields when user edits the batch code
+                                  setBarcodeNewMedForm(prev => ({ ...prev, batchNumber: inputValue, existingBatchId: null, batchLocked: false, batchExists: false, error: '' }));
                                   // Batch integrity safeguard — do not remove.
                                   // Check batch code after user stops typing (debounce)
                                   const code = inputValue.trim();
                                   if (code) {
                                     setTimeout(() => checkBatchCode(code, 'barcode'), 500);
-                                  } else {
-                                    setBarcodeNewMedForm(prev => ({ ...prev, batchLocked: false, batchExists: false }));
                                   }
                                 }}
-                                disabled={barcodeNewMedForm.batchLocked}
                                 enterKeyHint="next"
-                                className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 ${barcodeNewMedForm.batchLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
                                 placeholder="e.g., BN123456"
                               />
-                              {barcodeNewMedForm.enteringNewBatch && barcodeNewMedForm.existingBatches.length > 0 && !barcodeNewMedForm.batchLocked && (
+                              {barcodeNewMedForm.enteringNewBatch && barcodeNewMedForm.existingBatches.length > 0 && (
                                 <button type="button" onClick={() => setBarcodeNewMedForm(prev => ({
                                   ...prev, enteringNewBatch: false, batchNumber: '', existingBatchId: null, batchLocked: false, batchExists: false, brand: '', expiryMonth: '', expiryYear: ''
                                 }))} className="text-xs text-cyan-600 hover:text-cyan-800 mt-1">← Back to existing batches</button>
