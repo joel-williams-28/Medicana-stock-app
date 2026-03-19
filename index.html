@@ -6316,7 +6316,6 @@ Medicana Stock Management System`;
                                 const val = e.target.value;
                                 if (val === '__new__') {
                                   setBarcodeNewMedForm(prev => ({ ...prev, enteringNewBatch: true, batchNumber: '', existingBatchId: null, batchLocked: false, batchExists: false }));
-                                  setTimeout(() => document.getElementById('barcodeNewMed-batchNumber')?.focus(), 150);
                                 } else if (val) {
                                   handleExistingBatchSelect(parseInt(val));
                                   setTimeout(() => document.getElementById('barcodeNewMed-boxQuantity')?.focus(), 50);
@@ -6338,6 +6337,7 @@ Medicana Stock Management System`;
                               <input
                                 type="text"
                                 id="barcodeNewMed-batchNumber"
+                                autoFocus={barcodeNewMedForm.enteringNewBatch}
                                 value={barcodeNewMedForm.batchNumber}
                                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-batchNumber'); } }}
                                 onChange={(e) => {
