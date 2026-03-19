@@ -892,6 +892,19 @@
         useEffect(() => { storage.save('medicana_activity_filters', activityLogFilters); }, [activityLogFilters]);
         useEffect(() => { storage.save('medicana_medication_filters', medicationFilters); }, [medicationFilters]);
 
+        // Prevent background scrolling when any modal is open
+        useEffect(() => {
+          const isAnyModalOpen =
+            Object.values(modals).some(Boolean) ||
+            !!batchRemoval.batch ||
+            !!editMinLevel.editing ||
+            !!orderForm.med ||
+            sessionTimeout.showWarning ||
+            cameraScanner.isOpen;
+
+          document.body.style.overflow = isAnyModalOpen ? 'hidden' : '';
+        }, [modals, batchRemoval.batch, editMinLevel.editing, orderForm.med, sessionTimeout.showWarning, cameraScanner.isOpen]);
+
         // Global barcode scanner - listen for barcode input anywhere in the app
         useEffect(() => {
           if (!auth.isLoggedIn) return;
