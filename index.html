@@ -641,8 +641,7 @@
           showNewMedicationOrder: false,
           showBarcodeNewMedication: false,
           showLowStockAlert: false,
-          showBarcodeStockAdjust: false,
-          showFulfilOrder: false
+          showBarcodeStockAdjust: false
       });
       const [adjustmentForm, setAdjustmentForm] = useState({
         amount: '',
@@ -707,24 +706,6 @@
         urgency: 'routine',
         notes: '',
         pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk'
-      });
-
-      const [fulfilOrderForm, setFulfilOrderForm] = useState({
-        order: null,
-        med: null,
-        selectedLocationId: '',
-        batchOption: 'new', // 'new' or 'existing'
-        selectedBatchId: '',
-        brand: '',
-        batchNumber: '',
-        expiryMonth: '',
-        expiryYear: '',
-        quantityType: 'boxes',
-        boxQuantity: '',
-        itemsPerBox: '',
-        individualQuantity: '',
-        error: '',
-        isSubmitting: false
       });
 
       const [newMedicationOrderForm, setNewMedicationOrderForm] = useState({
@@ -1112,6 +1093,37 @@
           const pendingOrders = orders.filter(o => o.medId === medInternalId && o.status === 'pending');
           return pendingOrders.length > 0 ? pendingOrders[0] : null;
         };
+
+      // Auto-fulfil pending orders when a delivery arrives
+      const autoFulfillOrders = async (medicationInternalId, medicationName, deliveredQuantityUnits) => {
+        const pendingOrders = orders
+          .filter(o => o.medId === medicationInternalId && o.status === 'pending')
+          .sort((a, b) => new Date(a.orderedAt) - new Date(b.orderedAt));
+
+        if (pendingOrders.length === 0) return;
+
+        const currentUser = getCurrentUserInfo();
+        let remaining = deliveredQuantityUnits;
+
+        for (const order of pendingOrders) {
+          if (remaining <= 0) break;
+          const orderRemaining = order.quantity - (order.quantityFulfilled || 0);
+          const applyAmount = Math.min(remaining, orderRemaining);
+
+          try {
+            await window.api.fulfillOrder({
+              orderId: order.id,
+              userId: currentUser?.id || null,
+              medicationName,
+              quantityDelivered: applyAmount
+            });
+          } catch (err) {
+            console.error('Auto-fulfill failed for order', order.id, err);
+          }
+
+          remaining -= applyAmount;
+        }
+      };
 
         const lowStockMedications = (() => {
           const filtered = medications
@@ -2780,12 +2792,20 @@ Medicana Stock Management System`;
             });
           }
 
+          // Auto-fulfil pending orders for this delivery
+          const barcodeDeliveredUnits = (boxQuantity || 0) * (itemsPerBox || 1);
+          const barcodeMedName = barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : '');
+          if (medicationId && barcodeDeliveredUnits > 0) {
+            await autoFulfillOrders(medicationId, barcodeMedName, barcodeDeliveredUnits);
+          }
+
           // Refresh data from backend (small delay to ensure DB commit)
           await new Promise(resolve => setTimeout(resolve, 100));
           const data = await window.api.fetchAllData();
           setMedications(data.medications || []);
           setTransactions(data.transactions || []);
           setLocations(data.locations || []);
+          if (data.orders) setOrders(data.orders);
 
           // Continuous add: reset form but keep modal open for next scan
           const successMsg = `Added ${barcodeNewMedForm.boxQuantity} ${parseInt(barcodeNewMedForm.boxQuantity) === 1 ? 'box' : 'boxes'} of ${barcodeNewMedForm.name}${barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''}`;
@@ -3407,11 +3427,17 @@ Medicana Stock Management System`;
               note: deliveryNote
             });
 
+            // Auto-fulfil pending orders if this is a delivery (not a transfer)
+            if (adjustmentForm.stockInSource === 'delivery') {
+              await autoFulfillOrders(ui.selectedMed.internalId, ui.selectedMed.name, totalQuantity);
+            }
+
             // Refresh data from backend (small delay to ensure DB commit)
             await new Promise(resolve => setTimeout(resolve, 100));
             const data = await window.api.fetchAllData();
             setMedications(data.medications || []);
             setTransactions(data.transactions || []);
+            if (data.orders) setOrders(data.orders);
 
             resetAdjustmentForms();
             return;
@@ -3640,6 +3666,11 @@ Medicana Stock Management System`;
               delta: amount,
               reason: transactionNote
             });
+
+            // Auto-fulfil pending orders if this is a delivery (not a transfer)
+            if (adjustmentForm.stockInSource === 'delivery') {
+              await autoFulfillOrders(ui.selectedMed.internalId, ui.selectedMed.name, amount);
+            }
           }
 
           // Refresh data from backend (small delay to ensure DB commit)
@@ -3648,6 +3679,7 @@ Medicana Stock Management System`;
           setMedications(data.medications || []);
           setTransactions(data.transactions || []);
           setLocations(data.locations || []);
+          if (data.orders) setOrders(data.orders);
 
           // Switch to "All" locations view after receiving transfer so user can see the stock
           if (adjustmentForm.stockInSource === 'transfer' && ui.currentLocation !== 'All') {
@@ -4044,161 +4076,6 @@ Medicana Stock Management System`;
         }, 1000);
       };
 
-      const handleFulfilOrderBatchSelect = (batchId) => {
-        if (!batchId) {
-          // Reset to new batch mode
-          setFulfilOrderForm(prev => ({
-            ...prev,
-            selectedBatchId: '',
-            brand: '',
-            batchNumber: '',
-            expiryMonth: '',
-            expiryYear: '',
-            itemsPerBox: prev.med?.standardItemsPerBox || '',
-            error: ''
-          }));
-          return;
-        }
-
-        // Get all batches from all locations for this medication
-        const allBatches = [];
-        medications.forEach(med => {
-          if (med.medicationName === fulfilOrderForm.med.medicationName &&
-              med.strengthRaw === fulfilOrderForm.med.strengthRaw &&
-              med.type === fulfilOrderForm.med.type) {
-            if (med.batches && Array.isArray(med.batches)) {
-              allBatches.push(...med.batches);
-            }
-          }
-        });
-
-        const selectedBatch = allBatches.find(b => b.id === parseInt(batchId));
-        if (selectedBatch) {
-          const expiryDate = selectedBatch.expiryDate ? new Date(selectedBatch.expiryDate + '-01') : null;
-          const expiryMonth = expiryDate ? String(expiryDate.getMonth() + 1).padStart(2, '0') : '';
-          const expiryYear = expiryDate ? String(expiryDate.getFullYear()) : '';
-
-          setFulfilOrderForm(prev => ({
-            ...prev,
-            selectedBatchId: batchId,
-            batchNumber: selectedBatch.batchNumber || selectedBatch.batchCode || '',
-            brand: selectedBatch.brand || '',
-            expiryMonth: expiryMonth,
-            expiryYear: expiryYear,
-            itemsPerBox: selectedBatch.itemsPerBox ? String(selectedBatch.itemsPerBox) : (prev.med?.standardItemsPerBox || ''),
-            error: ''
-          }));
-        } else {
-          // Update selectedBatchId even if batch not found, to show selection in dropdown
-          setFulfilOrderForm(prev => ({
-            ...prev,
-            selectedBatchId: batchId,
-            error: ''
-          }));
-        }
-      };
-
-      const handleFulfilOrder = async () => {
-        // Validate form
-        if (!fulfilOrderForm.brand.trim() || !fulfilOrderForm.expiryMonth || !fulfilOrderForm.expiryYear) {
-          setFulfilOrderForm(prev => ({ ...prev, error: 'Please enter brand name and expiry date' }));
-          return;
-        }
-        if (!fulfilOrderForm.selectedLocationId) {
-          setFulfilOrderForm(prev => ({ ...prev, error: 'Please select a delivery location' }));
-          return;
-        }
-
-        let totalQuantity = 0;
-        let itemsPerBox = null;
-
-        if (fulfilOrderForm.quantityType === 'boxes') {
-          if (!fulfilOrderForm.boxQuantity || !fulfilOrderForm.itemsPerBox ||
-              parseInt(fulfilOrderForm.boxQuantity) <= 0 || parseInt(fulfilOrderForm.itemsPerBox) <= 0) {
-            setFulfilOrderForm(prev => ({ ...prev, error: 'Please enter valid box quantity and items per box' }));
-            return;
-          }
-          totalQuantity = parseInt(fulfilOrderForm.boxQuantity) * parseInt(fulfilOrderForm.itemsPerBox);
-          itemsPerBox = parseInt(fulfilOrderForm.itemsPerBox);
-        } else {
-          if (!fulfilOrderForm.individualQuantity || parseInt(fulfilOrderForm.individualQuantity) <= 0) {
-            setFulfilOrderForm(prev => ({ ...prev, error: 'Please enter valid quantity' }));
-            return;
-          }
-          totalQuantity = parseInt(fulfilOrderForm.individualQuantity);
-        }
-
-        // Set submitting state
-        setFulfilOrderForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
-
-        try {
-          const currentUser = getCurrentUserInfo();
-          if (!currentUser || !currentUser.id) {
-            setFulfilOrderForm(prev => ({ ...prev, error: 'User not logged in', isSubmitting: false }));
-            return;
-          }
-
-          const displayAmount = formatQuantityDisplay(
-            totalQuantity,
-            itemsPerBox,
-            fulfilOrderForm.med.unit,
-            fulfilOrderForm.quantityType,
-            fulfilOrderForm.quantityType === 'boxes' ? fulfilOrderForm.boxQuantity : null
-          );
-
-          const deliveryNote = `Order fulfilled - Brand: ${fulfilOrderForm.brand} - ${displayAmount} - Order ID: ${fulfilOrderForm.order.id}`;
-
-          // Add the batch with stock
-          await window.api.addBatch({
-            medicationId: fulfilOrderForm.med.id,
-            batchNumber: fulfilOrderForm.batchNumber || `BATCH-${Date.now()}`,
-            expiryMonth: parseInt(fulfilOrderForm.expiryMonth),
-            expiryYear: parseInt(fulfilOrderForm.expiryYear),
-            brand: fulfilOrderForm.brand,
-            itemsPerBox: itemsPerBox || null,
-            quantityBoxes: fulfilOrderForm.quantityType === 'boxes' ? parseInt(fulfilOrderForm.boxQuantity) : 0,
-            quantityIndividuals: fulfilOrderForm.quantityType === 'individuals' ? parseInt(fulfilOrderForm.individualQuantity) : 0,
-            locationId: fulfilOrderForm.selectedLocationId,
-            userId: currentUser.id,
-            note: deliveryNote
-          });
-
-          // Mark order as fulfilled
-          await window.api.fulfillOrder({ orderId: fulfilOrderForm.order.id, userId: currentUser.id, medicationName: fulfilOrderForm.order?.medName || null });
-
-          // Refresh data from backend
-          await new Promise(resolve => setTimeout(resolve, 100));
-          const data = await window.api.fetchAllData();
-          setMedications(data.medications || []);
-          setTransactions(data.transactions || []);
-          setOrders(data.orders || []);
-
-          // Reset form and close modal
-          setFulfilOrderForm({
-            order: null,
-            med: null,
-            selectedLocationId: '',
-            batchOption: 'new',
-            selectedBatchId: '',
-            brand: '',
-            batchNumber: '',
-            expiryMonth: '',
-            expiryYear: '',
-            quantityType: 'boxes',
-            boxQuantity: '',
-            itemsPerBox: '',
-            individualQuantity: '',
-            error: '',
-            isSubmitting: false
-          });
-          setModals(prev => ({ ...prev, showFulfilOrder: false }));
-
-        } catch (err) {
-          console.error('Failed to fulfill order:', err);
-          setFulfilOrderForm(prev => ({ ...prev, error: err.message || 'Failed to fulfill order', isSubmitting: false }));
-        }
-      };
-
       const handleCopyLowStockReport = () => {
           const reportTransaction = createTransaction({ medId: 0, medName: 'Low Stock Report', type: 'order', amount: lowStockMedications.length, user: getCurrentUserInfo()?.fullName || auth.currentUser, location: 'Bulk Order Request', note: `Low stock report generated (copied to clipboard) for ${lowStockMedications.length} medication${lowStockMedications.length !== 1 ? 's' : ''} - Sent to: ${orderForm.pharmacistEmail}` }, transactions.length + 1);
         setTransactions([reportTransaction, ...transactions]);
@@ -4567,16 +4444,24 @@ Medicana Stock Management System`;
                                   ) : getTotalBoxes(med) < med.minLevelBoxes ? (
                                       <>
                                         <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-status-critical-bg text-status-critical-text"><AlertTriangle className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />Low</span>
-                                        {hasPendingOrder(med) && (
-                                          <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text"><Download className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />Ordered</span>
-                                        )}
+                                        {hasPendingOrder(med) && (() => {
+                                          const order = getMostRecentOrder(med);
+                                          const received = order?.quantityFulfilled || 0;
+                                          return (
+                                            <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text"><Download className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />Ordered{received > 0 ? ` (${received}/${order.quantity})` : ''}</span>
+                                          );
+                                        })()}
                                       </>
                                   ) : (
                                       <>
                                         <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-status-ok-bg text-status-ok-text">OK</span>
-                                        {hasPendingOrder(med) && (
-                                          <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text"><Download className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />Ordered</span>
-                                        )}
+                                        {hasPendingOrder(med) && (() => {
+                                          const order = getMostRecentOrder(med);
+                                          const received = order?.quantityFulfilled || 0;
+                                          return (
+                                            <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text"><Download className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />Ordered{received > 0 ? ` (${received}/${order.quantity})` : ''}</span>
+                                          );
+                                        })()}
                                       </>
                                   )}
                                   {medicationFilters.statuses.includes('Expiring First') && hasMultipleInstances(med) && (() => {
@@ -4598,45 +4483,6 @@ Medicana Stock Management System`;
                               </td>
                               <td className="px-2 sm:px-4 py-2 sm:py-3 text-center">
                                 <div className="flex gap-1 sm:gap-2 justify-center">
-                                  {hasPendingOrder(med) && (
-                                    <button onClick={() => {
-                                      // Check if this is a grouped medication (multiple locations)
-                                      if (ui.currentLocation === 'All' && med.locations && med.locations.length > 1) {
-                                        alert(`This medication is in multiple locations: ${med.locations.sort().join(', ')}. Please select a specific location to fulfil the order.`);
-                                        return;
-                                      }
-                                      // Get the pending order
-                                      const pendingOrder = getMostRecentOrder(med);
-                                      const defaultQuantityType = med.standardItemsPerBox ? 'boxes' : 'individuals';
-
-                                      // Pre-fill location if medication is only in one location
-                                      let defaultLocationId = '';
-                                      if (med.locationId) {
-                                        defaultLocationId = med.locationId;
-                                      } else if (med.locations && med.locations.length === 1) {
-                                        const location = locations.find(l => l.displayName === med.locations[0]);
-                                        if (location) defaultLocationId = location.id;
-                                      }
-
-                                      setFulfilOrderForm({
-                                        order: pendingOrder,
-                                        med: med,
-                                        selectedLocationId: defaultLocationId,
-                                        batchOption: 'new',
-                                        selectedBatchId: '',
-                                        brand: '',
-                                        batchNumber: '',
-                                        expiryMonth: '',
-                                        expiryYear: '',
-                                        quantityType: defaultQuantityType,
-                                        boxQuantity: '',
-                                        itemsPerBox: med.standardItemsPerBox || '',
-                                        individualQuantity: '',
-                                        error: ''
-                                      });
-                                      setModals(prev => ({ ...prev, showFulfilOrder: true }));
-                                    }} className="bg-urgent hover:bg-urgent-hover text-white px-2 sm:px-3 py-1 rounded text-xs sm:text-sm font-medium transition-colors">Fulfil Order</button>
-                                  )}
                                   <button onClick={() => {
                                     // Check if this is a grouped medication (multiple locations)
                                     if (ui.currentLocation === 'All' && med.locations && med.locations.length > 1) {
@@ -4744,6 +4590,7 @@ Medicana Stock Management System`;
                                         {(() => {
                                           const order = getMostRecentOrder(med);
                                           if (order) {
+                                            const received = order.quantityFulfilled || 0;
                                             return (
                                               <div className="text-xs text-status-ordered-text">
                                                 <p>Order Date: {new Date(order.orderedAt).toLocaleString('en-GB')}</p>
@@ -4760,6 +4607,7 @@ Medicana Stock Management System`;
                                                   }
                                                   return `${qty} ${pluralizeUnit(qty, med.unit)}`;
                                                 })()}</p>
+                                                {received > 0 && <p>Received so far: {received} / {order.quantity} units</p>}
                                                 <p>Urgency: {order.urgency.toUpperCase()}</p>
                                                 <p>Ordered by: {order.user}</p>
                                                 {order.notes && <p className="mt-1">Notes: {order.notes}</p>}
@@ -4977,7 +4825,8 @@ Medicana Stock Management System`;
                       if (at === 'order_fulfilled') {
                         return (
                           <div className="text-sm text-txt-tertiary">
-                            <p>Order #{d.orderId || '?'} marked as fulfilled</p>
+                            <p>Order #{d.orderId || '?'} {d.autoFulfilled ? 'auto-fulfilled by delivery' : 'marked as fulfilled'}</p>
+                            {d.quantityDelivered && <p>Delivered: {d.quantityDelivered} units{d.partial ? ` (${d.quantityFulfilled}/${d.quantityOrdered} total)` : ' — order complete'}</p>}
                           </div>
                         );
                       }
@@ -5101,9 +4950,13 @@ Medicana Stock Management System`;
                                 <span>{med.name}</span>
                                   {getTotalBoxes(med) === 0 && hasPendingOrder(med) ? (
                                     <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-urgent-ghost-bg text-urgent-ghost-text"><Download className="w-3 h-3 mr-1" />Order Pending</span>
-                                  ) : hasPendingOrder(med) && (
-                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text"><Download className="w-3 h-3 mr-1" />Ordered</span>
-                                  )}
+                                  ) : hasPendingOrder(med) && (() => {
+                                    const order = getMostRecentOrder(med);
+                                    const received = order?.quantityFulfilled || 0;
+                                    return (
+                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text"><Download className="w-3 h-3 mr-1" />Ordered{received > 0 ? ` (${received}/${order.quantity})` : ''}</span>
+                                    );
+                                  })()}
                               </div>
                             </td>
                               {(ui.currentLocation === 'All' || isGroupName(ui.currentLocation, locations)) && (
@@ -8963,417 +8816,6 @@ Medicana Stock Management System`;
               );
             })()}
 
-            {/* Fulfil Order Modal */}
-            {modals.showFulfilOrder && fulfilOrderForm.med && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50" onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showFulfilOrder: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
-                <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-2xl w-full flex flex-col m-2 sm:m-4" style={{maxHeight: '90vh'}}>
-                  <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-bdr-default flex-shrink-0">
-                    <h2 className="text-base sm:text-lg font-bold text-near-black">Fulfil Order</h2>
-                    <p className="text-xs text-txt-tertiary mt-1">Add stock and mark order as fulfilled</p>
-                  </div>
-
-                  <div className="overflow-y-auto px-4 sm:px-6 py-3 sm:py-4 flex-1">
-                    {fulfilOrderForm.error && (
-                      <div className="mb-4 p-3 bg-danger-ghost-bg border border-status-critical-text rounded text-sm text-danger-ghost-text">
-                        {fulfilOrderForm.error}
-                      </div>
-                    )}
-
-                    {/* Order Details */}
-                    <div className="mb-4 p-4 bg-urgent-ghost-bg border border-urgent rounded-lg">
-                      <h3 className="font-semibold text-urgent-ghost-text mb-2 flex items-center gap-2">
-                        <Download className="w-4 h-4" />
-                        Pending Order Details
-                      </h3>
-                      <div className="space-y-1 text-sm">
-                        <div><span className="font-medium text-urgent-ghost-text">Medication:</span> <span className="text-near-black">{fulfilOrderForm.med.name}</span></div>
-                        <div><span className="font-medium text-urgent-ghost-text">Quantity Ordered:</span> <span className="text-near-black">{(() => {
-                          const qty = fulfilOrderForm.order.quantity;
-                          const itemsPerBox = fulfilOrderForm.med.standardItemsPerBox;
-                          if (itemsPerBox && qty >= itemsPerBox) {
-                            const boxes = Math.floor(qty / itemsPerBox);
-                            const loose = qty % itemsPerBox;
-                            if (loose > 0) {
-                              return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(itemsPerBox)} + ${loose} ${pluralizeUnit(loose, fulfilOrderForm.med.unit)}`;
-                            }
-                            return `${boxes} ${boxes === 1 ? 'box' : 'boxes'} × ${formatItemsPerBox(itemsPerBox)}`;
-                          }
-                          return `${qty} ${pluralizeUnit(qty, fulfilOrderForm.med.unit)}`;
-                        })()}</span></div>
-                        <div><span className="font-medium text-urgent-ghost-text">Urgency:</span> <span className={`font-medium ${fulfilOrderForm.order.urgency === 'urgent' ? 'text-danger-ghost-text' : 'text-status-ordered-text'} uppercase`}>{fulfilOrderForm.order.urgency}</span></div>
-                        <div><span className="font-medium text-urgent-ghost-text">Ordered:</span> <span className="text-near-black">{new Date(fulfilOrderForm.order.orderedAt).toLocaleString('en-GB')}</span></div>
-                        {fulfilOrderForm.order.notes && (
-                          <div><span className="font-medium text-urgent-ghost-text">Notes:</span> <span className="text-near-black">{fulfilOrderForm.order.notes}</span></div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Location Selector */}
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-txt-secondary mb-2">
-                        Delivery Location <span className="text-danger-ghost-text">*</span>
-                      </label>
-                      <select
-                        value={fulfilOrderForm.selectedLocationId}
-                        onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, selectedLocationId: e.target.value, error: '' }))}
-                        className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      >
-                        <option value="">Select location...</option>
-                        {(() => {
-                          // Group locations by groupName
-                          const grouped = {};
-                          locations.forEach(loc => {
-                            if (loc.groupName) {
-                              if (!grouped[loc.groupName]) grouped[loc.groupName] = [];
-                              grouped[loc.groupName].push(loc);
-                            } else {
-                              if (!grouped['_ungrouped']) grouped['_ungrouped'] = [];
-                              grouped['_ungrouped'].push(loc);
-                            }
-                          });
-
-                          const elements = [];
-                          // Render grouped locations
-                          Object.keys(grouped).forEach(groupName => {
-                            if (groupName !== '_ungrouped') {
-                              elements.push(
-                                <optgroup key={groupName} label={groupName}>
-                                  {grouped[groupName].map(location => {
-                                    // Check if this medication exists at this location
-                                    const medAtLocation = medications.find(m =>
-                                      m.medicationName === fulfilOrderForm.med.medicationName &&
-                                      m.strengthRaw === fulfilOrderForm.med.strengthRaw &&
-                                      m.type === fulfilOrderForm.med.type &&
-                                      m.location === location.displayName
-                                    );
-                                    return (
-                                      <option key={location.id} value={location.id} style={medAtLocation ? { color: '#0F6E56', fontWeight: '600' } : {}}>
-                                        {location.displayName}{medAtLocation ? ' ✓' : ''}
-                                      </option>
-                                    );
-                                  })}
-                                </optgroup>
-                              );
-                            }
-                          });
-                          // Render ungrouped locations
-                          if (grouped['_ungrouped']) {
-                            grouped['_ungrouped'].forEach(location => {
-                              const medAtLocation = medications.find(m =>
-                                m.medicationName === fulfilOrderForm.med.medicationName &&
-                                m.strengthRaw === fulfilOrderForm.med.strengthRaw &&
-                                m.type === fulfilOrderForm.med.type &&
-                                m.location === location.displayName
-                              );
-                              elements.push(
-                                <option key={location.id} value={location.id} style={medAtLocation ? { color: '#0F6E56', fontWeight: '600' } : {}}>
-                                  {location.displayName}{medAtLocation ? ' ✓' : ''}
-                                </option>
-                              );
-                            });
-                          }
-                          return elements;
-                        })()}
-                      </select>
-                      <p className="text-xs text-txt-tertiary mt-1"><span className="text-brand-mid font-semibold">Green locations ✓</span> already have this medication</p>
-                    </div>
-
-                    {/* Batch Selection Option */}
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-txt-secondary mb-2">Batch Option</label>
-                      <div className="flex gap-4 mb-3">
-                        <label className="flex items-center cursor-pointer">
-                          <input
-                            type="radio"
-                            name="fulfilBatchOption"
-                            value="new"
-                            checked={fulfilOrderForm.batchOption === 'new'}
-                            onClick={(e) => {
-                              setFulfilOrderForm(prev => ({ ...prev, batchOption: 'new', selectedBatchId: '', error: '' }));
-                              handleFulfilOrderBatchSelect('');
-                            }}
-                            className="mr-2"
-                          />
-                          New Batch
-                        </label>
-                        <label className="flex items-center cursor-pointer">
-                          <input
-                            type="radio"
-                            name="fulfilBatchOption"
-                            value="existing"
-                            checked={fulfilOrderForm.batchOption === 'existing'}
-                            onClick={(e) => {
-                              setFulfilOrderForm(prev => ({ ...prev, batchOption: 'existing', selectedBatchId: '', error: '' }));
-                            }}
-                            className="mr-2"
-                          />
-                          Use Existing Batch Details
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* Batch Dropdown for Existing Batches */}
-                    {fulfilOrderForm.batchOption === 'existing' && (
-                      <div className="mb-4">
-                        <label className="block text-sm font-medium text-txt-secondary mb-2">Select Batch <span className="text-danger-ghost-text">*</span></label>
-                        <select
-                          value={fulfilOrderForm.selectedBatchId}
-                          onChange={(e) => handleFulfilOrderBatchSelect(e.target.value)}
-                          className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                        >
-                          <option value="">Select batch...</option>
-                          {(() => {
-                            // Get all batches from all locations for this medication (including zero-stock batches)
-                            const allBatches = [];
-                            const seenBatchKeys = new Set();
-
-                            medications.forEach(med => {
-                              if (med.medicationName === fulfilOrderForm.med.medicationName &&
-                                  med.strengthRaw === fulfilOrderForm.med.strengthRaw &&
-                                  med.type === fulfilOrderForm.med.type) {
-                                if (med.batches && Array.isArray(med.batches)) {
-                                  med.batches.forEach(batch => {
-                                    // Use a unique key to avoid duplicates
-                                    const batchKey = `${batch.batchNumber || batch.batchCode}-${batch.brand}-${batch.expiryDate}`;
-                                    if (!seenBatchKeys.has(batchKey)) {
-                                      seenBatchKeys.add(batchKey);
-                                      allBatches.push({ ...batch, location: med.location });
-                                    }
-                                  });
-                                }
-                              }
-                            });
-
-                            return allBatches
-                              .sort((a, b) => new Date(a.expiryDate + '-01') - new Date(b.expiryDate + '-01'))
-                              .map((batch, idx) => {
-                                const formattedExpiry = formatExpiry(batch.expiryDate);
-                                const batchLabel = batch.batchNumber || batch.batchCode || `Batch ${idx + 1}`;
-                                const hasStock = batch.quantity > 0;
-                                return (
-                                  <option key={batch.id} value={batch.id}>
-                                    {batchLabel} - {batch.brand} - Exp: {formattedExpiry} ({batch.location}){!hasStock ? ' [No Stock]' : ''}
-                                  </option>
-                                );
-                              });
-                          })()}
-                        </select>
-                        <p className="text-xs text-txt-tertiary mt-1">Select an existing batch to auto-fill brand, expiry date, and items per box</p>
-                      </div>
-                    )}
-
-                    {/* Batch Details */}
-                    {fulfilOrderForm.batchOption === 'new' && (
-                      <div className="mb-4 p-3 bg-status-ordered-bg border border-status-ordered-bg rounded">
-                        <p className="text-sm font-medium text-status-ordered-text mb-2">Enter batch details for the delivery</p>
-                      </div>
-                    )}
-
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-txt-secondary mb-2">Brand <span className="text-danger-ghost-text">*</span></label>
-                      <input
-                        type="text"
-                        value={fulfilOrderForm.brand}
-                        onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, brand: e.target.value, error: '' }))}
-                        className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                        placeholder="e.g. Actavis, Accord, Teva"
-                        readOnly={fulfilOrderForm.batchOption === 'existing' && fulfilOrderForm.selectedBatchId}
-                      />
-                    </div>
-
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-txt-secondary mb-2">Batch Number</label>
-                      <input
-                        type="text"
-                        value={fulfilOrderForm.batchNumber}
-                        onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, batchNumber: e.target.value }))}
-                        className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                        placeholder="e.g. BN123456"
-                        readOnly={fulfilOrderForm.batchOption === 'existing' && fulfilOrderForm.selectedBatchId}
-                      />
-                    </div>
-
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-txt-secondary mb-2">Expiry Date <span className="text-danger-ghost-text">*</span></label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-xs text-txt-tertiary mb-1">Month</label>
-                          <select
-                            value={fulfilOrderForm.expiryMonth}
-                            onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, expiryMonth: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                            disabled={fulfilOrderForm.batchOption === 'existing' && fulfilOrderForm.selectedBatchId}
-                          >
-                            <option value="">Select...</option>
-                            {['January','February','March','April','May','June','July','August','September','October','November','December'].map((month, idx) => (
-                              <option key={month} value={String(idx + 1).padStart(2, '0')}>{month}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs text-txt-tertiary mb-1">Year</label>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (fulfilOrderForm.batchOption === 'existing' && fulfilOrderForm.selectedBatchId) return;
-                                setFulfilOrderForm(prev => {
-                                  const year = prev.expiryYear ? parseInt(prev.expiryYear) : new Date().getFullYear();
-                                  return { ...prev, expiryYear: String(year - 1) };
-                                });
-                              }}
-                              className="text-txt-secondary hover:text-near-black text-2xl leading-none p-0 border-0 bg-transparent"
-                              disabled={fulfilOrderForm.batchOption === 'existing' && fulfilOrderForm.selectedBatchId}
-                            >
-                              ←
-                            </button>
-                            <input
-                              type="number"
-                              value={fulfilOrderForm.expiryYear}
-                              onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, expiryYear: e.target.value, error: '' }))}
-                              placeholder={String(new Date().getFullYear())}
-                              className="flex-1 px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-center"
-                              min="2024"
-                              max="2099"
-                              readOnly={fulfilOrderForm.batchOption === 'existing' && fulfilOrderForm.selectedBatchId}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (fulfilOrderForm.batchOption === 'existing' && fulfilOrderForm.selectedBatchId) return;
-                                setFulfilOrderForm(prev => {
-                                  const year = prev.expiryYear ? parseInt(prev.expiryYear) : new Date().getFullYear();
-                                  return { ...prev, expiryYear: String(year + 1) };
-                                });
-                              }}
-                              className="text-txt-secondary hover:text-near-black text-2xl leading-none p-0 border-0 bg-transparent"
-                              disabled={fulfilOrderForm.batchOption === 'existing' && fulfilOrderForm.selectedBatchId}
-                            >
-                              →
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Quantity Input */}
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-txt-secondary mb-2">Quantity Type</label>
-                      <div className="flex gap-4 mb-3">
-                        <label className="flex items-center cursor-pointer">
-                          <input
-                            type="radio"
-                            name="fulfilQuantityType"
-                            value="boxes"
-                            checked={fulfilOrderForm.quantityType === 'boxes'}
-                            onClick={(e) => {
-                              setFulfilOrderForm(prev => ({ ...prev, quantityType: 'boxes', boxQuantity: '', itemsPerBox: prev.itemsPerBox || (prev.med?.standardItemsPerBox || ''), error: '' }));
-                            }}
-                            className="mr-2"
-                          />
-                          Boxes
-                        </label>
-                        <label className="flex items-center cursor-pointer">
-                          <input
-                            type="radio"
-                            name="fulfilQuantityType"
-                            value="individuals"
-                            checked={fulfilOrderForm.quantityType === 'individuals'}
-                            onClick={(e) => {
-                              setFulfilOrderForm(prev => ({ ...prev, quantityType: 'individuals', individualQuantity: '', error: '' }));
-                            }}
-                            className="mr-2"
-                          />
-                          Individual {pluralizeUnit(1, fulfilOrderForm.med.unit)}
-                        </label>
-                      </div>
-                    </div>
-
-                    {fulfilOrderForm.quantityType === 'boxes' ? (
-                      <div className="grid grid-cols-2 gap-3 mb-4">
-                        <div>
-                          <label className="block text-sm font-medium text-txt-secondary mb-2">
-                            Number of {fulfilOrderForm.boxQuantity && parseInt(fulfilOrderForm.boxQuantity) === 1 ? 'Box' : 'Boxes'} <span className="text-danger-ghost-text">*</span>
-                          </label>
-                          <input
-                            type="number"
-                            value={fulfilOrderForm.boxQuantity}
-                            onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, boxQuantity: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                            placeholder="e.g. 5"
-                            min="1"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-txt-secondary mb-2">Items per Box <span className="text-danger-ghost-text">*</span></label>
-                          <input
-                            type="number"
-                            value={fulfilOrderForm.itemsPerBox}
-                            onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, itemsPerBox: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                            placeholder="e.g. 100"
-                            min="1"
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="mb-4">
-                        <label className="block text-sm font-medium text-txt-secondary mb-2">Quantity ({fulfilOrderForm.med.unit}) <span className="text-danger-ghost-text">*</span></label>
-                        <input
-                          type="number"
-                          value={fulfilOrderForm.individualQuantity}
-                          onChange={(e) => setFulfilOrderForm(prev => ({ ...prev, individualQuantity: e.target.value, error: '' }))}
-                          className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                          placeholder="Enter quantity"
-                          min="1"
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="px-6 py-4 border-t border-bdr-default flex-shrink-0 bg-off-white">
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleFulfilOrder}
-                        disabled={fulfilOrderForm.isSubmitting}
-                        className={`flex-1 py-2 rounded-lg transition-colors font-medium ${
-                          fulfilOrderForm.isSubmitting
-                            ? 'bg-bdr-active text-txt-tertiary cursor-not-allowed'
-                            : 'bg-urgent text-white hover:bg-urgent-hover'
-                        }`}
-                      >
-                        {fulfilOrderForm.isSubmitting ? 'Fulfilling Order...' : 'Fulfil Order & Add Stock'}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setFulfilOrderForm({
-                            order: null,
-                            med: null,
-                            selectedLocationId: '',
-                            batchOption: 'new',
-                            selectedBatchId: '',
-                            brand: '',
-                            batchNumber: '',
-                            expiryMonth: '',
-                            expiryYear: '',
-                            quantityType: 'boxes',
-                            boxQuantity: '',
-                            itemsPerBox: '',
-                            individualQuantity: '',
-                            error: '',
-                            isSubmitting: false
-                          });
-                          setModals(prev => ({ ...prev, showFulfilOrder: false }));
-                        }}
-                        className="px-6 bg-btn-secondary text-txt-secondary py-2 rounded-lg hover:bg-bdr-hover transition-colors font-medium"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Change Password Modal */}
             {modals.showChangePassword && (
