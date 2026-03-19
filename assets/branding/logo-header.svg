@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50">
-  <rect width="200" height="50" rx="6" fill="#0c2753"/>
-  <text x="100" y="32" font-size="13" font-weight="bold" text-anchor="middle" fill="#06B6D4" font-family="Arial, sans-serif">YOUR LOGO HERE</text>
-  <text x="100" y="46" font-size="8" text-anchor="middle" fill="#94a3b8" font-family="Arial, sans-serif">Header logo (logo-header.svg)</text>
-</svg>
