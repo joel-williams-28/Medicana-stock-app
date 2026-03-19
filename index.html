@@ -739,6 +739,8 @@
           transferBatchId: '',
           transferQuantity: '',
           transferQuantityType: 'boxes',
+          transferUseQuantity: '',
+          transferUseQuantityType: 'individual',
           // Patient Use fields (Tab 3 + 4)
           patientFirstName: '',
           patientLastName: '',
@@ -1834,6 +1836,8 @@
           transferBatchId: '',
           transferQuantity: '',
           transferQuantityType: 'boxes',
+          transferUseQuantity: '',
+          transferUseQuantityType: 'individual',
           patientFirstName: '',
           patientLastName: '',
           patientLocalId: '',
@@ -2893,6 +2897,8 @@ Medicana Stock Management System`;
             transferBatchId: '',
             transferQuantity: '',
             transferQuantityType: 'boxes',
+            transferUseQuantity: '',
+            transferUseQuantityType: 'individual',
             patientFirstName: '',
             patientLastName: '',
             patientLocalId: '',
@@ -2918,7 +2924,7 @@ Medicana Stock Management System`;
       // Derive inventory for the scanned medication (used by transfer/patient use tabs)
       const getScannedMedInventory = () => {
         if (!barcodeNewMedForm.medicationId) return [];
-        return medications.filter(m => m.internalId === barcodeNewMedForm.medicationId);
+        return medications.filter(m => String(m.internalId) === String(barcodeNewMedForm.medicationId));
       };
 
       const handleBarcodeTransfer = async () => {
@@ -2969,11 +2975,18 @@ Medicana Stock Management System`;
           const currentUser = getCurrentUserInfo();
           if (!currentUser?.id) throw new Error('User not logged in');
 
+          const srcLocId = parseInt(barcodeNewMedForm.transferSourceLocation);
+          const tgtLocId = parseInt(barcodeNewMedForm.transferTargetLocation);
+          const batchIdNum = parseInt(barcodeNewMedForm.transferBatchId);
+          if (isNaN(srcLocId) || isNaN(tgtLocId) || isNaN(batchIdNum)) {
+            throw new Error('Invalid location or batch selection. Please re-select.');
+          }
+
           await window.api.transferStock({
             userId: currentUser.id,
-            batchId: parseInt(barcodeNewMedForm.transferBatchId),
-            sourceLocationId: parseInt(barcodeNewMedForm.transferSourceLocation),
-            targetLocationId: parseInt(barcodeNewMedForm.transferTargetLocation),
+            batchId: batchIdNum,
+            sourceLocationId: srcLocId,
+            targetLocationId: tgtLocId,
             quantity: transferQty,
             reason: 'Transfer via barcode scan',
             medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
@@ -3051,13 +3064,19 @@ Medicana Stock Management System`;
           const currentUser = getCurrentUserInfo();
           if (!currentUser?.id) throw new Error('User not logged in');
 
+          const locationId = parseInt(barcodeNewMedForm.useLocation);
+          const batchIdNum = parseInt(barcodeNewMedForm.useBatchId);
+          if (isNaN(locationId) || isNaN(batchIdNum) || isNaN(useQty) || useQty <= 0) {
+            throw new Error('Invalid location, batch, or quantity. Please re-select.');
+          }
+
           const usageLabel = barcodeNewMedForm.useReason ? getUsageOptionsForLocation(locMed?.location).find(o => o.value === barcodeNewMedForm.useReason)?.label || barcodeNewMedForm.useReason : '';
           const reason = `Patient use — Patient: ${barcodeNewMedForm.patientFirstName.trim()} ${barcodeNewMedForm.patientLastName.trim()}, ID: ${barcodeNewMedForm.patientLocalId.trim()}${usageLabel ? ', Reason: ' + usageLabel : ''}${barcodeNewMedForm.useNotes ? ', Notes: ' + barcodeNewMedForm.useNotes : ''}`;
 
           await window.api.adjustStock({
             userId: currentUser.id,
-            locationId: parseInt(barcodeNewMedForm.useLocation),
-            batchId: parseInt(barcodeNewMedForm.useBatchId),
+            locationId: locationId,
+            batchId: batchIdNum,
             delta: -useQty,
             reason: reason,
             medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
@@ -3102,9 +3121,15 @@ Medicana Stock Management System`;
           setBarcodeNewMedForm(prev => ({ ...prev, error: 'Source and destination must be different' }));
           return;
         }
-        const qty = parseInt(barcodeNewMedForm.transferQuantity);
-        if (!qty || qty <= 0) {
-          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter a valid quantity' }));
+        const transferQtyInput = parseInt(barcodeNewMedForm.transferQuantity);
+        if (!transferQtyInput || transferQtyInput <= 0) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter a valid transfer quantity' }));
+          return;
+        }
+        // Validate use quantity (separate from transfer quantity)
+        const useQtyInput = parseInt(barcodeNewMedForm.transferUseQuantity);
+        if (!useQtyInput || useQtyInput <= 0) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter a valid use quantity' }));
           return;
         }
         // Validate patient fields
@@ -3130,10 +3155,16 @@ Medicana Stock Management System`;
         }
 
         const itemsPerBox = batch.itemsPerBox || parseInt(barcodeNewMedForm.itemsPerBox) || 1;
-        const transferQty = barcodeNewMedForm.transferQuantityType === 'boxes' ? qty * itemsPerBox : qty;
+        const transferQty = barcodeNewMedForm.transferQuantityType === 'boxes' ? transferQtyInput * itemsPerBox : transferQtyInput;
+        const useQty = barcodeNewMedForm.transferUseQuantityType === 'boxes' ? useQtyInput * itemsPerBox : useQtyInput;
 
         if (transferQty > batch.quantity) {
-          setBarcodeNewMedForm(prev => ({ ...prev, error: `Insufficient stock. Available: ${batch.quantity} items` }));
+          setBarcodeNewMedForm(prev => ({ ...prev, error: `Insufficient stock to transfer. Available: ${batch.quantity} items` }));
+          return;
+        }
+
+        if (useQty > transferQty) {
+          setBarcodeNewMedForm(prev => ({ ...prev, error: `Use quantity (${useQty} items) cannot exceed transfer quantity (${transferQty} items)` }));
           return;
         }
 
@@ -3143,14 +3174,21 @@ Medicana Stock Management System`;
           const currentUser = getCurrentUserInfo();
           if (!currentUser?.id) throw new Error('User not logged in');
 
+          const srcLocId = parseInt(barcodeNewMedForm.transferSourceLocation);
+          const tgtLocId = parseInt(barcodeNewMedForm.transferTargetLocation);
+          const batchIdNum = parseInt(barcodeNewMedForm.transferBatchId);
+          if (isNaN(srcLocId) || isNaN(tgtLocId) || isNaN(batchIdNum)) {
+            throw new Error('Invalid location or batch selection. Please re-select.');
+          }
+
           const medFullName = barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : '');
 
-          // Step 1: Transfer stock
+          // Step 1: Transfer stock from source to target
           await window.api.transferStock({
             userId: currentUser.id,
-            batchId: parseInt(barcodeNewMedForm.transferBatchId),
-            sourceLocationId: parseInt(barcodeNewMedForm.transferSourceLocation),
-            targetLocationId: parseInt(barcodeNewMedForm.transferTargetLocation),
+            batchId: batchIdNum,
+            sourceLocationId: srcLocId,
+            targetLocationId: tgtLocId,
             quantity: transferQty,
             reason: 'Transfer for patient use via barcode scan',
             medicationName: medFullName,
@@ -3158,15 +3196,16 @@ Medicana Stock Management System`;
           });
 
           // Step 2: Record patient use at target (same batchId — transfer reuses batch row)
+          // Use quantity may be less than transferred (e.g., transfer 1 box, use 2 tablets)
           const targetLoc = locations.find(l => String(l.id) === String(barcodeNewMedForm.transferTargetLocation));
           const usageLabel = barcodeNewMedForm.useReason ? getUsageOptionsForLocation(targetLoc?.displayName).find(o => o.value === barcodeNewMedForm.useReason)?.label || barcodeNewMedForm.useReason : '';
           const reason = `Patient use — Patient: ${barcodeNewMedForm.patientFirstName.trim()} ${barcodeNewMedForm.patientLastName.trim()}, ID: ${barcodeNewMedForm.patientLocalId.trim()}${usageLabel ? ', Reason: ' + usageLabel : ''}${barcodeNewMedForm.useNotes ? ', Notes: ' + barcodeNewMedForm.useNotes : ''}`;
 
           await window.api.adjustStock({
             userId: currentUser.id,
-            locationId: parseInt(barcodeNewMedForm.transferTargetLocation),
-            batchId: parseInt(barcodeNewMedForm.transferBatchId),
-            delta: -transferQty,
+            locationId: tgtLocId,
+            batchId: batchIdNum,
+            delta: -useQty,
             reason: reason,
             medicationName: medFullName,
             batchCode: batch.batchNumber || null
@@ -3176,15 +3215,17 @@ Medicana Stock Management System`;
           setMedications(data.medications || []);
           setTransactions(data.transactions || []);
 
-          const displayQty = barcodeNewMedForm.transferQuantityType === 'boxes' ? `${qty} ${qty === 1 ? 'box' : 'boxes'}` : `${qty} items`;
+          const displayTransferQty = barcodeNewMedForm.transferQuantityType === 'boxes' ? `${transferQtyInput} ${transferQtyInput === 1 ? 'box' : 'boxes'}` : `${transferQtyInput} items`;
+          const displayUseQty = barcodeNewMedForm.transferUseQuantityType === 'boxes' ? `${useQtyInput} ${useQtyInput === 1 ? 'box' : 'boxes'}` : `${useQtyInput} items`;
           const sourceName = sourceMed?.location || 'source';
           const targetName = targetLoc?.displayName || 'destination';
 
           setBarcodeNewMedForm(prev => ({
             ...prev,
             isSubmitting: false,
-            successMessage: `Transferred ${displayQty} of ${prev.name} from ${sourceName} to ${targetName} and recorded patient use`,
+            successMessage: `Transferred ${displayTransferQty} from ${sourceName} to ${targetName}, used ${displayUseQty} for patient`,
             transferSourceLocation: '', transferTargetLocation: '', transferBatchId: '', transferQuantity: '', transferQuantityType: 'boxes',
+            transferUseQuantity: '', transferUseQuantityType: 'individual',
             patientFirstName: '', patientLastName: '', patientLocalId: '', useReason: '', useNotes: ''
           }));
         } catch (err) {
@@ -3224,19 +3265,33 @@ Medicana Stock Management System`;
           const inventory = getScannedMedInventory();
           const totalBoxes = inventory.reduce((sum, m) => sum + (m.batches || []).reduce((bs, b) => bs + (b.numberOfBoxes || 0), 0), 0);
           const subject = `STOCK ORDER REQUEST: ${medFullName}`;
-          const body = `Dear Ash,\n\nPlease find below the requested stock order for ${medFullName}.\n\nMEDICATION STOCK ORDER REQUEST\n\nMedication: ${medFullName}\nCurrent Stock Level: ${totalBoxes} ${totalBoxes === 1 ? 'box' : 'boxes'} (across all locations)\n\nREQUESTED ORDER QUANTITY: ${qty} boxes\nURGENCY: ${barcodeNewMedForm.orderUrgency.toUpperCase()}\n\n${barcodeNewMedForm.orderNotes ? `Additional Notes:\n${barcodeNewMedForm.orderNotes}\n\n` : ''}Requested by: ${currentUser.fullName || auth.currentUser}\nDate: ${new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}\n\nPlease process this order at your earliest convenience.`;
+          const requesterName = currentUser.fullName || currentUser.username || 'Staff';
+          const body = `Dear Ash,\n\nPlease find below the requested stock order for ${medFullName}.\n\nMEDICATION STOCK ORDER REQUEST\n\nMedication: ${medFullName}\nCurrent Stock Level: ${totalBoxes} ${totalBoxes === 1 ? 'box' : 'boxes'} (across all locations)\n\nREQUESTED ORDER QUANTITY: ${qty} boxes\nURGENCY: ${barcodeNewMedForm.orderUrgency.toUpperCase()}\n\n${barcodeNewMedForm.orderNotes ? `Additional Notes:\n${barcodeNewMedForm.orderNotes}\n\n` : ''}Requested by: ${requesterName}\nDate: ${new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}\n\nPlease process this order at your earliest convenience.`;
           const fullText = `To: ${barcodeNewMedForm.orderPharmacistEmail}\nSubject: ${subject}\n\n${body}`;
-          await navigator.clipboard.writeText(fullText);
 
-          const data = await window.api.fetchAllData();
-          setMedications(data.medications || []);
-          setTransactions(data.transactions || []);
-          setOrders(data.orders || []);
+          let clipboardOk = true;
+          try {
+            await navigator.clipboard.writeText(fullText);
+          } catch (clipErr) {
+            console.warn('Clipboard write failed:', clipErr);
+            clipboardOk = false;
+          }
+
+          try {
+            const data = await window.api.fetchAllData();
+            setMedications(data.medications || []);
+            setTransactions(data.transactions || []);
+            if (data.orders) setOrders(data.orders);
+          } catch (refreshErr) {
+            console.warn('Data refresh after order failed:', refreshErr);
+          }
 
           setBarcodeNewMedForm(prev => ({
             ...prev,
             isSubmitting: false,
-            successMessage: `Order placed for ${qty} ${qty === 1 ? 'box' : 'boxes'} of ${medFullName} — copied to clipboard`,
+            successMessage: clipboardOk
+              ? `Order placed for ${qty} ${qty === 1 ? 'box' : 'boxes'} of ${medFullName} — copied to clipboard`
+              : `Order placed for ${qty} ${qty === 1 ? 'box' : 'boxes'} of ${medFullName} (clipboard not available — copy manually)`,
             orderQuantity: '', orderUrgency: 'routine', orderNotes: ''
           }));
         } catch (err) {
@@ -3274,14 +3329,24 @@ Medicana Stock Management System`;
           const inventory = getScannedMedInventory();
           const totalBoxes = inventory.reduce((sum, m) => sum + (m.batches || []).reduce((bs, b) => bs + (b.numberOfBoxes || 0), 0), 0);
           const subject = `STOCK ORDER REQUEST: ${medFullName}`;
-          const body = `Dear Ash,\n\nPlease find below the requested stock order for ${medFullName}.\n\nMEDICATION STOCK ORDER REQUEST\n\nMedication: ${medFullName}\nCurrent Stock Level: ${totalBoxes} ${totalBoxes === 1 ? 'box' : 'boxes'} (across all locations)\n\nREQUESTED ORDER QUANTITY: ${qty} boxes\nURGENCY: ${barcodeNewMedForm.orderUrgency.toUpperCase()}\n\n${barcodeNewMedForm.orderNotes ? `Additional Notes:\n${barcodeNewMedForm.orderNotes}\n\n` : ''}Requested by: ${currentUser.fullName || auth.currentUser}\nDate: ${new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}\n\nPlease process this order at your earliest convenience.`;
-          const mailtoLink = `mailto:${barcodeNewMedForm.orderPharmacistEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-          window.location.href = mailtoLink;
+          const requesterName = currentUser.fullName || currentUser.username || 'Staff';
+          const body = `Dear Ash,\n\nPlease find below the requested stock order for ${medFullName}.\n\nMEDICATION STOCK ORDER REQUEST\n\nMedication: ${medFullName}\nCurrent Stock Level: ${totalBoxes} ${totalBoxes === 1 ? 'box' : 'boxes'} (across all locations)\n\nREQUESTED ORDER QUANTITY: ${qty} boxes\nURGENCY: ${barcodeNewMedForm.orderUrgency.toUpperCase()}\n\n${barcodeNewMedForm.orderNotes ? `Additional Notes:\n${barcodeNewMedForm.orderNotes}\n\n` : ''}Requested by: ${requesterName}\nDate: ${new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}\n\nPlease process this order at your earliest convenience.`;
 
-          const data = await window.api.fetchAllData();
-          setMedications(data.medications || []);
-          setTransactions(data.transactions || []);
-          setOrders(data.orders || []);
+          try {
+            const mailtoLink = `mailto:${encodeURIComponent(barcodeNewMedForm.orderPharmacistEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            window.open(mailtoLink, '_blank');
+          } catch (mailErr) {
+            console.warn('Mailto open failed:', mailErr);
+          }
+
+          try {
+            const data = await window.api.fetchAllData();
+            setMedications(data.medications || []);
+            setTransactions(data.transactions || []);
+            if (data.orders) setOrders(data.orders);
+          } catch (refreshErr) {
+            console.warn('Data refresh after order failed:', refreshErr);
+          }
 
           setBarcodeNewMedForm(prev => ({
             ...prev,
@@ -7513,6 +7578,23 @@ Medicana Stock Management System`;
                         </div>
 
                         <h4 className="text-sm font-semibold text-gray-700 border-b pb-1 mt-2">Patient Details</h4>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Use Quantity *</label>
+                          <div className="flex gap-2">
+                            <input type="number" inputMode="numeric" value={barcodeNewMedForm.transferUseQuantity}
+                              onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferUseQuantity: e.target.value, error: '' }))}
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              min="1" placeholder="Amount to use for patient" />
+                            <select value={barcodeNewMedForm.transferUseQuantityType}
+                              onChange={(e) => setBarcodeNewMedForm(prev => ({ ...prev, transferUseQuantityType: e.target.value, transferUseQuantity: '' }))}
+                              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                              <option value="boxes">Boxes</option>
+                              <option value="individual">Individual</option>
+                            </select>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">Can be less than the transfer quantity (e.g., transfer 1 box, use 2 tablets)</p>
+                        </div>
 
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Patient First Name *</label>
