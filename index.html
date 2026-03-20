@@ -1870,7 +1870,7 @@
             const scanner = cameraScannerRef.current;
 
             await scanner.start(
-              cameraId,
+              { deviceId: { exact: cameraId }, width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: 'environment' },
               {
                 fps: 10,
                 qrbox: { width: 300, height: 300 },
