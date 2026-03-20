@@ -14,7 +14,7 @@ exports.handler = async (event) => {
   // Need a dedicated pool/client for long transaction
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    ssl: true
   });
   const client = await pool.connect();
 
