@@ -3,12 +3,15 @@
 -- Draft orders are auto-generated proposals based on intelligence recommendations.
 -- Once approved, they create real orders in the existing orders table.
 
-CREATE TABLE IF NOT EXISTS draft_orders (
+-- Drop any previous failed attempt
+DROP TABLE IF EXISTS draft_orders;
+
+CREATE TABLE draft_orders (
     id SERIAL PRIMARY KEY,
 
     -- What medication needs ordering
-    medication_id BIGINT NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
-    location_id BIGINT,
+    medication_id INTEGER NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
+    location_id INTEGER,
 
     -- Snapshot of stock state at generation time
     current_stock_boxes NUMERIC(10,2) NOT NULL DEFAULT 0,
@@ -32,8 +35,8 @@ CREATE TABLE IF NOT EXISTS draft_orders (
         CHECK (status IN ('pending_review', 'approved', 'rejected')),
 
     -- Who did what
-    generated_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
-    approved_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    generated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
 
     -- Timestamps
     generated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),

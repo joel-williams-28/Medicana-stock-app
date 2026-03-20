@@ -18,28 +18,26 @@ exports.handler = async (event) => {
     const { userId, locationId } = db.parseBody(event);
 
     // Ensure draft_orders table exists (idempotent)
+    // Ensure draft_orders table exists (idempotent, no FKs to avoid type issues)
     await db.query(`
       CREATE TABLE IF NOT EXISTS draft_orders (
         id SERIAL PRIMARY KEY,
-        medication_id BIGINT NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
-        location_id BIGINT,
+        medication_id INTEGER NOT NULL,
+        location_id INTEGER,
         current_stock_boxes NUMERIC(10,2) NOT NULL DEFAULT 0,
         min_level_boxes INTEGER NOT NULL DEFAULT 0,
         suggested_quantity INTEGER NOT NULL CHECK (suggested_quantity > 0),
         approved_quantity INTEGER,
-        urgency VARCHAR(20) NOT NULL DEFAULT 'routine'
-          CHECK (urgency IN ('urgent', 'routine', 'non-urgent')),
+        urgency VARCHAR(20) NOT NULL DEFAULT 'routine',
         intelligence_snapshot JSONB,
-        source VARCHAR(20) NOT NULL DEFAULT 'auto'
-          CHECK (source IN ('auto', 'manual')),
-        status VARCHAR(20) NOT NULL DEFAULT 'pending_review'
-          CHECK (status IN ('pending_review', 'approved', 'rejected')),
-        generated_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
-        approved_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+        source VARCHAR(20) NOT NULL DEFAULT 'auto',
+        status VARCHAR(20) NOT NULL DEFAULT 'pending_review',
+        generated_by INTEGER,
+        approved_by INTEGER,
         generated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
         approved_at TIMESTAMP WITH TIME ZONE,
         rejected_at TIMESTAMP WITH TIME ZONE,
-        order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+        order_id INTEGER,
         batch_ref UUID NOT NULL,
         notes TEXT
       )
