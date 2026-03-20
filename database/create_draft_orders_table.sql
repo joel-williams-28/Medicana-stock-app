@@ -3,15 +3,16 @@
 -- Draft orders are auto-generated proposals based on intelligence recommendations.
 -- Once approved, they create real orders in the existing orders table.
 
--- Drop any previous failed attempt
+-- Drop any previous attempt
 DROP TABLE IF EXISTS draft_orders;
 
 CREATE TABLE draft_orders (
     id SERIAL PRIMARY KEY,
 
     -- What medication needs ordering
-    medication_id INTEGER NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
-    location_id INTEGER,
+    -- medications.id and locations.id are TEXT in Neon
+    medication_id TEXT NOT NULL,
+    location_id TEXT,
 
     -- Snapshot of stock state at generation time
     current_stock_boxes NUMERIC(10,2) NOT NULL DEFAULT 0,
@@ -34,17 +35,17 @@ CREATE TABLE draft_orders (
     status VARCHAR(20) NOT NULL DEFAULT 'pending_review'
         CHECK (status IN ('pending_review', 'approved', 'rejected')),
 
-    -- Who did what
-    generated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    -- Who did what (users.id is int4)
+    generated_by INTEGER,
+    approved_by INTEGER,
 
     -- Timestamps
     generated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     approved_at TIMESTAMP WITH TIME ZONE,
     rejected_at TIMESTAMP WITH TIME ZONE,
 
-    -- Link to the real order created on approval
-    order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+    -- Link to the real order created on approval (orders.id is int4)
+    order_id INTEGER,
 
     -- Batch tracking (groups all drafts from one generation run)
     batch_ref UUID NOT NULL,
