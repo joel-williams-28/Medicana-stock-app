@@ -196,7 +196,11 @@
       { id: 'medication_created', label: 'Meds Added',        color: 'bg-status-fulfilled-bg text-status-fulfilled-text border-brand-light' },
       { id: 'medication_deleted', label: 'Meds Deleted',      color: 'bg-status-critical-bg text-status-critical-text border-status-critical-text' },
       { id: 'batch_removed',      label: 'Batch Removals',    color: 'bg-status-expired-bg text-status-expired-text border-status-expired-text' },
-      { id: 'min_level_changed',  label: 'Min Level Changes', color: 'bg-status-low-bg text-status-low-text border-status-low-text' }
+      { id: 'min_level_changed',  label: 'Min Level Changes', color: 'bg-status-low-bg text-status-low-text border-status-low-text' },
+      { id: 'drafts_generated',   label: 'Drafts Generated',  color: 'bg-status-ordered-bg text-status-ordered-text border-status-ordered-text' },
+      { id: 'draft_approved',     label: 'Drafts Approved',   color: 'bg-status-ok-bg text-status-ok-text border-status-ok-text' },
+      { id: 'draft_rejected',     label: 'Drafts Rejected',   color: 'bg-status-critical-bg text-status-critical-text border-status-critical-text' },
+      { id: 'bulk_order_approved', label: 'Bulk Orders',      color: 'bg-status-fulfilled-bg text-status-fulfilled-text border-brand-light' }
     ];
 
     const formatExpiry = (expiryDate, format = 'short') => {
@@ -508,6 +512,11 @@
       const role = getUserRole();
       if (!role) return false;
 
+      // Purchase Orders tab: Admin and Pharmacist only
+      if (tabName === 'purchaseorders') {
+        return role === 'Administrator' || role === 'Pharmacist';
+      }
+
       // Administrator and Pharmacist have access to all tabs
       if (role === 'Administrator' || role === 'Pharmacist') {
         return true;
@@ -683,6 +692,20 @@
         pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk'
       });
 
+      // Draft orders state for Purchase Orders tab
+      const [draftOrders, setDraftOrders] = useState({
+        drafts: [],
+        loading: false,
+        generating: false,
+        error: null,
+        summary: null,
+        approvalResult: null,
+        pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk'
+      });
+      const [draftSelections, setDraftSelections] = useState(new Set());
+      const [draftAdjustments, setDraftAdjustments] = useState({});
+      const [draftOrderCount, setDraftOrderCount] = useState(0);
+
       const [newMedicationOrderForm, setNewMedicationOrderForm] = useState({
         name: '',
         type: 'Tablet',
@@ -830,11 +853,12 @@
                   setTransactions(backendData.transactions || []);
                   setLocations(backendData.locations || []);
                   window.api.startPolling({
-                    onData: ({ medications: meds, transactions: txs, locations: locs, orders: ords }) => {
+                    onData: ({ medications: meds, transactions: txs, locations: locs, orders: ords, draftOrderCount: draftCount }) => {
                       setMedications(meds || []);
                       setTransactions(txs || []);
                       setLocations(locs || []);
                       setOrders(ords || []);
+                      setDraftOrderCount(draftCount || 0);
                     },
                     intervalMs: 20000
                   });
@@ -2226,15 +2250,16 @@
             
             // Start polling to keep data in sync
             window.api.startPolling({
-              onData: ({ medications: meds, transactions: txs, locations: locs, orders: ords }) => {
+              onData: ({ medications: meds, transactions: txs, locations: locs, orders: ords, draftOrderCount: draftCount }) => {
                 setMedications(meds || []);
                 setTransactions(txs || []);
                 setLocations(locs || []);
                 setOrders(ords || []);
+                setDraftOrderCount(draftCount || 0);
               },
               intervalMs: 20000
             });
-            
+
             // Show low stock alert for pharmacist (Aasit) if there are low stock medications
             if (auth.currentUser === 'ABadiani' && data.user.role === 'Pharmacist') {
               // Use setTimeout to ensure the component has rendered and lowStockMedications is calculated
@@ -3732,6 +3757,106 @@ Medicana Stock Management System`;
         return { subject, body };
       };
 
+      // =============================================
+      // DRAFT ORDERS / PURCHASE ORDERS TAB HANDLERS
+      // =============================================
+      const loadDraftOrders = async () => {
+        setDraftOrders(prev => ({ ...prev, loading: true, error: null, approvalResult: null }));
+        try {
+          // Generate fresh drafts first
+          const userInfo = getCurrentUserInfo();
+          await window.api.generateDraftOrders({ userId: userInfo?.id });
+          // Then fetch all pending drafts
+          const data = await window.api.getDraftOrders({ status: 'pending_review' });
+          setDraftOrders(prev => ({
+            ...prev,
+            loading: false,
+            drafts: data.drafts || [],
+            summary: data.summary || null
+          }));
+          setDraftSelections(new Set());
+          setDraftAdjustments({});
+        } catch (err) {
+          setDraftOrders(prev => ({ ...prev, loading: false, error: err.message }));
+        }
+      };
+
+      const handleApproveDrafts = async (mode) => {
+        const userInfo = getCurrentUserInfo();
+        const selectedIds = Array.from(draftSelections);
+        try {
+          const result = await window.api.actionDraftOrders({
+            action: mode === 'all' ? 'approve-all' : 'approve',
+            draftIds: mode === 'all' ? [] : selectedIds,
+            userId: userInfo?.id,
+            pharmacistEmail: draftOrders.pharmacistEmail,
+            adjustments: draftAdjustments
+          });
+          setDraftOrders(prev => ({ ...prev, approvalResult: result, drafts: [] }));
+          setDraftSelections(new Set());
+          setDraftAdjustments({});
+          // Refresh main data
+          const data = await window.api.fetchAllData();
+          setMedications(data.medications || []);
+          setOrders(data.orders || []);
+          setDraftOrderCount(data.draftOrderCount || 0);
+        } catch (err) {
+          alert('Failed to approve drafts: ' + err.message);
+        }
+      };
+
+      const handleRejectDrafts = async () => {
+        const userInfo = getCurrentUserInfo();
+        const selectedIds = Array.from(draftSelections);
+        if (selectedIds.length === 0) { alert('Please select drafts to reject'); return; }
+        try {
+          await window.api.actionDraftOrders({
+            action: 'reject',
+            draftIds: selectedIds,
+            userId: userInfo?.id
+          });
+          await loadDraftOrders();
+          const data = await window.api.fetchAllData();
+          setDraftOrderCount(data.draftOrderCount || 0);
+        } catch (err) {
+          alert('Failed to reject drafts: ' + err.message);
+        }
+      };
+
+      const handleDraftCopyToClipboard = () => {
+        const result = draftOrders.approvalResult;
+        if (!result?.emailContent) return;
+        const text = `To: ${result.emailContent.to}\nSubject: ${result.emailContent.subject}\n\n${result.emailContent.body}`;
+        navigator.clipboard.writeText(text).then(() => {
+          alert('Order copied to clipboard!');
+        });
+      };
+
+      const handleDraftOpenOutlook = () => {
+        const result = draftOrders.approvalResult;
+        if (!result?.emailContent) return;
+        const subject = encodeURIComponent(result.emailContent.subject);
+        const body = encodeURIComponent(result.emailContent.body);
+        window.open(`mailto:${result.emailContent.to}?subject=${subject}&body=${body}`);
+      };
+
+      const toggleDraftSelection = (id) => {
+        setDraftSelections(prev => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return next;
+        });
+      };
+
+      const toggleAllDrafts = () => {
+        if (draftSelections.size === draftOrders.drafts.length) {
+          setDraftSelections(new Set());
+        } else {
+          setDraftSelections(new Set(draftOrders.drafts.map(d => d.id)));
+        }
+      };
+
       const handleCopyToClipboard = async () => {
           if (!orderForm.quantity || parseInt(orderForm.quantity) <= 0) { alert('Please enter a valid quantity'); return; }
 
@@ -4076,6 +4201,17 @@ Medicana Stock Management System`;
                       <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'newmedication' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'newmedication' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>
                       New Medication Order
                     </button>
+                    )}
+                    {canAccessTab('purchaseorders') && (
+                      <button onClick={() => {
+                        setUi(prev => ({ ...prev, activeTab: 'purchaseorders' }));
+                        loadDraftOrders();
+                      }} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'purchaseorders' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>
+                        Purchase Orders
+                        {draftOrderCount > 0 && (
+                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">{draftOrderCount}</span>
+                        )}
+                      </button>
                     )}
                 </nav>
               </div>
@@ -4773,6 +4909,15 @@ Medicana Stock Management System`;
                             Export Simple Report
                           </button>
                         )}
+                        {draftOrderCount > 0 && canAccessTab('purchaseorders') && (
+                          <button
+                            onClick={() => { setUi(prev => ({ ...prev, activeTab: 'purchaseorders' })); loadDraftOrders(); }}
+                            className="flex items-center bg-status-ordered-text text-white px-4 py-2 rounded hover:opacity-90 transition-colors text-sm ml-2"
+                          >
+                            <TrendingUp className="w-4 h-4 mr-2" />
+                            {draftOrderCount} Draft{draftOrderCount !== 1 ? 's' : ''} Pending Review
+                          </button>
+                        )}
                     </div>
                   </div>
                   
@@ -4984,6 +5129,212 @@ Medicana Stock Management System`;
                         </div>
                       </form>
                   </div>
+                </>
+              )}
+
+              {/* Purchase Orders Tab */}
+              {ui.activeTab === 'purchaseorders' && (
+                <>
+                  {/* Approval Confirmation View */}
+                  {draftOrders.approvalResult ? (
+                    <div className="p-4 sm:p-6">
+                      <div className="bg-status-ok-bg border border-status-ok-text rounded-lg p-4 mb-4">
+                        <h3 className="font-semibold text-status-ok-text text-lg mb-1">
+                          {draftOrders.approvalResult.approvedCount} Order{draftOrders.approvalResult.approvedCount !== 1 ? 's' : ''} Approved & Placed
+                        </h3>
+                        <p className="text-sm text-status-ok-text">Orders have been saved. Use the options below to send the consolidated order.</p>
+                      </div>
+
+                      <div className="bg-off-white border border-bdr-default rounded-lg p-4 mb-4">
+                        <h4 className="font-medium text-txt-secondary mb-2">Email Preview</h4>
+                        <div className="text-xs text-txt-tertiary mb-1">To: {draftOrders.approvalResult.emailContent?.to}</div>
+                        <div className="text-xs text-txt-tertiary mb-2">Subject: {draftOrders.approvalResult.emailContent?.subject}</div>
+                        <pre className="text-sm text-near-black whitespace-pre-wrap font-mono bg-white p-3 rounded border border-bdr-default max-h-64 overflow-y-auto">
+                          {draftOrders.approvalResult.emailContent?.body}
+                        </pre>
+                      </div>
+
+                      <div className="flex gap-3">
+                        <button onClick={handleDraftOpenOutlook} className="flex-1 bg-brand-mid text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium text-sm">
+                          Open in Outlook
+                        </button>
+                        <button onClick={handleDraftCopyToClipboard} className="flex-1 bg-near-black text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium text-sm">
+                          Copy to Clipboard
+                        </button>
+                        <button onClick={() => {
+                          setDraftOrders(prev => ({ ...prev, approvalResult: null }));
+                          loadDraftOrders();
+                        }} className="px-6 bg-btn-secondary text-txt-secondary py-2 rounded-lg hover:bg-bdr-hover transition-colors font-medium text-sm">
+                          Done
+                        </button>
+                      </div>
+                    </div>
+
+                  ) : draftOrders.loading ? (
+                    <div className="p-8 text-center">
+                      <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brand-mid mb-3"></div>
+                      <p className="text-txt-tertiary">Analyzing stock levels and generating recommendations...</p>
+                    </div>
+
+                  ) : draftOrders.error ? (
+                    <div className="p-6">
+                      <div className="bg-danger-ghost-bg border border-danger-ghost-bg rounded-lg p-4 mb-4">
+                        <p className="text-sm text-danger-ghost-text">{draftOrders.error}</p>
+                      </div>
+                      <button onClick={loadDraftOrders} className="bg-brand-mid text-white px-4 py-2 rounded hover:bg-brand-dark transition-colors text-sm">
+                        Retry
+                      </button>
+                    </div>
+
+                  ) : draftOrders.drafts.length === 0 ? (
+                    <div className="p-8 text-center">
+                      <div className="text-txt-disabled mb-3">
+                        <svg className="w-12 h-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      </div>
+                      <p className="text-lg font-medium text-txt-secondary">No medications currently need ordering</p>
+                      <p className="text-sm text-txt-tertiary mt-1">All medications are at or above minimum stock levels.</p>
+                      <button onClick={loadDraftOrders} className="mt-4 bg-btn-secondary text-txt-secondary px-4 py-2 rounded hover:bg-bdr-hover transition-colors text-sm">
+                        Refresh
+                      </button>
+                    </div>
+
+                  ) : (
+                    <div>
+                      {/* Header */}
+                      <div className="p-3 sm:p-4 md:p-6 bg-status-ordered-bg border-b border-status-ordered-bg">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                          <div>
+                            <h3 className="font-semibold text-status-ordered-text text-lg">
+                              Purchase Order Review — {draftOrders.drafts.length} item{draftOrders.drafts.length !== 1 ? 's' : ''}
+                            </h3>
+                            <p className="text-sm text-status-ordered-text mt-0.5">
+                              {draftOrders.summary?.urgent > 0 && <span className="font-medium">{draftOrders.summary.urgent} urgent</span>}
+                              {draftOrders.summary?.urgent > 0 && draftOrders.summary?.routine > 0 && ', '}
+                              {draftOrders.summary?.routine > 0 && <span>{draftOrders.summary.routine} routine</span>}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button onClick={loadDraftOrders} className="bg-white text-status-ordered-text border border-status-ordered-text px-3 py-1.5 rounded text-sm hover:bg-status-ordered-bg transition-colors">
+                              Refresh
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Pharmacist Email */}
+                      <div className="px-4 py-3 border-b border-bdr-default bg-off-white">
+                        <div className="flex items-center gap-2">
+                          <label className="text-sm font-medium text-txt-secondary whitespace-nowrap">Send to:</label>
+                          <input
+                            type="email"
+                            value={draftOrders.pharmacistEmail}
+                            onChange={(e) => setDraftOrders(prev => ({ ...prev, pharmacistEmail: e.target.value }))}
+                            className="flex-1 max-w-xs px-3 py-1.5 border border-bdr-default rounded text-sm focus:ring-2 focus:ring-brand-mid focus:border-transparent"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Review Table */}
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead className="bg-off-white">
+                            <tr>
+                              <th className="px-3 py-2 text-left w-10">
+                                <input type="checkbox" checked={draftSelections.size === draftOrders.drafts.length && draftOrders.drafts.length > 0} onChange={toggleAllDrafts} className="rounded" />
+                              </th>
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-txt-tertiary uppercase">Medication</th>
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-txt-tertiary uppercase">Location</th>
+                              <th className="px-3 py-2 text-center text-xs font-semibold text-txt-tertiary uppercase">Stock</th>
+                              <th className="px-3 py-2 text-center text-xs font-semibold text-txt-tertiary uppercase">Min</th>
+                              <th className="px-3 py-2 text-center text-xs font-semibold text-txt-tertiary uppercase">Order Qty</th>
+                              <th className="px-3 py-2 text-center text-xs font-semibold text-txt-tertiary uppercase">Urgency</th>
+                              <th className="px-3 py-2 text-center text-xs font-semibold text-txt-tertiary uppercase">Trend</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-bdr-default">
+                            {draftOrders.drafts.map(draft => (
+                              <tr key={draft.id} className={`hover:bg-off-white ${draftSelections.has(draft.id) ? 'bg-brand-pale' : ''}`}>
+                                <td className="px-3 py-2">
+                                  <input type="checkbox" checked={draftSelections.has(draft.id)} onChange={() => toggleDraftSelection(draft.id)} className="rounded" />
+                                </td>
+                                <td className="px-3 py-2 text-sm text-near-black font-medium">{draft.medicationName}</td>
+                                <td className="px-3 py-2 text-sm text-txt-secondary">{draft.locationName}</td>
+                                <td className="px-3 py-2 text-sm text-center">
+                                  <span className={`font-semibold ${draft.currentStockBoxes === 0 ? 'text-danger-ghost-text' : 'text-status-low-text'}`}>
+                                    {draft.currentStockBoxes}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-sm text-txt-tertiary text-center">{draft.minLevelBoxes}</td>
+                                <td className="px-3 py-2 text-center">
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={draftAdjustments[draft.id] != null ? draftAdjustments[draft.id] : draft.suggestedQuantity}
+                                    onChange={(e) => setDraftAdjustments(prev => ({ ...prev, [draft.id]: parseInt(e.target.value) || 0 }))}
+                                    className="w-16 px-2 py-1 border border-bdr-default rounded text-sm text-center focus:ring-2 focus:ring-brand-mid focus:border-transparent"
+                                  />
+                                  <span className="text-xs text-txt-tertiary ml-1">boxes</span>
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                    draft.urgency === 'urgent'
+                                      ? 'bg-status-critical-bg text-status-critical-text'
+                                      : 'bg-status-ordered-bg text-status-ordered-text'
+                                  }`}>
+                                    {draft.urgency}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  {draft.intelligenceSnapshot?.usageTrend && draft.intelligenceSnapshot.usageTrend !== 'insufficient_data' && (
+                                    <span className={`text-xs font-medium ${
+                                      draft.intelligenceSnapshot.usageTrend === 'increasing' ? 'text-status-critical-text' :
+                                      draft.intelligenceSnapshot.usageTrend === 'decreasing' ? 'text-status-ok-text' :
+                                      'text-txt-tertiary'
+                                    }`}>
+                                      {draft.intelligenceSnapshot.usageTrend === 'increasing' ? 'Rising' :
+                                       draft.intelligenceSnapshot.usageTrend === 'decreasing' ? 'Falling' : 'Stable'}
+                                      {draft.intelligenceSnapshot.confidence > 0 && (
+                                        <span className="text-txt-disabled ml-1">({Math.round(draft.intelligenceSnapshot.confidence * 100)}%)</span>
+                                      )}
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="px-4 py-3 border-t border-bdr-default bg-off-white flex flex-wrap gap-2 items-center">
+                        <button
+                          onClick={() => handleApproveDrafts('all')}
+                          className="bg-status-ok-text text-white px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
+                        >
+                          Approve All ({draftOrders.drafts.length})
+                        </button>
+                        {draftSelections.size > 0 && (
+                          <>
+                            <button
+                              onClick={() => handleApproveDrafts('selected')}
+                              className="bg-brand-mid text-white px-4 py-2 rounded text-sm font-medium hover:bg-brand-dark transition-colors"
+                            >
+                              Approve Selected ({draftSelections.size})
+                            </button>
+                            <button
+                              onClick={handleRejectDrafts}
+                              className="bg-danger-ghost-text text-white px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
+                            >
+                              Reject Selected ({draftSelections.size})
+                            </button>
+                          </>
+                        )}
+                        <span className="text-xs text-txt-tertiary ml-auto">
+                          {draftSelections.size} of {draftOrders.drafts.length} selected
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
