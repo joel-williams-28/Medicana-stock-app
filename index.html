@@ -1878,9 +1878,9 @@
               cameraId,
               {
                 fps: 15,
+                aspectRatio: 1.7778,
                 qrbox: (viewfinderWidth, viewfinderHeight) => {
-                  const size = Math.min(viewfinderWidth, viewfinderHeight) * 0.8;
-                  return { width: Math.floor(size), height: Math.floor(size) };
+                  return { width: Math.floor(viewfinderWidth * 0.8), height: Math.floor(viewfinderHeight * 0.8) };
                 },
                 experimentalFeatures: { useBarCodeDetectorIfSupported: true }
               },
