@@ -137,14 +137,19 @@ exports.handler = async (event) => {
       { id: 'MED-050', name: 'Flumazenil', strength: '500mcg/5ml', form: 'Ampule', ipb: 5, min: 2, locs: [...theatres, ...recoveryLocs] },
     ];
 
-    // Insert medications (slug is a generated column - do not insert)
-    for (const med of medications) {
-      await client.query(
-        `INSERT INTO medications (id, name, strength, form, fefo, min_level_boxes, standard_items_per_box, is_active)
-         VALUES ($1, $2, $3, $4, true, $5, $6, true)`,
-        [med.id, med.name, med.strength, med.form, med.min, med.ipb]
-      );
-    }
+    // Bulk insert medications (slug is a generated column - do not insert)
+    const medValues = [];
+    const medParams = [];
+    medications.forEach((med, i) => {
+      const off = i * 6;
+      medValues.push(`($${off+1}, $${off+2}, $${off+3}, $${off+4}, $${off+5}, $${off+6})`);
+      medParams.push(med.id, med.name, med.strength, med.form, med.min, med.ipb);
+    });
+    await client.query(
+      `INSERT INTO medications (id, name, strength, form, min_level_boxes, standard_items_per_box)
+       VALUES ${medValues.join(', ')}`,
+      medParams
+    );
 
     // ─── Step 4: Insert Batches ───
     const brands = {
@@ -163,9 +168,9 @@ exports.handler = async (event) => {
       'Box Kit': ['BD', 'Medline'],
     };
 
-    const batchRows = [];
     let batchCounter = 0;
     const now = new Date('2026-03-20T12:00:00Z');
+    const batchData = []; // collect batch info before inserting
 
     for (const med of medications) {
       const numBatches = 2 + Math.floor(Math.random() * 3); // 2-4 batches
@@ -174,67 +179,94 @@ exports.handler = async (event) => {
       for (let b = 0; b < numBatches; b++) {
         batchCounter++;
         const batchCode = `BN${String(2025 + Math.floor(b / 2)).slice(-2)}${String(batchCounter).padStart(5, '0')}`;
-        // Expiry: 3 to 18 months from now
         const expiryMonths = 3 + Math.floor(Math.random() * 16);
         const expiry = new Date(now);
         expiry.setMonth(expiry.getMonth() + expiryMonths);
         const expiryStr = expiry.toISOString().slice(0, 10);
         const brand = formBrands[b % formBrands.length];
-
-        const { rows } = await client.query(
-          `INSERT INTO batches (medication_id, batch_code, expiry_date, brand, items_per_box, serial)
-           VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-          [med.id, batchCode, expiryStr, brand, med.ipb, `SN-${batchCode}`]
-        );
-        batchRows.push({
-          id: rows[0].id,
-          medicationId: med.id,
-          batchCode,
-          ipb: med.ipb,
-          medName: `${med.name} ${med.strength}`,
-          locs: med.locs,
+        batchData.push({
+          medicationId: med.id, batchCode, expiryStr, brand, ipb: med.ipb,
+          serial: `SN-${batchCode}`, locs: med.locs, medName: `${med.name} ${med.strength}`,
         });
       }
     }
 
+    // Single bulk INSERT for all batches
+    const batchValues = [];
+    const batchParams = [];
+    batchData.forEach((b, i) => {
+      const off = i * 6;
+      batchValues.push(`($${off+1}, $${off+2}, $${off+3}, $${off+4}, $${off+5}, $${off+6})`);
+      batchParams.push(b.medicationId, b.batchCode, b.expiryStr, b.brand, b.ipb, b.serial);
+    });
+    const { rows: returnedBatches } = await client.query(
+      `INSERT INTO batches (medication_id, batch_code, expiry_date, brand, items_per_box, serial)
+       VALUES ${batchValues.join(', ')} RETURNING id`,
+      batchParams
+    );
+    const batchRows = batchData.map((b, i) => ({
+      id: returnedBatches[i].id,
+      medicationId: b.medicationId,
+      batchCode: b.batchCode,
+      ipb: b.ipb,
+      medName: b.medName,
+      locs: b.locs,
+    }));
+
     // ─── Step 5: Distribute Inventory ───
-    // Assign batches to their medication's locations with realistic on_hand quantities
+    // Build inventory records in memory, then bulk insert
     const inventoryRecords = [];
     for (const batch of batchRows) {
-      // Each batch goes to 1-3 of its medication's designated locations
       const uniqueLocs = [...new Set(batch.locs)];
       const numLocs = Math.min(uniqueLocs.length, 1 + Math.floor(Math.random() * Math.min(3, uniqueLocs.length)));
       const selectedLocs = shuffle(uniqueLocs).slice(0, numLocs);
-
       for (const locId of selectedLocs) {
-        // on_hand: between 5 and 200 items depending on items_per_box
         const boxes = 1 + Math.floor(Math.random() * 8);
         const onHand = boxes * batch.ipb + Math.floor(Math.random() * batch.ipb);
-
-        await client.query(
-          `INSERT INTO inventory (location_id, batch_id, on_hand)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (location_id, batch_id) DO UPDATE SET on_hand = inventory.on_hand + $3`,
-          [locId, batch.id, onHand]
-        );
         inventoryRecords.push({ batchId: batch.id, locationId: locId, onHand, medId: batch.medicationId, medName: batch.medName, batchCode: batch.batchCode, ipb: batch.ipb });
       }
     }
 
+    // Single bulk INSERT for inventory
+    const invValues = [];
+    const invParams = [];
+    inventoryRecords.forEach((inv, i) => {
+      const off = i * 3;
+      invValues.push(`($${off+1}, $${off+2}, $${off+3})`);
+      invParams.push(inv.locationId, inv.batchId, inv.onHand);
+    });
+    await client.query(
+      `INSERT INTO inventory (location_id, batch_id, on_hand)
+       VALUES ${invValues.join(', ')}
+       ON CONFLICT (location_id, batch_id) DO UPDATE SET on_hand = inventory.on_hand + EXCLUDED.on_hand`,
+      invParams
+    );
+
     // ─── Step 6: Set location-specific min levels ───
+    const minLevelData = [];
     for (const med of medications) {
       const uniqueLocs = [...new Set(med.locs)];
       for (const locId of uniqueLocs) {
-        // Slightly vary min levels per location
         const locMin = Math.max(1, med.min + Math.floor(Math.random() * 3) - 1);
-        await client.query(
-          `INSERT INTO location_min_levels (medication_id, location_id, min_level_boxes, updated_at)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (medication_id, location_id) DO UPDATE SET min_level_boxes = $3`,
-          [med.id, locId, locMin, new Date('2026-02-18T09:00:00Z')]
-        );
+        minLevelData.push({ medId: med.id, locId, locMin });
       }
     }
+
+    // Single bulk INSERT for min levels
+    const mlValues = [];
+    const mlParams = [];
+    const mlDate = new Date('2026-02-18T09:00:00Z');
+    minLevelData.forEach((ml, i) => {
+      const off = i * 4;
+      mlValues.push(`($${off+1}, $${off+2}, $${off+3}, $${off+4})`);
+      mlParams.push(ml.medId, ml.locId, ml.locMin, mlDate);
+    });
+    await client.query(
+      `INSERT INTO location_min_levels (medication_id, location_id, min_level_boxes, updated_at)
+       VALUES ${mlValues.join(', ')}
+       ON CONFLICT (medication_id, location_id) DO UPDATE SET min_level_boxes = EXCLUDED.min_level_boxes`,
+      mlParams
+    );
 
     // ─── Step 7: Generate 1 month of transactions ───
     const startDate = new Date('2026-02-18T07:00:00Z');
@@ -446,9 +478,9 @@ exports.handler = async (event) => {
     // Sort transactions by date for realistic insertion
     transactions.sort((a, b) => a.occurredAt - b.occurredAt);
 
-    // Bulk insert transactions in chunks of 50
-    for (let c = 0; c < transactions.length; c += 50) {
-      const chunk = transactions.slice(c, c + 50);
+    // Bulk insert transactions in chunks of 250
+    for (let c = 0; c < transactions.length; c += 250) {
+      const chunk = transactions.slice(c, c + 250);
       const values = [];
       const params = [];
       chunk.forEach((t, i) => {
@@ -464,8 +496,8 @@ exports.handler = async (event) => {
     }
 
     // ─── Step 8: Generate Orders ───
-    const orderStatuses = [];
     const numOrders = 20 + Math.floor(Math.random() * 11); // 20-30
+    const orderData = [];
 
     for (let i = 0; i < numOrders; i++) {
       const med = pick(medications);
@@ -477,41 +509,52 @@ exports.handler = async (event) => {
       const orderedAt = randomDate(startDate, endDate);
       const quantity = (2 + Math.floor(Math.random() * 8)) * med.ipb;
       const fulfilledAt = status === 'fulfilled' ? new Date(orderedAt.getTime() + (1 + Math.random() * 5) * dayMs) : null;
+      const notes = status === 'fulfilled' ? 'Order completed' : urgency === 'emergency' ? 'Urgent clinical need' : 'Regular restock';
+      orderData.push({ med, user, urgency, status, orderedAt, quantity, fulfilledAt, notes });
+    }
 
-      const { rows: orderRows } = await client.query(
-        `INSERT INTO orders (medication_id, user_id, quantity, urgency, notes, pharmacist_email, status, ordered_at, fulfilled_at, quantity_fulfilled)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-        [
-          med.id, user.id, quantity, urgency,
-          status === 'fulfilled' ? 'Order completed' : urgency === 'emergency' ? 'Urgent clinical need' : 'Regular restock',
-          pharmacistEmail, status, orderedAt, fulfilledAt,
-          status === 'fulfilled' ? quantity : 0,
-        ]
+    // Single bulk INSERT for orders
+    const ordValues = [];
+    const ordParams = [];
+    orderData.forEach((o, i) => {
+      const off = i * 10;
+      ordValues.push(`($${off+1}, $${off+2}, $${off+3}, $${off+4}, $${off+5}, $${off+6}, $${off+7}, $${off+8}, $${off+9}, $${off+10})`);
+      ordParams.push(
+        o.med.id, o.user.id, o.quantity, o.urgency, o.notes,
+        pharmacistEmail, o.status, o.orderedAt, o.fulfilledAt,
+        o.status === 'fulfilled' ? o.quantity : 0
       );
+    });
+    const { rows: returnedOrders } = await client.query(
+      `INSERT INTO orders (medication_id, user_id, quantity, urgency, notes, pharmacist_email, status, ordered_at, fulfilled_at, quantity_fulfilled)
+       VALUES ${ordValues.join(', ')} RETURNING id`,
+      ordParams
+    );
 
-      // Activity log for order placed
+    // Build activity logs from returned order IDs
+    orderData.forEach((o, i) => {
+      const orderId = returnedOrders[i].id;
       activityLogs.push({
-        userId: user.id,
+        userId: o.user.id,
         actionType: 'order_placed',
         entityType: 'medication',
-        entityId: med.id,
+        entityId: o.med.id,
         locationId: null,
-        details: { medicationName: `${med.name} ${med.strength}`, quantity, urgency, orderId: orderRows[0].id },
-        occurredAt: orderedAt,
+        details: { medicationName: `${o.med.name} ${o.med.strength}`, quantity: o.quantity, urgency: o.urgency, orderId },
+        occurredAt: o.orderedAt,
       });
-
-      if (status === 'fulfilled') {
+      if (o.status === 'fulfilled') {
         activityLogs.push({
-          userId: user.id,
+          userId: o.user.id,
           actionType: 'order_fulfilled',
           entityType: 'medication',
-          entityId: med.id,
+          entityId: o.med.id,
           locationId: null,
-          details: { medicationName: `${med.name} ${med.strength}`, quantity, orderId: orderRows[0].id },
-          occurredAt: fulfilledAt,
+          details: { medicationName: `${o.med.name} ${o.med.strength}`, quantity: o.quantity, orderId },
+          occurredAt: o.fulfilledAt,
         });
       }
-    }
+    });
 
     // Add a handful of min_level_changed activity logs
     for (let i = 0; i < 8; i++) {
@@ -533,9 +576,9 @@ exports.handler = async (event) => {
     // Sort by date
     activityLogs.sort((a, b) => a.occurredAt - b.occurredAt);
 
-    // Bulk insert activity logs in chunks of 50
-    for (let c = 0; c < activityLogs.length; c += 50) {
-      const chunk = activityLogs.slice(c, c + 50);
+    // Bulk insert activity logs in chunks of 250
+    for (let c = 0; c < activityLogs.length; c += 250) {
+      const chunk = activityLogs.slice(c, c + 250);
       const values = [];
       const params = [];
       chunk.forEach((log, i) => {
