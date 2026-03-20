@@ -503,13 +503,13 @@ exports.handler = async (event) => {
       const med = pick(medications);
       const user = pick(pharmacists.length > 0 ? pharmacists : allStaff);
       const urgencyRoll = Math.random();
-      const urgency = urgencyRoll < 0.7 ? 'routine' : urgencyRoll < 0.9 ? 'urgent' : 'emergency';
+      const urgency = urgencyRoll < 0.7 ? 'routine' : urgencyRoll < 0.9 ? 'urgent' : 'non-urgent';
       const statusRoll = Math.random();
       const status = statusRoll < 0.6 ? 'fulfilled' : statusRoll < 0.85 ? 'pending' : 'cancelled';
       const orderedAt = randomDate(startDate, endDate);
       const quantity = (2 + Math.floor(Math.random() * 8)) * med.ipb;
       const fulfilledAt = status === 'fulfilled' ? new Date(orderedAt.getTime() + (1 + Math.random() * 5) * dayMs) : null;
-      const notes = status === 'fulfilled' ? 'Order completed' : urgency === 'emergency' ? 'Urgent clinical need' : 'Regular restock';
+      const notes = status === 'fulfilled' ? 'Order completed' : urgency === 'urgent' ? 'Urgent clinical need' : 'Regular restock';
       orderData.push({ med, user, urgency, status, orderedAt, quantity, fulfilledAt, notes });
     }
 
