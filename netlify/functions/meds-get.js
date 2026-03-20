@@ -220,7 +220,19 @@ exports.handler = async () => {
       groupName: row.group_name
     }));
 
-    return db.json(200, { medications, transactions, locations, orders });
+    // Query pending draft order count for Purchase Orders tab badge
+    let draftOrderCount = 0;
+    try {
+      const draftCountResult = await db.query(
+        `SELECT COUNT(*)::int AS count FROM draft_orders WHERE status = 'pending_review'`
+      );
+      draftOrderCount = draftCountResult.rows[0]?.count || 0;
+    } catch (e) {
+      // Table may not exist yet
+      draftOrderCount = 0;
+    }
+
+    return db.json(200, { medications, transactions, locations, orders, draftOrderCount });
   } catch (e) {
     console.error('=== meds-get error ===');
     console.error('Error:', e.message);

@@ -110,6 +110,16 @@ window.api = (function () {
     setIntelligenceConfig:(payload)  => postJSON('/.netlify/functions/intelligence-config', payload),
     placeOrder:           (payload)  => postJSON('/.netlify/functions/order-place', payload),
     fulfillOrder:         (payload)  => postJSON('/.netlify/functions/order-fulfill', payload),
+    generateDraftOrders:  (payload)  => postJSON('/.netlify/functions/draft-orders-generate', payload),
+    getDraftOrders:       async (params) => {
+      const qs = new URLSearchParams();
+      if (params?.status) qs.set('status', params.status);
+      const res = await fetch(`/.netlify/functions/draft-orders-get?${qs}`);
+      const out = await res.json();
+      if (!res.ok || !out.success) throw new Error(out.message || 'Failed to fetch draft orders');
+      return out;
+    },
+    actionDraftOrders:    (payload)  => postJSON('/.netlify/functions/draft-orders-action', payload),
     fetchIntelligenceReport,
     getIntelligenceConfig,
     fetchActivityLog,
