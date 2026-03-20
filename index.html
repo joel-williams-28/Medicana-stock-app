@@ -66,6 +66,10 @@
       .scrollbar-hide::-webkit-scrollbar {
         display: none;
       }
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
     </style>
   </head>
   <body class="min-h-screen">
@@ -636,6 +640,7 @@
         openedViaScan: false
       });
       const cameraScannerRef = useRef(null); // Reference to Html5Qrcode instance
+      const enhancedScanIntervalRef = useRef(null); // Sidecar contrast-enhanced decode loop
       const [medicationFilters, setMedicationFilters] = useState({
         types: [],
         locations: [],
@@ -1853,26 +1858,52 @@
 
             // Initialize scanner instance
             if (!cameraScannerRef.current) {
-              cameraScannerRef.current = new Html5Qrcode("barcode-scanner-video");
+              cameraScannerRef.current = new Html5Qrcode("barcode-scanner-video", {
+                formatsToSupport: [
+                  Html5QrcodeSupportedFormats.DATA_MATRIX,
+                  Html5QrcodeSupportedFormats.QR_CODE,
+                  Html5QrcodeSupportedFormats.EAN_13,
+                  Html5QrcodeSupportedFormats.EAN_8,
+                  Html5QrcodeSupportedFormats.CODE_128,
+                  Html5QrcodeSupportedFormats.CODE_39,
+                  Html5QrcodeSupportedFormats.UPC_A,
+                  Html5QrcodeSupportedFormats.UPC_E,
+                ]
+              });
             }
 
             const scanner = cameraScannerRef.current;
 
             await scanner.start(
               cameraId,
-              { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
+              {
+                fps: 15,
+                qrbox: (viewfinderWidth, viewfinderHeight) => {
+                  const size = Math.min(viewfinderWidth, viewfinderHeight) * 0.8;
+                  return { width: Math.floor(size), height: Math.floor(size) };
+                },
+                experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+              },
               (decodedText) => handleBarcodeDetected(decodedText),
               () => {} // No barcode in view - normal, ignore
             );
 
-            // Request macro focus mode for close-up barcode scanning
-            // This helps the camera focus on small barcodes held close to the lens
+            // After scanner starts, apply HD resolution + focus constraints to the video track
+            // This gives the decoder more pixel data for dense Data Matrix codes
             try {
               const videoElement = document.querySelector('#barcode-scanner-video video');
               if (videoElement && videoElement.srcObject) {
                 const track = videoElement.srcObject.getVideoTracks()[0];
                 if (track) {
                   const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+
+                  // Request HD resolution for better Data Matrix decoding
+                  try {
+                    await track.applyConstraints({ width: { ideal: 1920 }, height: { ideal: 1080 } });
+                  } catch (resErr) {
+                    // Resolution upgrade is best-effort
+                  }
+
                   // Apply macro focus if supported, otherwise fall back to continuous
                   if (capabilities.focusMode && capabilities.focusMode.includes('macro')) {
                     await track.applyConstraints({ advanced: [{ focusMode: 'macro' }] });
@@ -1884,10 +1915,15 @@
                     const minDist = capabilities.focusDistance.min || 0;
                     await track.applyConstraints({ advanced: [{ focusDistance: Math.max(minDist, 0.05) }] });
                   }
+                  // Slight overexposure to brighten faint/low-contrast codes
+                  if (capabilities.exposureCompensation) {
+                    const maxExp = capabilities.exposureCompensation.max || 2;
+                    await track.applyConstraints({ advanced: [{ exposureCompensation: maxExp * 0.5 }] });
+                  }
                 }
               }
             } catch (focusErr) {
-              // Focus constraints are best-effort - don't fail if unsupported
+              // Camera constraints are best-effort - don't fail if unsupported
             }
 
             // Detect torch capability
@@ -1906,6 +1942,75 @@
             }
 
             setCameraScanner(prev => ({ ...prev, isScanning: true, error: '', torchSupported: torchAvailable, torchOn: false }));
+
+            // --- Enhanced contrast sidecar decoder ---
+            // Grabs video frames, applies contrast stretching + thresholding,
+            // then feeds the enhanced image to scanFile() for a second decode attempt.
+            // This catches low-contrast and smudged codes that the live decoder misses.
+            try {
+              const sidecarVideo = document.querySelector('#barcode-scanner-video video');
+              if (sidecarVideo) {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                let sidecarBusy = false;
+
+                enhancedScanIntervalRef.current = setInterval(async () => {
+                  if (sidecarBusy || !cameraScannerRef.current) return;
+                  sidecarBusy = true;
+                  try {
+                    const vw = sidecarVideo.videoWidth;
+                    const vh = sidecarVideo.videoHeight;
+                    if (!vw || !vh) { sidecarBusy = false; return; }
+
+                    // Crop the center region (matching ~80% qrbox)
+                    const cropSize = Math.min(vw, vh) * 0.8;
+                    const sx = (vw - cropSize) / 2;
+                    const sy = (vh - cropSize) / 2;
+                    canvas.width = cropSize;
+                    canvas.height = cropSize;
+                    ctx.drawImage(sidecarVideo, sx, sy, cropSize, cropSize, 0, 0, cropSize, cropSize);
+
+                    // Get pixel data and apply contrast stretching + threshold
+                    const imageData = ctx.getImageData(0, 0, cropSize, cropSize);
+                    const data = imageData.data;
+
+                    // Pass 1: find min/max luminance
+                    let minLum = 255, maxLum = 0;
+                    for (let i = 0; i < data.length; i += 4) {
+                      const lum = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+                      if (lum < minLum) minLum = lum;
+                      if (lum > maxLum) maxLum = lum;
+                    }
+
+                    // Pass 2: stretch contrast to full range and apply binary threshold
+                    const range = maxLum - minLum || 1;
+                    for (let i = 0; i < data.length; i += 4) {
+                      const lum = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+                      const stretched = ((lum - minLum) / range) * 255;
+                      const bw = stretched > 128 ? 255 : 0;
+                      data[i] = bw;
+                      data[i + 1] = bw;
+                      data[i + 2] = bw;
+                    }
+                    ctx.putImageData(imageData, 0, 0);
+
+                    // Convert to blob and attempt decode via scanFile
+                    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+                    if (!blob || !cameraScannerRef.current) { sidecarBusy = false; return; }
+                    const file = new File([blob], 'enhanced-frame.png', { type: 'image/png' });
+                    const decodedText = await cameraScannerRef.current.scanFile(file, false);
+                    if (decodedText && cameraScannerRef.current) {
+                      handleBarcodeDetected(decodedText);
+                    }
+                  } catch (e) {
+                    // Decode failure is normal (no barcode in view) — silently continue
+                  }
+                  sidecarBusy = false;
+                }, 250);
+              }
+            } catch (sidecarErr) {
+              // Sidecar is best-effort — don't fail the scanner
+            }
           } catch (err) {
             if (tempStream) {
               tempStream.getTracks().forEach(track => track.stop());
@@ -1913,15 +2018,16 @@
 
             console.error('[Camera Scanner] Error:', err.name, err.message);
 
+            const errMsg = err.message || '';
             let errorMessage;
-            if (err.name === 'NotAllowedError' || err.message.includes('Permission denied')) {
+            if (err.name === 'NotAllowedError' || errMsg.includes('Permission denied')) {
               errorMessage = 'Camera permission denied. Please click "Allow" when your browser asks for camera access, then try again.';
-            } else if (err.name === 'NotFoundError' || err.message.includes('No cameras found')) {
+            } else if (err.name === 'NotFoundError' || errMsg.includes('No cameras found')) {
               errorMessage = 'No camera found on this device. Please use manual barcode entry.';
-            } else if (err.name === 'NotSupportedError' || err.message.includes('secure')) {
+            } else if (err.name === 'NotSupportedError' || errMsg.includes('secure')) {
               errorMessage = 'Camera access requires HTTPS. Please ensure you are accessing the site via https:// (not http://)';
-            } else if (err.message.includes('not loaded') || err.message.includes('not ready')) {
-              errorMessage = err.message;
+            } else if (errMsg.includes('not loaded') || errMsg.includes('not ready')) {
+              errorMessage = errMsg;
             } else {
               errorMessage = `Failed to start camera: ${err.message || err.name || 'Unknown error'}. Please try manual entry.`;
             }
@@ -1932,6 +2038,11 @@
       };
 
       const stopCameraScanner = async () => {
+        // Stop enhanced scan sidecar loop
+        if (enhancedScanIntervalRef.current) {
+          clearInterval(enhancedScanIntervalRef.current);
+          enhancedScanIntervalRef.current = null;
+        }
         const wasOpenedViaScan = cameraScanner.openedViaScan;
         try {
           if (cameraScannerRef.current && cameraScannerRef.current.isScanning) {
@@ -8024,6 +8135,11 @@ Medicana Stock Management System`;
                           <div className="bg-white bg-opacity-90 text-near-black px-4 py-3 rounded-lg inline-block">
                             <p className="text-sm font-medium">Position the barcode within the frame</p>
                             <p className="text-xs text-txt-tertiary mt-1">Scanner will automatically detect codes</p>
+                            {cameraScanner.torchSupported && (
+                              <p className="text-xs text-brand-mid mt-2" style={{animation: 'fadeIn 0.5s ease-in 5s both'}}>
+                                Having trouble? Try the flashlight button above
+                              </p>
+                            )}
                           </div>
                         </div>
                       )}
