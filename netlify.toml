@@ -5,3 +5,6 @@
 [functions]
   node_bundler = "esbuild"
 
+[functions.seed-demo-data]
+  timeout = 60
+
