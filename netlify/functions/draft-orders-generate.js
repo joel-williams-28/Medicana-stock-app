@@ -21,8 +21,8 @@ exports.handler = async (event) => {
     await db.query(`
       CREATE TABLE IF NOT EXISTS draft_orders (
         id SERIAL PRIMARY KEY,
-        medication_id INTEGER NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
-        location_id INTEGER,
+        medication_id BIGINT NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
+        location_id BIGINT,
         current_stock_boxes NUMERIC(10,2) NOT NULL DEFAULT 0,
         min_level_boxes INTEGER NOT NULL DEFAULT 0,
         suggested_quantity INTEGER NOT NULL CHECK (suggested_quantity > 0),
@@ -34,8 +34,8 @@ exports.handler = async (event) => {
           CHECK (source IN ('auto', 'manual')),
         status VARCHAR(20) NOT NULL DEFAULT 'pending_review'
           CHECK (status IN ('pending_review', 'approved', 'rejected')),
-        generated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-        approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        generated_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+        approved_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
         generated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
         approved_at TIMESTAMP WITH TIME ZONE,
         rejected_at TIMESTAMP WITH TIME ZONE,

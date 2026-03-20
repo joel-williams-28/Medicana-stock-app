@@ -13,8 +13,8 @@ exports.handler = async (event) => {
     await db.query(`
       CREATE TABLE IF NOT EXISTS draft_orders (
         id SERIAL PRIMARY KEY,
-        medication_id INTEGER NOT NULL,
-        location_id INTEGER,
+        medication_id BIGINT NOT NULL,
+        location_id BIGINT,
         current_stock_boxes NUMERIC(10,2) NOT NULL DEFAULT 0,
         min_level_boxes INTEGER NOT NULL DEFAULT 0,
         suggested_quantity INTEGER NOT NULL,
@@ -23,8 +23,8 @@ exports.handler = async (event) => {
         intelligence_snapshot JSONB,
         source VARCHAR(20) NOT NULL DEFAULT 'auto',
         status VARCHAR(20) NOT NULL DEFAULT 'pending_review',
-        generated_by INTEGER,
-        approved_by INTEGER,
+        generated_by BIGINT,
+        approved_by BIGINT,
         generated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
         approved_at TIMESTAMP WITH TIME ZONE,
         rejected_at TIMESTAMP WITH TIME ZONE,
