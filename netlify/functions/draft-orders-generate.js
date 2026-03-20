@@ -59,11 +59,35 @@ exports.handler = async (event) => {
     // Get items per box
     const itemsPerBoxByMed = await getItemsPerBoxMap();
 
+    // Aggregate stock rows by medication_id (sum boxes across all locations)
+    // This prevents duplicate drafts when a medication exists at multiple locations
+    const medMap = new Map();
+    for (const row of stockRows) {
+      const medId = row.medication_id;
+      if (!medMap.has(medId)) {
+        medMap.set(medId, {
+          medication_id: medId,
+          medication_name: row.medication_name,
+          type: row.type,
+          total_boxes: 0,
+          max_min_level: 0,
+          location_keys: []  // for aggregating usage data
+        });
+      }
+      const agg = medMap.get(medId);
+      agg.total_boxes += Number(row.current_boxes);
+      // Use the highest min level across locations (or the global one)
+      const minLevel = Number(row.current_min_level);
+      if (minLevel > agg.max_min_level) agg.max_min_level = minLevel;
+      // Track location keys for usage aggregation
+      agg.location_keys.push(`${medId}|${row.location_id}`);
+    }
+
     // Get existing pending drafts and pending orders to avoid duplicates
     const existingDrafts = await db.query(
-      `SELECT medication_id, location_id FROM draft_orders WHERE status = 'pending_review'`
+      `SELECT medication_id FROM draft_orders WHERE status = 'pending_review'`
     );
-    const draftKeys = new Set(existingDrafts.rows.map(r => `${r.medication_id}|${r.location_id}`));
+    const draftedMedIds = new Set(existingDrafts.rows.map(r => r.medication_id));
 
     const existingOrders = await db.query(
       `SELECT medication_id FROM orders WHERE status = 'pending'`
@@ -77,31 +101,49 @@ exports.handler = async (event) => {
     let skippedDrafted = 0;
     let skippedOrdered = 0;
 
-    for (const row of stockRows) {
-      const currentBoxes = Number(row.current_boxes);
-      const currentMinLevel = Number(row.current_min_level);
+    for (const [medId, agg] of medMap) {
+      const currentBoxes = agg.total_boxes;
+      const currentMinLevel = agg.max_min_level;
 
       // Only generate drafts for medications below minimum
       if (currentMinLevel <= 0 || currentBoxes >= currentMinLevel) continue;
 
-      const key = `${row.medication_id}|${row.location_id}`;
-
-      // Skip if already has a pending draft
-      if (draftKeys.has(key)) {
+      // Skip if already has a pending draft for this medication
+      if (draftedMedIds.has(medId)) {
         skippedDrafted++;
         continue;
       }
 
       // Skip if already has a pending order
-      if (orderedMedIds.has(row.medication_id)) {
+      if (orderedMedIds.has(medId)) {
         skippedOrdered++;
         continue;
       }
 
-      // Analyze with intelligence data
-      const weeklyUsage = usageByMedLoc[key] || [];
-      const itemsPerBox = itemsPerBoxByMed[row.medication_id] || 1;
-      const analysis = analyzeMedication(row, weeklyUsage, itemsPerBox);
+      // Aggregate usage data across all locations for this medication
+      let combinedUsage = [];
+      for (const locKey of agg.location_keys) {
+        const locUsage = usageByMedLoc[locKey] || [];
+        if (combinedUsage.length === 0) {
+          combinedUsage = locUsage.map(w => ({ ...w }));
+        } else {
+          for (let i = 0; i < locUsage.length; i++) {
+            if (i < combinedUsage.length) {
+              combinedUsage[i].total_used = (combinedUsage[i].total_used || 0) + (locUsage[i].total_used || 0);
+            } else {
+              combinedUsage.push({ ...locUsage[i] });
+            }
+          }
+        }
+      }
+
+      // Analyze with aggregated intelligence data
+      const itemsPerBox = itemsPerBoxByMed[medId] || 1;
+      const analysis = analyzeMedication(
+        { current_boxes: currentBoxes, current_min_level: currentMinLevel },
+        combinedUsage,
+        itemsPerBox
+      );
 
       // Calculate suggested order quantity (in boxes)
       let suggestedQuantity = currentMinLevel - currentBoxes;
@@ -122,7 +164,7 @@ exports.handler = async (event) => {
         urgency = 'routine';
       }
 
-      // Trend boost: increasing usage bumps routine → urgent
+      // Trend boost: increasing usage bumps routine -> urgent
       if (analysis.usageTrend === 'increasing' && urgency === 'routine') {
         urgency = 'urgent';
       }
@@ -136,16 +178,16 @@ exports.handler = async (event) => {
         suggestedMinLevel: analysis.recommendation.suggestedMinLevel
       };
 
+      // Insert with location_id as NULL (org-wide order)
       const insertResult = await db.query(
         `INSERT INTO draft_orders
          (medication_id, location_id, current_stock_boxes, min_level_boxes,
           suggested_quantity, urgency, intelligence_snapshot, source,
           status, generated_by, batch_ref)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'auto', 'pending_review', $8, $9)
+         VALUES ($1, NULL, $2, $3, $4, $5, $6, 'auto', 'pending_review', $7, $8)
          RETURNING id, generated_at`,
         [
-          row.medication_id,
-          row.location_id,
+          medId,
           currentBoxes,
           currentMinLevel,
           suggestedQuantity,
@@ -159,11 +201,11 @@ exports.handler = async (event) => {
       const draft = insertResult.rows[0];
       drafts.push({
         id: draft.id,
-        medicationId: row.medication_id,
-        medicationName: row.medication_name,
-        type: row.type,
-        locationId: row.location_id,
-        locationName: row.location_name,
+        medicationId: medId,
+        medicationName: agg.medication_name,
+        type: agg.type,
+        locationId: null,
+        locationName: 'All Locations',
         currentStockBoxes: currentBoxes,
         minLevelBoxes: currentMinLevel,
         suggestedQuantity,

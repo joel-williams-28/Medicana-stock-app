@@ -5258,7 +5258,7 @@ Medicana Stock Management System`;
                                   <input type="checkbox" checked={draftSelections.has(draft.id)} onChange={() => toggleDraftSelection(draft.id)} className="rounded" />
                                 </td>
                                 <td className="px-3 py-2 text-sm text-near-black font-medium">{draft.medicationName}</td>
-                                <td className="px-3 py-2 text-sm text-txt-secondary">{draft.locationName}</td>
+                                <td className="px-3 py-2 text-sm text-txt-secondary">{draft.locationName || 'All Locations'}</td>
                                 <td className="px-3 py-2 text-sm text-center">
                                   <span className={`font-semibold ${draft.currentStockBoxes === 0 ? 'text-danger-ghost-text' : 'text-status-low-text'}`}>
                                     {draft.currentStockBoxes}
