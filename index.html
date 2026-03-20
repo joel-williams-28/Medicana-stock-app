@@ -1870,7 +1870,7 @@
             const scanner = cameraScannerRef.current;
 
             await scanner.start(
-              { deviceId: { exact: cameraId }, width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: 'environment' },
+              cameraId,
               {
                 fps: 10,
                 qrbox: { width: 300, height: 300 },
@@ -1881,14 +1881,22 @@
               () => {} // No barcode in view - normal, ignore
             );
 
-            // Request macro focus mode for close-up barcode scanning
-            // This helps the camera focus on small barcodes held close to the lens
+            // After scanner starts, apply HD resolution + focus constraints to the video track
+            // This gives the decoder more pixel data for dense Data Matrix codes
             try {
               const videoElement = document.querySelector('#barcode-scanner-video video');
               if (videoElement && videoElement.srcObject) {
                 const track = videoElement.srcObject.getVideoTracks()[0];
                 if (track) {
                   const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+
+                  // Request HD resolution for better Data Matrix decoding
+                  try {
+                    await track.applyConstraints({ width: { ideal: 1920 }, height: { ideal: 1080 } });
+                  } catch (resErr) {
+                    // Resolution upgrade is best-effort
+                  }
+
                   // Apply macro focus if supported, otherwise fall back to continuous
                   if (capabilities.focusMode && capabilities.focusMode.includes('macro')) {
                     await track.applyConstraints({ advanced: [{ focusMode: 'macro' }] });
@@ -1929,15 +1937,16 @@
 
             console.error('[Camera Scanner] Error:', err.name, err.message);
 
+            const errMsg = err.message || '';
             let errorMessage;
-            if (err.name === 'NotAllowedError' || err.message.includes('Permission denied')) {
+            if (err.name === 'NotAllowedError' || errMsg.includes('Permission denied')) {
               errorMessage = 'Camera permission denied. Please click "Allow" when your browser asks for camera access, then try again.';
-            } else if (err.name === 'NotFoundError' || err.message.includes('No cameras found')) {
+            } else if (err.name === 'NotFoundError' || errMsg.includes('No cameras found')) {
               errorMessage = 'No camera found on this device. Please use manual barcode entry.';
-            } else if (err.name === 'NotSupportedError' || err.message.includes('secure')) {
+            } else if (err.name === 'NotSupportedError' || errMsg.includes('secure')) {
               errorMessage = 'Camera access requires HTTPS. Please ensure you are accessing the site via https:// (not http://)';
-            } else if (err.message.includes('not loaded') || err.message.includes('not ready')) {
-              errorMessage = err.message;
+            } else if (errMsg.includes('not loaded') || errMsg.includes('not ready')) {
+              errorMessage = errMsg;
             } else {
               errorMessage = `Failed to start camera: ${err.message || err.name || 'Unknown error'}. Please try manual entry.`;
             }
