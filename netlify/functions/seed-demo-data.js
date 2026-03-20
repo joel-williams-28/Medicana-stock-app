@@ -137,13 +137,12 @@ exports.handler = async (event) => {
       { id: 'MED-050', name: 'Flumazenil', strength: '500mcg/5ml', form: 'Ampule', ipb: 5, min: 2, locs: [...theatres, ...recoveryLocs] },
     ];
 
-    // Insert medications
+    // Insert medications (slug is a generated column - do not insert)
     for (const med of medications) {
-      const slug = `${med.name}-${med.strength}-${med.form}`.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       await client.query(
-        `INSERT INTO medications (id, name, strength, form, fefo, min_level_boxes, standard_items_per_box, is_active, slug)
-         VALUES ($1, $2, $3, $4, true, $5, $6, true, $7)`,
-        [med.id, med.name, med.strength, med.form, med.min, med.ipb, slug]
+        `INSERT INTO medications (id, name, strength, form, fefo, min_level_boxes, standard_items_per_box, is_active)
+         VALUES ($1, $2, $3, $4, true, $5, $6, true)`,
+        [med.id, med.name, med.strength, med.form, med.min, med.ipb]
       );
     }
 
