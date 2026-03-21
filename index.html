@@ -697,7 +697,10 @@
         pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk'
       });
 
-      // Draft orders state for Purchase Orders tab
+      // Sub-tab state for Intelligent Stock tab
+      const [orderingSubTab, setOrderingSubTab] = useState('alerts');
+
+      // Draft orders state for Review & Order sub-tab
       const [draftOrders, setDraftOrders] = useState({
         drafts: [],
         loading: false,
@@ -2341,6 +2344,13 @@
               if (accessibleTab) defaultTab = accessibleTab;
             }
             
+            // Set default ordering sub-tab based on role
+            if (userRole === 'Administrator' || userRole === 'Pharmacist') {
+              setOrderingSubTab('review');
+            } else {
+              setOrderingSubTab('alerts');
+            }
+
             // NOW set logged in - UI will render with real Neon data already loaded
             setAuth(prev => ({ ...prev, isLoggedIn: true, error: '' }));
 
@@ -4305,26 +4315,25 @@ Medicana Stock Management System`;
                       <button onClick={() => { setUi(prev => ({ ...prev, activeTab: 'transactions' })); if (ui.activeTab !== 'transactions') { setTimeout(() => loadActivityLog(true), 0); } }} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-all whitespace-nowrap relative ${ui.activeTab === 'transactions' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>Activity Log</button>
                     )}
                     {canAccessTab('lowstock') && (
-                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'lowstock' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors relative whitespace-nowrap ${ui.activeTab === 'lowstock' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>
-                      Low Stock
-                        {lowStockMedications.length > 0 && (<span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-critical-bg text-status-critical-text">{lowStockMedications.length}</span>)}
+                      <button onClick={() => {
+                        setUi(prev => ({ ...prev, activeTab: 'lowstock' }));
+                        const isAdminOrPharmacist = getUserRole() === 'Administrator' || getUserRole() === 'Pharmacist';
+                        if (isAdminOrPharmacist && orderingSubTab === 'review') {
+                          loadDraftOrders();
+                        }
+                      }} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors relative whitespace-nowrap ${ui.activeTab === 'lowstock' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>
+                      Intelligent Stock
+                        {draftOrderCount > 0 ? (
+                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">{draftOrderCount}</span>
+                        ) : lowStockMedications.length > 0 ? (
+                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-critical-bg text-status-critical-text">{lowStockMedications.length}</span>
+                        ) : null}
                     </button>
                     )}
                     {canAccessTab('newmedication') && (
                       <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'newmedication' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'newmedication' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>
                       New Medication Order
                     </button>
-                    )}
-                    {canAccessTab('purchaseorders') && (
-                      <button onClick={() => {
-                        setUi(prev => ({ ...prev, activeTab: 'purchaseorders' }));
-                        loadDraftOrders();
-                      }} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'purchaseorders' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>
-                        Purchase Orders
-                        {draftOrderCount > 0 && (
-                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">{draftOrderCount}</span>
-                        )}
-                      </button>
                     )}
                 </nav>
               </div>
@@ -4991,20 +5000,34 @@ Medicana Stock Management System`;
                 </>
               )}
 
-                {/* Low Stock Tab */}
+                {/* Intelligent Stock Tab */}
               {ui.activeTab === 'lowstock' && (
                 <>
-                  <div className="p-3 sm:p-4 md:p-6 bg-status-low-bg border-b border-status-low-bg">
+                  {/* Intelligent Stock Header */}
+                  <div className="p-3 sm:p-4 md:p-6 bg-brand-pale border-b border-brand-pale">
                     <div className="flex items-center">
-                      <AlertTriangle className="w-5 h-5 text-status-low-text mr-2" />
+                      <TrendingUp className="w-5 h-5 text-brand-mid mr-2" />
                       <div className="flex-1">
-                          <h3 className="font-semibold text-status-low-text">{lowStockMedications.length} Medication{lowStockMedications.length !== 1 ? 's' : ''} Below Minimum Level</h3>
-                          <p className="text-sm text-status-low-text">These medications require immediate ordering attention.</p>
+                        {draftOrderCount > 0 ? (
+                          <>
+                            <h3 className="font-semibold text-brand-dark">{draftOrderCount} Draft Order{draftOrderCount !== 1 ? 's' : ''} Ready for Review</h3>
+                            <p className="text-sm text-brand-dark">Intelligence-powered ordering recommendations are awaiting approval.</p>
+                          </>
+                        ) : lowStockMedications.length > 0 ? (
+                          <>
+                            <h3 className="font-semibold text-brand-dark">{lowStockMedications.length} Medication{lowStockMedications.length !== 1 ? 's' : ''} Below Minimum Level</h3>
+                            <p className="text-sm text-brand-dark">Intelligence analysis found no new orders needed at this time.</p>
+                          </>
+                        ) : (
+                          <>
+                            <h3 className="font-semibold text-brand-dark">All Stock Levels Healthy</h3>
+                            <p className="text-sm text-brand-dark">No medications are below minimum stock levels.</p>
+                          </>
+                        )}
                       </div>
                         {hasAccessTo('intelligenceReport') && (
                           <button onClick={() => {
                             setModals(prev => ({ ...prev, showIntelligenceReport: true }));
-                            // Fetch report data from server based on current location
                             const currentLocId = (() => {
                               if (ui.currentLocation === 'All') return null;
                               const loc = locations.find(l => l.displayName === ui.currentLocation);
@@ -5022,18 +5045,37 @@ Medicana Stock Management System`;
                             Export Simple Report
                           </button>
                         )}
-                        {draftOrderCount > 0 && canAccessTab('purchaseorders') && (
-                          <button
-                            onClick={() => { setUi(prev => ({ ...prev, activeTab: 'purchaseorders' })); loadDraftOrders(); }}
-                            className="flex items-center bg-status-ordered-text text-white px-4 py-2 rounded hover:opacity-90 transition-colors text-sm ml-2"
-                          >
-                            <TrendingUp className="w-4 h-4 mr-2" />
-                            {draftOrderCount} Draft{draftOrderCount !== 1 ? 's' : ''} Pending Review
-                          </button>
-                        )}
                     </div>
                   </div>
-                  
+
+                  {/* Sub-tabs: Stock Alerts / Review & Order */}
+                  {canAccessTab('purchaseorders') && (
+                    <div className="border-b border-bdr-default bg-off-white px-4">
+                      <nav className="flex gap-1 -mb-px">
+                        <button
+                          onClick={() => setOrderingSubTab('alerts')}
+                          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${orderingSubTab === 'alerts' ? 'border-brand-mid text-brand-mid' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}
+                        >
+                          Stock Alerts
+                          {lowStockMedications.length > 0 && (
+                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-critical-bg text-status-critical-text">{lowStockMedications.length}</span>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => { setOrderingSubTab('review'); loadDraftOrders(); }}
+                          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${orderingSubTab === 'review' ? 'border-brand-mid text-brand-mid' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}
+                        >
+                          Review & Order
+                          {draftOrderCount > 0 && (
+                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">{draftOrderCount}</span>
+                          )}
+                        </button>
+                      </nav>
+                    </div>
+                  )}
+
+                  {/* Stock Alerts Sub-tab */}
+                  {(orderingSubTab === 'alerts' || !canAccessTab('purchaseorders')) && (
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead className="bg-off-white">
@@ -5043,12 +5085,10 @@ Medicana Stock Management System`;
                           <th className="px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Current Stock</th>
                           <th className="px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Min Level</th>
                           <th className="px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Suggested Order</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-bdr-default">
                         {lowStockMedications.sort((a, b) => a.name.localeCompare(b.name)).map(med => {
-                          // Use composite key: medication_name|strength_raw|type|location for stable identity
                           const stableKey = `${med.medicationName || med.name}|${med.strengthRaw || ''}|${med.type || ''}|${med.location || ''}`;
                           return (
                             <tr key={stableKey} className="hover:bg-off-white">
@@ -5090,17 +5130,6 @@ Medicana Stock Management System`;
                                 })()}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-center">
-                                <button onClick={() => {
-                                  const currentBoxes = getTotalBoxes(med);
-                                  const suggestedBoxes = Math.max(0, med.minLevelBoxes - currentBoxes);
-                                  const batchWithBoxes = med.batches.find(b => b.itemsPerBox);
-                                  const finalQty = batchWithBoxes ? suggestedBoxes * batchWithBoxes.itemsPerBox : suggestedBoxes;
-                                  setOrderForm({ med, quantity: finalQty.toString(), urgency: 'routine', notes: '', pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk' });
-                                }} className={`${hasPendingOrder(med) ? 'bg-status-ordered-text hover:bg-status-ordered-text' : 'bg-brand-mid hover:bg-brand-dark'} text-white px-3 py-1 rounded text-sm transition-colors font-medium`}>
-                                {hasPendingOrder(med) ? 'Re-order' : 'Order'}
-                              </button>
-                            </td>
                           </tr>
                           );
                         })}
@@ -5113,141 +5142,11 @@ Medicana Stock Management System`;
                       </div>
                     )}
                   </div>
-                </>
-              )}
+                  )}
 
-              {/* New Medication Order Tab */}
-              {ui.activeTab === 'newmedication' && (
-                <>
-                  <div className="p-3 sm:p-4 md:p-6 border-b border-brand-pale bg-gradient-to-r from-brand-pale to-brand-pale">
-                    <h2 className="text-xl sm:text-2xl font-bold text-near-black mb-2">Order New Medication</h2>
-                    <p className="text-sm sm:text-base text-txt-tertiary">Request a new medication that is not currently in the stock system.</p>
-                  </div>
-                  <div>
-                    <form onSubmit={(e) => { e.preventDefault(); handleNewMedicationOrder(); }} className="p-4">
-                        {newMedicationOrderForm.error && (
-                          <div className="mb-4 p-3 bg-danger-ghost-bg border border-danger-ghost-bg rounded-lg">
-                            <p className="text-sm text-danger-ghost-text">{newMedicationOrderForm.error}</p>
-                          </div>
-                        )}
-
-                        <div className="mb-4">
-                          <label className="block text-sm font-medium text-txt-secondary mb-2">
-                            Medication Name <span className="text-danger-ghost-text">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={newMedicationOrderForm.name}
-                            onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, name: e.target.value, error: '' }))}
-                            placeholder="e.g., Amoxicillin"
-                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
-                          />
-                        </div>
-
-                        <div className="mb-4">
-                          <label className="block text-sm font-medium text-txt-secondary mb-2">
-                            Type <span className="text-danger-ghost-text">*</span>
-                          </label>
-                          <select
-                            value={newMedicationOrderForm.type}
-                            onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, type: e.target.value, error: '' }))}
-                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
-                          >
-                            {MEDICATION_TYPES.map(type => (
-                              <option key={type} value={type}>{type}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div className="mb-4">
-                          <label className="block text-sm font-medium text-txt-secondary mb-2">
-                            Strength/Concentration <span className="text-danger-ghost-text">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={newMedicationOrderForm.strength}
-                            onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, strength: e.target.value, error: '' }))}
-                            placeholder="e.g., 500mg"
-                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
-                          />
-                        </div>
-
-                        <div className="mb-4">
-                          <label className="block text-sm font-medium text-txt-secondary mb-2">
-                            Quantity Needed <span className="text-danger-ghost-text">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={newMedicationOrderForm.quantityNeeded}
-                            onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, quantityNeeded: e.target.value, error: '' }))}
-                            placeholder="e.g., 5 boxes, 100 tablets, 3 vials"
-                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
-                          />
-                          <p className="text-xs text-txt-tertiary mt-1">Enter the quantity needed in any format (numbers, letters, or both)</p>
-                        </div>
-
-                        {newMedicationOrderForm.type === 'IV Fluid Bag' && (
-                          <div className="mb-4">
-                            <label className="block text-sm font-medium text-txt-secondary mb-2">
-                              Bag Size <span className="text-danger-ghost-text">*</span>
-                            </label>
-                            <input
-                              type="text"
-                              value={newMedicationOrderForm.bagSize}
-                              onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, bagSize: e.target.value, error: '' }))}
-                              placeholder="e.g., 500ml, 1000ml"
-                              className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
-                            />
-                          </div>
-                        )}
-
-                        <div className="mb-4">
-                          <label className="block text-sm font-medium text-txt-secondary mb-2">Urgency</label>
-                          <select
-                            value={newMedicationOrderForm.urgency}
-                            onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, urgency: e.target.value }))}
-                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
-                          >
-                            <option value="routine">Routine</option>
-                            <option value="urgent">Urgent</option>
-                            <option value="emergency">Emergency</option>
-                          </select>
-                        </div>
-
-                        <div className="mb-6">
-                          <label className="block text-sm font-medium text-txt-secondary mb-2">Additional Notes (Optional)</label>
-                          <textarea
-                            value={newMedicationOrderForm.notes}
-                            onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, notes: e.target.value }))}
-                            placeholder="Any additional information or special requirements..."
-                            rows="3"
-                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent resize-none"
-                          />
-                        </div>
-
-                        <div className="flex gap-3">
-                          <button
-                            type="submit"
-                            className="flex-1 bg-brand-mid text-white py-3 rounded-lg hover:bg-brand-dark transition-colors font-medium"
-                          >
-                            Review Order
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setNewMedicationOrderForm({ name: '', type: 'Tablet', strength: '', quantityNeeded: '', bagSize: '', urgency: 'routine', notes: '', pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk', error: '' })}
-                            className="px-6 bg-btn-secondary text-txt-secondary py-3 rounded-lg hover:bg-bdr-hover transition-colors font-medium"
-                          >
-                            Clear Form
-                          </button>
-                        </div>
-                      </form>
-                  </div>
-                </>
-              )}
-
-              {/* Purchase Orders Tab */}
-              {ui.activeTab === 'purchaseorders' && (
-                <>
+                  {/* Review & Order Sub-tab (Admin/Pharmacist only) */}
+                  {orderingSubTab === 'review' && canAccessTab('purchaseorders') && (
+                    <>
                   {/* Approval Confirmation View */}
                   {draftOrders.approvalResult ? (
                     <div className="p-4 sm:p-6">
@@ -5304,11 +5203,40 @@ Medicana Stock Management System`;
                       <div className="text-txt-disabled mb-3">
                         <svg className="w-12 h-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                       </div>
-                      <p className="text-lg font-medium text-txt-secondary">No medications currently need ordering</p>
-                      <p className="text-sm text-txt-tertiary mt-1">All medications are at or above minimum stock levels.</p>
-                      <button onClick={loadDraftOrders} className="mt-4 bg-btn-secondary text-txt-secondary px-4 py-2 rounded hover:bg-bdr-hover transition-colors text-sm">
-                        Refresh
-                      </button>
+                      {lowStockMedications.length > 0 ? (
+                        <>
+                          <p className="text-lg font-medium text-txt-secondary">No new orders needed</p>
+                          <p className="text-sm text-txt-tertiary mt-1 max-w-md mx-auto">
+                            {lowStockMedications.length} medication{lowStockMedications.length !== 1 ? 's are' : ' is'} below minimum levels, but intelligence analysis indicates no new orders are needed at this time. Existing orders or redistribution may address these shortfalls.
+                          </p>
+                          <div className="flex gap-3 justify-center mt-4">
+                            <button onClick={loadDraftOrders} className="bg-btn-secondary text-txt-secondary px-4 py-2 rounded hover:bg-bdr-hover transition-colors text-sm">
+                              Refresh
+                            </button>
+                            {hasAccessTo('intelligenceReport') && (
+                              <button onClick={() => {
+                                setModals(prev => ({ ...prev, showIntelligenceReport: true }));
+                                const currentLocId = (() => {
+                                  if (ui.currentLocation === 'All') return null;
+                                  const loc = locations.find(l => l.displayName === ui.currentLocation);
+                                  return loc ? loc.id : null;
+                                })();
+                                fetchIntelligenceReport(currentLocId);
+                              }} className="bg-brand-mid text-white px-4 py-2 rounded hover:bg-brand-dark transition-colors text-sm">
+                                View Intelligence Report
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-lg font-medium text-txt-secondary">No medications currently need ordering</p>
+                          <p className="text-sm text-txt-tertiary mt-1">All medications are at or above minimum stock levels.</p>
+                          <button onClick={loadDraftOrders} className="mt-4 bg-btn-secondary text-txt-secondary px-4 py-2 rounded hover:bg-bdr-hover transition-colors text-sm">
+                            Refresh
+                          </button>
+                        </>
+                      )}
                     </div>
 
                   ) : (
@@ -5448,8 +5376,140 @@ Medicana Stock Management System`;
                       </div>
                     </div>
                   )}
+                    </>
+                  )}
                 </>
               )}
+
+              {/* New Medication Order Tab */}
+              {ui.activeTab === 'newmedication' && (
+                <>
+                  <div className="p-3 sm:p-4 md:p-6 border-b border-brand-pale bg-gradient-to-r from-brand-pale to-brand-pale">
+                    <h2 className="text-xl sm:text-2xl font-bold text-near-black mb-2">Order New Medication</h2>
+                    <p className="text-sm sm:text-base text-txt-tertiary">Request a new medication that is not currently in the stock system.</p>
+                  </div>
+                  <div>
+                    <form onSubmit={(e) => { e.preventDefault(); handleNewMedicationOrder(); }} className="p-4">
+                        {newMedicationOrderForm.error && (
+                          <div className="mb-4 p-3 bg-danger-ghost-bg border border-danger-ghost-bg rounded-lg">
+                            <p className="text-sm text-danger-ghost-text">{newMedicationOrderForm.error}</p>
+                          </div>
+                        )}
+
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-txt-secondary mb-2">
+                            Medication Name <span className="text-danger-ghost-text">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={newMedicationOrderForm.name}
+                            onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, name: e.target.value, error: '' }))}
+                            placeholder="e.g., Amoxicillin"
+                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
+                          />
+                        </div>
+
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-txt-secondary mb-2">
+                            Type <span className="text-danger-ghost-text">*</span>
+                          </label>
+                          <select
+                            value={newMedicationOrderForm.type}
+                            onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, type: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
+                          >
+                            {MEDICATION_TYPES.map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-txt-secondary mb-2">
+                            Strength/Concentration <span className="text-danger-ghost-text">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={newMedicationOrderForm.strength}
+                            onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, strength: e.target.value, error: '' }))}
+                            placeholder="e.g., 500mg"
+                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
+                          />
+                        </div>
+
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-txt-secondary mb-2">
+                            Quantity Needed <span className="text-danger-ghost-text">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={newMedicationOrderForm.quantityNeeded}
+                            onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, quantityNeeded: e.target.value, error: '' }))}
+                            placeholder="e.g., 5 boxes, 100 tablets, 3 vials"
+                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
+                          />
+                          <p className="text-xs text-txt-tertiary mt-1">Enter the quantity needed in any format (numbers, letters, or both)</p>
+                        </div>
+
+                        {newMedicationOrderForm.type === 'IV Fluid Bag' && (
+                          <div className="mb-4">
+                            <label className="block text-sm font-medium text-txt-secondary mb-2">
+                              Bag Size <span className="text-danger-ghost-text">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={newMedicationOrderForm.bagSize}
+                              onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, bagSize: e.target.value, error: '' }))}
+                              placeholder="e.g., 500ml, 1000ml"
+                              className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
+                            />
+                          </div>
+                        )}
+
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-txt-secondary mb-2">Urgency</label>
+                          <select
+                            value={newMedicationOrderForm.urgency}
+                            onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, urgency: e.target.value }))}
+                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
+                          >
+                            <option value="routine">Routine</option>
+                            <option value="urgent">Urgent</option>
+                            <option value="emergency">Emergency</option>
+                          </select>
+                        </div>
+
+                        <div className="mb-6">
+                          <label className="block text-sm font-medium text-txt-secondary mb-2">Additional Notes (Optional)</label>
+                          <textarea
+                            value={newMedicationOrderForm.notes}
+                            onChange={(e) => setNewMedicationOrderForm(prev => ({ ...prev, notes: e.target.value }))}
+                            placeholder="Any additional information or special requirements..."
+                            rows="3"
+                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent resize-none"
+                          />
+                        </div>
+
+                        <div className="flex gap-3">
+                          <button
+                            type="submit"
+                            className="flex-1 bg-brand-mid text-white py-3 rounded-lg hover:bg-brand-dark transition-colors font-medium"
+                          >
+                            Review Order
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewMedicationOrderForm({ name: '', type: 'Tablet', strength: '', quantityNeeded: '', bagSize: '', urgency: 'routine', notes: '', pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk', error: '' })}
+                            className="px-6 bg-btn-secondary text-txt-secondary py-3 rounded-lg hover:bg-bdr-hover transition-colors font-medium"
+                          >
+                            Clear Form
+                          </button>
+                        </div>
+                      </form>
+                  </div>
+                </>
+              )}
+
             </div>
           </div>
 
@@ -7227,7 +7287,7 @@ Medicana Stock Management System`;
                         }}
                         className="px-6 py-2 bg-btn-secondary text-txt-secondary rounded-lg hover:bg-bdr-hover transition-colors font-medium"
                       >
-                        View All Low Stock
+                        View Intelligent Stock
                       </button>
                       <button
                         onClick={() => setModals(prev => ({ ...prev, showLowStockAlert: false }))}
