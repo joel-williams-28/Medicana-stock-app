@@ -4402,11 +4402,16 @@ Medicana Stock Management System`;
                         }
                       }} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors relative whitespace-nowrap ${ui.activeTab === 'lowstock' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>
                       Intelligent Stock
-                        {draftOrderCount > 0 ? (
-                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">{draftOrderCount}</span>
-                        ) : lowStockMedications.length > 0 ? (
-                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-critical-bg text-status-critical-text">{lowStockMedications.length}</span>
-                        ) : null}
+                        {(() => {
+                          const pp = reviewPipeline.data?.pipeline;
+                          const actionCount = pp ? (pp.summary.totalTransfers + pp.summary.totalOrderLines + pp.summary.totalAdjustments) : 0;
+                          if (actionCount > 0) {
+                            return <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">{actionCount}</span>;
+                          } else if (lowStockMedications.length > 0) {
+                            return <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-critical-bg text-status-critical-text">{lowStockMedications.length}</span>;
+                          }
+                          return null;
+                        })()}
                     </button>
                     )}
                     {canAccessTab('newmedication') && (
@@ -5087,22 +5092,41 @@ Medicana Stock Management System`;
                     <div className="flex items-center">
                       <TrendingUp className="w-5 h-5 text-brand-mid mr-2" />
                       <div className="flex-1">
-                        {draftOrderCount > 0 ? (
-                          <>
-                            <h3 className="font-semibold text-brand-dark">{draftOrderCount} Draft Order{draftOrderCount !== 1 ? 's' : ''} Ready for Review</h3>
-                            <p className="text-sm text-brand-dark">Intelligence-powered ordering recommendations are awaiting approval.</p>
-                          </>
-                        ) : lowStockMedications.length > 0 ? (
-                          <>
-                            <h3 className="font-semibold text-brand-dark">{lowStockMedications.length} Medication{lowStockMedications.length !== 1 ? 's' : ''} Below Minimum Level</h3>
-                            <p className="text-sm text-brand-dark">Intelligence analysis found no new orders needed at this time.</p>
-                          </>
-                        ) : (
-                          <>
-                            <h3 className="font-semibold text-brand-dark">All Stock Levels Healthy</h3>
-                            <p className="text-sm text-brand-dark">No medications are below minimum stock levels.</p>
-                          </>
-                        )}
+                        {(() => {
+                          const pp = reviewPipeline.data?.pipeline;
+                          const totalActions = pp ? (pp.summary.totalTransfers + pp.summary.totalOrderLines + pp.summary.totalAdjustments) : 0;
+                          if (pp && totalActions > 0) {
+                            return (
+                              <>
+                                <h3 className="font-semibold text-brand-dark">{totalActions} Action{totalActions !== 1 ? 's' : ''} Recommended</h3>
+                                <p className="text-sm text-brand-dark">
+                                  {pp.summary.totalTransfers > 0 && `${pp.summary.totalTransfers} transfer${pp.summary.totalTransfers !== 1 ? 's' : ''}`}
+                                  {pp.summary.totalTransfers > 0 && pp.summary.totalOrderLines > 0 && ', '}
+                                  {pp.summary.totalOrderLines > 0 && `${pp.summary.totalOrderLines} order${pp.summary.totalOrderLines !== 1 ? 's' : ''}`}
+                                  {(pp.summary.totalTransfers > 0 || pp.summary.totalOrderLines > 0) && pp.summary.totalAdjustments > 0 && ', '}
+                                  {pp.summary.totalAdjustments > 0 && `${pp.summary.totalAdjustments} min level adjustment${pp.summary.totalAdjustments !== 1 ? 's' : ''}`}
+                                  {' — review in the pipeline below.'}
+                                </p>
+                              </>
+                            );
+                          } else if (lowStockMedications.length > 0) {
+                            return (
+                              <>
+                                <h3 className="font-semibold text-brand-dark">{lowStockMedications.length} Medication{lowStockMedications.length !== 1 ? 's' : ''} Below Minimum Level</h3>
+                                <p className="text-sm text-brand-dark">
+                                  {pp ? 'All shortfalls are covered by existing orders or redistribution.' : 'Run the intelligence analysis to see recommendations.'}
+                                </p>
+                              </>
+                            );
+                          } else {
+                            return (
+                              <>
+                                <h3 className="font-semibold text-brand-dark">All Stock Levels Healthy</h3>
+                                <p className="text-sm text-brand-dark">No medications are below minimum stock levels.</p>
+                              </>
+                            );
+                          }
+                        })()}
                       </div>
                         {hasAccessTo('intelligenceReport') && (
                           <button onClick={() => {
@@ -5166,9 +5190,11 @@ Medicana Stock Management System`;
                           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${orderingSubTab === 'review' ? 'border-brand-mid text-brand-mid' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}
                         >
                           Review & Order
-                          {draftOrderCount > 0 && (
-                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">{draftOrderCount}</span>
-                          )}
+                          {(() => {
+                            const pp = reviewPipeline.data?.pipeline;
+                            const actionCount = pp ? (pp.summary.totalTransfers + pp.summary.totalOrderLines + pp.summary.totalAdjustments) : 0;
+                            return actionCount > 0 ? <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">{actionCount}</span> : null;
+                          })()}
                         </button>
                       </nav>
                     </div>
