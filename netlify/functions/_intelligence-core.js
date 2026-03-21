@@ -84,6 +84,7 @@ async function getStockLevels(locationId) {
        JOIN locations l ON l.id = i.location_id
        LEFT JOIN location_min_levels lml ON lml.medication_id = m.id AND lml.location_id = i.location_id
        WHERE m.is_active = true AND i.on_hand > 0
+         AND l.display_name NOT IN (SELECT DISTINCT group_name FROM locations WHERE group_name IS NOT NULL)
        GROUP BY m.id, m.name, m.strength, m.form, m.min_level_boxes, l.id, l.display_name, lml.min_level_boxes
        ORDER BY m.name, l.display_name`;
 
@@ -351,6 +352,7 @@ async function getBatchInventory() {
     JOIN locations l ON l.id = i.location_id
     JOIN medications m ON m.id = b.medication_id
     WHERE m.is_active = true AND i.on_hand > 0
+      AND l.display_name NOT IN (SELECT DISTINCT group_name FROM locations WHERE group_name IS NOT NULL)
     ORDER BY b.medication_id, i.location_id, b.expiry_date ASC
   `);
   return result.rows;
