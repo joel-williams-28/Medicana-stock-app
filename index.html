@@ -4598,7 +4598,7 @@ Medicana Stock Management System`;
                       <thead className="bg-off-white">
                         <tr>
                           <th className="w-[28%] px-4 py-3 text-left text-xs font-semibold text-txt-tertiary uppercase">Medication</th>
-                            {(ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') && (<th className="w-[16%] px-4 py-3 text-left text-xs font-semibold text-txt-tertiary uppercase">Location</th>)}
+                            {(ui.currentLocation === 'All' || isGroupName(ui.currentLocation, locations)) && (<th className="w-[16%] px-4 py-3 text-left text-xs font-semibold text-txt-tertiary uppercase">Location</th>)}
                           <th className="w-[12%] px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Type</th>
                           <th className="w-[16%] px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Current Stock</th>
                           <th className="w-[14%] px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Min Level</th>
@@ -4623,7 +4623,7 @@ Medicana Stock Management System`;
                                   </span>
                                 </button>
                               </td>
-                                {(ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') && (
+                                {(ui.currentLocation === 'All' || isGroupName(ui.currentLocation, locations)) && (
                                   <td className="px-4 py-3 text-sm text-txt-secondary">
                                     {ui.currentLocation === 'All' && med.locations && med.locations.length > 1 ? (
                                       <div className="flex flex-wrap gap-1">
@@ -4691,7 +4691,7 @@ Medicana Stock Management System`;
                             </tr>
                             {ui.expandedMedId === med.id && (
                               <tr className="bg-off-white">
-                                <td colSpan={(ui.currentLocation === 'All' || ui.currentLocation === 'Medication Stock L1') ? "6" : "5"} className="px-2 sm:px-4 py-2 sm:py-3">
+                                <td colSpan={(ui.currentLocation === 'All' || isGroupName(ui.currentLocation, locations)) ? "6" : "5"} className="px-2 sm:px-4 py-2 sm:py-3">
                                   <div className="ml-8">
                                     {med.barcode && (
                                       <div className="mb-3 p-2 bg-status-ordered-bg border border-status-ordered-bg rounded">

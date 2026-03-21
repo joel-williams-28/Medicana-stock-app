@@ -33,7 +33,6 @@ const DEMO_PASSWORD = 'Demo123!';
 // Reference data
 // ---------------------------------------------------------------------------
 const LOCATIONS = [
-  { id: 'med-stock-l1',    displayName: 'Medication Stock L1', groupName: null },
   { id: 'cupboard-1',      displayName: 'Cupboard 1',          groupName: 'Medication Stock L1' },
   { id: 'cupboard-2',      displayName: 'Cupboard 2',          groupName: 'Medication Stock L1' },
   { id: 'cupboard-3',      displayName: 'Cupboard 3',          groupName: 'Medication Stock L1' },
@@ -275,8 +274,15 @@ async function seed(clean) {
       invRows.push(['pharmacy', batches[0].batchId, Math.floor(pharmacyItems * 0.6)]);
       if (batches.length > 1) invRows.push(['pharmacy', batches[1].batchId, pharmacyItems - Math.floor(pharmacyItems * 0.6)]);
 
-      // Med Stock L1: buffer
-      invRows.push(['med-stock-l1', batches[0].batchId, Math.max(1, Math.floor(med.minBoxes * 0.5)) * med.itemsPerBox]);
+      // Cupboards 1-3: buffer stock split across cupboards
+      const bufferItems = Math.max(1, Math.floor(med.minBoxes * 0.5)) * med.itemsPerBox;
+      const perCupboard = Math.floor(bufferItems / 3);
+      const remainder = bufferItems - perCupboard * 3;
+      invRows.push(['cupboard-1', batches[0].batchId, perCupboard + remainder]);
+      if (perCupboard > 0) {
+        invRows.push(['cupboard-2', batches[0].batchId, perCupboard]);
+        invRows.push(['cupboard-3', batches[0].batchId, perCupboard]);
+      }
 
       // Per-location stock
       for (const [locId, weeklyUsage] of Object.entries(profile)) {
