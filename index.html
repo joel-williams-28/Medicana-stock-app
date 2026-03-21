@@ -7765,11 +7765,17 @@ Medicana Stock Management System`;
                                             {/* Explicit recommendation actions */}
                                             {med.recommendation.action === 'order' && (
                                               <div className="space-y-2">
-                                                <div className="flex items-center gap-2">
-                                                  <span className="text-sm font-semibold text-danger-ghost-text">
-                                                    Order {Math.max(1, med.currentMinLevel - med.currentBoxes)} {Math.max(1, med.currentMinLevel - med.currentBoxes) === 1 ? 'box' : 'boxes'} to reach minimum level of {med.currentMinLevel}
-                                                  </span>
-                                                </div>
+                                                {(() => {
+                                                  const targetMin = med.recommendation.secondaryAction ? med.recommendation.secondaryAction.suggestedMinLevel : med.currentMinLevel;
+                                                  const orderQty = Math.max(1, targetMin - med.currentBoxes);
+                                                  return (
+                                                    <div className="flex items-center gap-2">
+                                                      <span className="text-sm font-semibold text-danger-ghost-text">
+                                                        Order {orderQty} {orderQty === 1 ? 'box' : 'boxes'} to reach {med.recommendation.secondaryAction ? 'recommended' : ''} minimum level of {targetMin}
+                                                      </span>
+                                                    </div>
+                                                  );
+                                                })()}
                                                 {med.recommendation.secondaryAction && (
                                                   <div className="bg-status-low-bg p-2 rounded border border-status-low-text mt-1">
                                                     <div className="flex items-center gap-2">
@@ -8020,7 +8026,8 @@ Medicana Stock Management System`;
                               (criticalMeds.length > 0 ? `REQUIRING ATTENTION:\n${criticalMeds.map(m => {
                                 const lines = [`  ${m.medicationName} @ ${m.locationName}:`];
                                 if (m.recommendation.action === 'order') {
-                                  lines.push(`    Order ${Math.max(1, m.currentMinLevel - m.currentBoxes)} boxes to reach minimum level of ${m.currentMinLevel}`);
+                                  const targetMin = m.recommendation.secondaryAction ? m.recommendation.secondaryAction.suggestedMinLevel : m.currentMinLevel;
+                                  lines.push(`    Order ${Math.max(1, targetMin - m.currentBoxes)} boxes to reach minimum level of ${targetMin}`);
                                 } else if (m.recommendation.action === 'increase') {
                                   lines.push(`    Increase minimum level from ${m.currentMinLevel} to ${m.recommendation.suggestedMinLevel} boxes`);
                                 }

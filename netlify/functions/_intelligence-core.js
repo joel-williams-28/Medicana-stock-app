@@ -267,7 +267,7 @@ function analyzeMedication(row, weeklyUsage, itemsPerBox) {
     }
   }
 
-  // Secondary action: if ordering AND min level is too high, suggest reducing it too
+  // If ordering but min level is too high, re-evaluate: might not need to order at all
   let secondaryAction = null;
   if (action === 'order' && dataPoints >= 1 && currentMinLevel > 0 && suggestedMinLevel < currentMinLevel * 0.8) {
     const recentHighUsage = weeklyUsage.slice(-4).some(w => {
@@ -276,11 +276,18 @@ function analyzeMedication(row, weeklyUsage, itemsPerBox) {
     });
     if (!recentHighUsage) {
       const pctDecrease = Math.round(((currentMinLevel - suggestedMinLevel) / currentMinLevel) * 100);
-      secondaryAction = {
-        action: 'decrease',
-        suggestedMinLevel,
-        reason: `Minimum level of ${currentMinLevel} boxes appears high for current usage (avg ${Math.round(avgWeeklyUsageBoxes * 10) / 10} boxes/week). Consider reducing to ${suggestedMinLevel} boxes (-${pctDecrease}%).`
-      };
+      if (currentBoxes >= suggestedMinLevel) {
+        // Current stock already meets/exceeds the suggested min — no order needed, just reduce min level
+        action = 'decrease';
+        reason = `Low weekly usage (avg ${Math.round(avgWeeklyUsageBoxes * 10) / 10} boxes/week). Current minimum of ${currentMinLevel} boxes is too high. Current stock of ${currentBoxes} boxes already exceeds suggested minimum. Suggest reducing by ${pctDecrease}%.`;
+      } else {
+        // Genuine order still needed, but to reach the lower suggested min, not the inflated current min
+        secondaryAction = {
+          action: 'decrease',
+          suggestedMinLevel,
+          reason: `Minimum level of ${currentMinLevel} boxes appears high for current usage (avg ${Math.round(avgWeeklyUsageBoxes * 10) / 10} boxes/week). Consider reducing to ${suggestedMinLevel} ${suggestedMinLevel === 1 ? 'box' : 'boxes'} (-${pctDecrease}%).`
+        };
+      }
     }
   }
 
