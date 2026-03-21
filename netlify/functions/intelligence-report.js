@@ -6,7 +6,9 @@ const {
   getStockLevels,
   getWeeklyUsageData,
   getItemsPerBoxMap,
-  analyzeMedication
+  analyzeMedication,
+  getBatchInventory,
+  runOptimisationPipeline
 } = require('./_intelligence-core');
 
 exports.handler = async (event) => {
@@ -75,8 +77,9 @@ exports.handler = async (event) => {
       return analyzeMedication(row, weeklyUsage, itemsPerBox);
     });
 
-    // 7. For "All Locations" — add aggregated min level data
+    // 7. For "All Locations" — add aggregated min level data and run pipeline
     let aggregated = null;
+    let pipeline = null;
     if (!locationId) {
       const medGroups = {};
       for (const med of medications) {
@@ -97,6 +100,10 @@ exports.handler = async (event) => {
         });
       }
       aggregated = Object.values(medGroups);
+
+      // Run optimisation pipeline (redistribute → order → adjust)
+      const batchInventory = await getBatchInventory();
+      pipeline = runOptimisationPipeline(medications, batchInventory);
     }
 
     return db.json(200, {
@@ -105,7 +112,8 @@ exports.handler = async (event) => {
       weeksOfData,
       maturityLevel,
       medications,
-      aggregated
+      aggregated,
+      pipeline
     });
   } catch (e) {
     return db.serverError('intelligence-report', e);

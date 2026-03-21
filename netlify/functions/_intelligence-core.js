@@ -336,11 +336,234 @@ function analyzeMedication(row, weeklyUsage, itemsPerBox) {
   };
 }
 
+/**
+ * Get batch-level inventory with expiry dates for FEFO redistribution
+ */
+async function getBatchInventory() {
+  const result = await db.query(`
+    SELECT i.location_id, i.batch_id, b.medication_id, b.expiry_date,
+           b.items_per_box, b.batch_code, i.on_hand,
+           l.display_name AS location_name,
+           CASE WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
+                ELSE m.name || ' ' || m.strength END AS medication_name
+    FROM inventory i
+    JOIN batches b ON b.id = i.batch_id
+    JOIN locations l ON l.id = i.location_id
+    JOIN medications m ON m.id = b.medication_id
+    WHERE m.is_active = true AND i.on_hand > 0
+    ORDER BY b.medication_id, i.location_id, b.expiry_date ASC
+  `);
+  return result.rows;
+}
+
+/**
+ * Run the 3-step stock optimisation pipeline:
+ * 1. Recalculate optimal min levels
+ * 2. Redistribute stock (FEFO) from surplus to deficit locations
+ * 3. Order remaining shortfall
+ */
+function runOptimisationPipeline(medications, batchInventory) {
+  // Step 1: Build min level map from already-analyzed medications
+  const minLevelMap = {};
+  for (const med of medications) {
+    const key = `${med.medicationId}|${med.locationId}`;
+    minLevelMap[key] = {
+      medicationId: med.medicationId,
+      medicationName: med.medicationName,
+      locationId: med.locationId,
+      locationName: med.locationName,
+      currentBoxes: med.currentBoxes,
+      currentMinLevel: med.currentMinLevel,
+      suggestedMinLevel: med.recommendation.suggestedMinLevel,
+      avgWeeklyUsage: med.avgWeeklyUsage,
+      itemsPerBox: med.itemsPerBox
+    };
+  }
+
+  // Step 2: Redistribute stock (FEFO)
+  // Group batch inventory by medication → location → batches
+  const batchesByMedLoc = {};
+  for (const row of batchInventory) {
+    const medKey = row.medication_id;
+    if (!batchesByMedLoc[medKey]) batchesByMedLoc[medKey] = {};
+    const locKey = row.location_id;
+    if (!batchesByMedLoc[medKey][locKey]) batchesByMedLoc[medKey][locKey] = [];
+    batchesByMedLoc[medKey][locKey].push({
+      batchId: row.batch_id,
+      batchCode: row.batch_code,
+      onHand: Number(row.on_hand),
+      expiryDate: row.expiry_date ? row.expiry_date.toISOString ? row.expiry_date.toISOString().slice(0, 10) : String(row.expiry_date).slice(0, 10) : null,
+      itemsPerBox: Number(row.items_per_box) || 1,
+      locationName: row.location_name,
+      medicationName: row.medication_name
+    });
+  }
+
+  // Build simulated stock (boxes) per medication+location
+  const simulatedBoxes = {};
+  for (const key in minLevelMap) {
+    simulatedBoxes[key] = minLevelMap[key].currentBoxes;
+  }
+
+  const transfers = [];
+
+  // Get unique medication IDs that have min level data
+  const medicationIds = [...new Set(medications.map(m => m.medicationId))];
+
+  for (const medId of medicationIds) {
+    const medLocations = medications.filter(m => m.medicationId === medId);
+    if (medLocations.length < 2) continue; // Need at least 2 locations to redistribute
+
+    // Identify surplus and deficit locations using suggested min levels
+    const surplusLocs = [];
+    const deficitLocs = [];
+    for (const loc of medLocations) {
+      const key = `${medId}|${loc.locationId}`;
+      const suggested = minLevelMap[key].suggestedMinLevel;
+      const current = simulatedBoxes[key];
+      if (current > suggested) {
+        surplusLocs.push({ ...loc, excess: current - suggested });
+      } else if (current < suggested) {
+        deficitLocs.push({ ...loc, shortfall: suggested - current });
+      }
+    }
+
+    if (surplusLocs.length === 0 || deficitLocs.length === 0) continue;
+
+    // Sort deficit by highest usage first (they consume soonest-expiring stock fastest)
+    deficitLocs.sort((a, b) => b.avgWeeklyUsage - a.avgWeeklyUsage);
+
+    for (const deficit of deficitLocs) {
+      const deficitKey = `${medId}|${deficit.locationId}`;
+      let remaining = minLevelMap[deficitKey].suggestedMinLevel - simulatedBoxes[deficitKey];
+      if (remaining <= 0) continue;
+
+      // Collect all batches from surplus locations, sorted by expiry ASC (FEFO)
+      const availableBatches = [];
+      for (const surplus of surplusLocs) {
+        const surplusKey = `${medId}|${surplus.locationId}`;
+        const locBatches = batchesByMedLoc[medId]?.[surplus.locationId] || [];
+        for (const batch of locBatches) {
+          if (batch.onHand <= 0) continue;
+          // Only offer stock that keeps surplus above its suggested min
+          availableBatches.push({
+            ...batch,
+            sourceLocId: surplus.locationId,
+            sourceLocName: surplus.locationName,
+            surplusKey
+          });
+        }
+      }
+
+      // Sort by expiry date ascending (FEFO — soonest expiry first)
+      availableBatches.sort((a, b) => {
+        if (!a.expiryDate && !b.expiryDate) return 0;
+        if (!a.expiryDate) return 1;
+        if (!b.expiryDate) return -1;
+        return a.expiryDate.localeCompare(b.expiryDate);
+      });
+
+      for (const batch of availableBatches) {
+        if (remaining <= 0) break;
+
+        // Check surplus location still has excess
+        const surplusSimulated = simulatedBoxes[batch.surplusKey];
+        const surplusSuggested = minLevelMap[batch.surplusKey].suggestedMinLevel;
+        const surplusExcess = surplusSimulated - surplusSuggested;
+        if (surplusExcess <= 0) continue;
+
+        // How many items can we transfer from this batch?
+        const ipb = batch.itemsPerBox || 1;
+        const batchBoxes = Math.floor(batch.onHand / ipb);
+        const transferBoxes = Math.min(batchBoxes, remaining, surplusExcess);
+        if (transferBoxes <= 0) continue;
+
+        const transferItems = transferBoxes * ipb;
+
+        transfers.push({
+          medicationId: medId,
+          medicationName: batch.medicationName,
+          sourceLoc: batch.sourceLocId,
+          sourceLocName: batch.sourceLocName,
+          targetLoc: deficit.locationId,
+          targetLocName: deficit.locationName,
+          batchId: batch.batchId,
+          batchCode: batch.batchCode,
+          quantity: transferItems,
+          quantityBoxes: transferBoxes,
+          expiryDate: batch.expiryDate,
+          itemsPerBox: ipb
+        });
+
+        // Update simulated inventory
+        batch.onHand -= transferItems;
+        simulatedBoxes[batch.surplusKey] -= transferBoxes;
+        simulatedBoxes[deficitKey] += transferBoxes;
+        remaining -= transferBoxes;
+      }
+    }
+  }
+
+  // Step 3: Order remaining shortfall (after simulated redistribution)
+  const orders = [];
+  for (const key in minLevelMap) {
+    const entry = minLevelMap[key];
+    const simulated = simulatedBoxes[key];
+    const suggested = entry.suggestedMinLevel;
+    if (simulated < suggested && suggested > 0) {
+      const shortfall = suggested - simulated;
+      orders.push({
+        medicationId: entry.medicationId,
+        medicationName: entry.medicationName,
+        locationId: entry.locationId,
+        locationName: entry.locationName,
+        orderQuantityBoxes: shortfall,
+        urgency: simulated === 0 || simulated <= suggested * 0.5 ? 'urgent' : 'routine',
+        currentSimulatedBoxes: simulated,
+        suggestedMinLevel: suggested
+      });
+    }
+  }
+
+  // Step 4: Min level adjustments
+  const adjustments = [];
+  for (const key in minLevelMap) {
+    const entry = minLevelMap[key];
+    if (entry.suggestedMinLevel !== entry.currentMinLevel) {
+      adjustments.push({
+        medicationId: entry.medicationId,
+        medicationName: entry.medicationName,
+        locationId: entry.locationId,
+        locationName: entry.locationName,
+        currentMinLevel: entry.currentMinLevel,
+        suggestedMinLevel: entry.suggestedMinLevel,
+        direction: entry.suggestedMinLevel > entry.currentMinLevel ? 'increase' : 'decrease',
+        changeBoxes: Math.abs(entry.suggestedMinLevel - entry.currentMinLevel)
+      });
+    }
+  }
+
+  return {
+    transfers,
+    orders,
+    adjustments,
+    summary: {
+      totalTransfers: transfers.length,
+      totalOrderLines: orders.length,
+      totalAdjustments: adjustments.length,
+      totalBoxesRedistributed: transfers.reduce((sum, t) => sum + t.quantityBoxes, 0),
+      totalBoxesToOrder: orders.reduce((sum, o) => sum + o.orderQuantityBoxes, 0)
+    }
+  };
+}
+
 module.exports = {
   getMaturityInfo,
   getStockLevels,
   getWeeklyUsageData,
   getItemsPerBoxMap,
   calculateTrend,
-  analyzeMedication
+  analyzeMedication,
+  getBatchInventory,
+  runOptimisationPipeline
 };
