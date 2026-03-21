@@ -106,6 +106,26 @@ exports.handler = async (event) => {
       pipeline = runOptimisationPipeline(medications, batchInventory);
     }
 
+    // Fetch pending orders to annotate pipeline order recommendations
+    let pendingOrderMap = {};
+    if (pipeline && pipeline.orders.length > 0) {
+      const pendingResult = await db.query(
+        `SELECT medication_id, COUNT(*)::int AS order_count, SUM(quantity)::int AS total_quantity
+         FROM orders WHERE status = 'pending'
+         GROUP BY medication_id`
+      );
+      for (const row of pendingResult.rows) {
+        pendingOrderMap[row.medication_id] = {
+          count: row.order_count,
+          totalQuantity: row.total_quantity
+        };
+      }
+      // Annotate each pipeline order with existing pending order info
+      for (const o of pipeline.orders) {
+        o.existingPendingOrder = pendingOrderMap[o.medicationId] || null;
+      }
+    }
+
     return db.json(200, {
       success: true,
       goLiveDate,
@@ -113,7 +133,8 @@ exports.handler = async (event) => {
       maturityLevel,
       medications,
       aggregated,
-      pipeline
+      pipeline,
+      pendingOrderMap
     });
   } catch (e) {
     return db.serverError('intelligence-report', e);

@@ -714,6 +714,12 @@
       const [draftAdjustments, setDraftAdjustments] = useState({});
       const [draftOrderCount, setDraftOrderCount] = useState(0);
 
+      // Pipeline-based Review & Order state
+      const [reviewPipeline, setReviewPipeline] = useState({ loading: false, data: null, error: null });
+      const [reviewPipelineTab, setReviewPipelineTab] = useState('all');
+      const [pipelineOrderSelections, setPipelineOrderSelections] = useState(new Set());
+      const [pipelineOrderAdjustments, setPipelineOrderAdjustments] = useState({});
+
       const [newMedicationOrderForm, setNewMedicationOrderForm] = useState({
         name: '',
         type: 'Tablet',
@@ -3980,6 +3986,79 @@ Medicana Stock Management System`;
         }
       };
 
+      // =============================================
+      // PIPELINE-BASED REVIEW & ORDER HANDLERS
+      // =============================================
+      const loadReviewPipeline = async () => {
+        setReviewPipeline({ loading: true, data: null, error: null });
+        setReviewPipelineTab('all');
+        try {
+          const data = await window.api.fetchIntelligenceReport(null); // Always org-wide for pipeline
+          setReviewPipeline({ loading: false, data, error: null });
+          // Pre-select all order items
+          const orderCount = data.pipeline?.orders?.length || 0;
+          setPipelineOrderSelections(new Set(Array.from({ length: orderCount }, (_, i) => i)));
+          setPipelineOrderAdjustments({});
+        } catch (err) {
+          setReviewPipeline({ loading: false, data: null, error: err.message });
+        }
+      };
+
+      const handleCreatePipelineOrders = async () => {
+        const pipeline = reviewPipeline.data?.pipeline;
+        if (!pipeline) return;
+        const selectedOrders = pipeline.orders
+          .map((o, i) => ({ ...o, _index: i }))
+          .filter(o => pipelineOrderSelections.has(o._index))
+          .map(o => ({
+            medicationId: o.medicationId,
+            medicationName: o.medicationName,
+            locationId: o.locationId,
+            quantityBoxes: pipelineOrderAdjustments[o._index] != null ? Number(pipelineOrderAdjustments[o._index]) : o.orderQuantityBoxes,
+            urgency: o.urgency,
+            currentSimulatedBoxes: o.currentSimulatedBoxes,
+            suggestedMinLevel: o.suggestedMinLevel
+          }))
+          .filter(o => o.quantityBoxes > 0);
+
+        if (selectedOrders.length === 0) { alert('No orders selected'); return; }
+
+        try {
+          const userInfo = getCurrentUserInfo();
+          const result = await window.api.createIntelligenceOrders({
+            orders: selectedOrders,
+            userId: userInfo?.id,
+            pharmacistEmail: draftOrders.pharmacistEmail
+          });
+          // Reuse existing email preview UI via draftOrders.approvalResult
+          setDraftOrders(prev => ({ ...prev, approvalResult: result }));
+          // Refresh main data
+          const data = await window.api.fetchAllData();
+          setMedications(data.medications || []);
+          setOrders(data.orders || []);
+          setDraftOrderCount(data.draftOrderCount || 0);
+        } catch (err) {
+          alert('Failed to create orders: ' + err.message);
+        }
+      };
+
+      const togglePipelineOrderSelection = (index) => {
+        setPipelineOrderSelections(prev => {
+          const next = new Set(prev);
+          if (next.has(index)) next.delete(index);
+          else next.add(index);
+          return next;
+        });
+      };
+
+      const toggleAllPipelineOrders = (totalCount) => {
+        if (pipelineOrderSelections.size === totalCount) {
+          setPipelineOrderSelections(new Set());
+        } else {
+          setPipelineOrderSelections(new Set(Array.from({ length: totalCount }, (_, i) => i)));
+        }
+      };
+
       const handleCopyToClipboard = async () => {
           if (!orderForm.quantity || parseInt(orderForm.quantity) <= 0) { alert('Please enter a valid quantity'); return; }
 
@@ -4319,7 +4398,7 @@ Medicana Stock Management System`;
                         setUi(prev => ({ ...prev, activeTab: 'lowstock' }));
                         const isAdminOrPharmacist = getUserRole() === 'Administrator' || getUserRole() === 'Pharmacist';
                         if (isAdminOrPharmacist && orderingSubTab === 'review') {
-                          loadDraftOrders();
+                          loadReviewPipeline();
                         }
                       }} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors relative whitespace-nowrap ${ui.activeTab === 'lowstock' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>
                       Intelligent Stock
@@ -5083,7 +5162,7 @@ Medicana Stock Management System`;
                           )}
                         </button>
                         <button
-                          onClick={() => { setOrderingSubTab('review'); loadDraftOrders(); }}
+                          onClick={() => { setOrderingSubTab('review'); loadReviewPipeline(); }}
                           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${orderingSubTab === 'review' ? 'border-brand-mid text-brand-mid' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}
                         >
                           Review & Order
@@ -5165,15 +5244,15 @@ Medicana Stock Management System`;
                   </div>
                   )}
 
-                  {/* Review & Order Sub-tab (Admin/Pharmacist only) */}
+                  {/* Review & Order Sub-tab (Admin/Pharmacist only) — Pipeline-based */}
                   {orderingSubTab === 'review' && canAccessTab('purchaseorders') && (
                     <>
-                  {/* Approval Confirmation View */}
+                  {/* Approval Confirmation View (reused from draft orders) */}
                   {draftOrders.approvalResult ? (
                     <div className="p-4 sm:p-6">
                       <div className="bg-status-ok-bg border border-status-ok-text rounded-lg p-4 mb-4">
                         <h3 className="font-semibold text-status-ok-text text-lg mb-1">
-                          {draftOrders.approvalResult.approvedCount} Order{draftOrders.approvalResult.approvedCount !== 1 ? 's' : ''} Approved & Placed
+                          {draftOrders.approvalResult.approvedCount} Order{draftOrders.approvalResult.approvedCount !== 1 ? 's' : ''} Created & Placed
                         </h3>
                         <p className="text-sm text-status-ok-text">Orders have been saved. Use the options below to send the consolidated order.</p>
                       </div>
@@ -5196,207 +5275,447 @@ Medicana Stock Management System`;
                         </button>
                         <button onClick={() => {
                           setDraftOrders(prev => ({ ...prev, approvalResult: null }));
-                          loadDraftOrders();
+                          loadReviewPipeline();
                         }} className="px-6 bg-btn-secondary text-txt-secondary py-2 rounded-lg hover:bg-bdr-hover transition-colors font-medium text-sm">
                           Done
                         </button>
                       </div>
                     </div>
 
-                  ) : draftOrders.loading ? (
+                  ) : reviewPipeline.loading ? (
                     <div className="p-8 text-center">
                       <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brand-mid mb-3"></div>
                       <p className="text-txt-tertiary">Analyzing stock levels and generating recommendations...</p>
                     </div>
 
-                  ) : draftOrders.error ? (
+                  ) : reviewPipeline.error ? (
                     <div className="p-6">
                       <div className="bg-danger-ghost-bg border border-danger-ghost-bg rounded-lg p-4 mb-4">
-                        <p className="text-sm text-danger-ghost-text">{draftOrders.error}</p>
+                        <p className="text-sm text-danger-ghost-text">{reviewPipeline.error}</p>
                       </div>
-                      <button onClick={loadDraftOrders} className="bg-brand-mid text-white px-4 py-2 rounded hover:bg-brand-dark transition-colors text-sm">
+                      <button onClick={loadReviewPipeline} className="bg-brand-mid text-white px-4 py-2 rounded hover:bg-brand-dark transition-colors text-sm">
                         Retry
                       </button>
                     </div>
 
-                  ) : draftOrders.drafts.length === 0 ? (
+                  ) : !reviewPipeline.data ? (
                     <div className="p-8 text-center">
-                      <div className="text-txt-disabled mb-3">
-                        <svg className="w-12 h-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                      </div>
-                      {lowStockMedications.length > 0 ? (
-                        <>
-                          <p className="text-lg font-medium text-txt-secondary">No new orders needed</p>
-                          <p className="text-sm text-txt-tertiary mt-1 max-w-md mx-auto">
-                            {lowStockMedications.length} medication{lowStockMedications.length !== 1 ? 's are' : ' is'} below minimum levels, but intelligence analysis indicates no new orders are needed at this time. Existing orders or redistribution may address these shortfalls.
+                      <p className="text-txt-tertiary">Click the tab to load intelligence analysis.</p>
+                      <button onClick={loadReviewPipeline} className="mt-3 bg-brand-mid text-white px-4 py-2 rounded hover:bg-brand-dark transition-colors text-sm">
+                        Run Analysis
+                      </button>
+                    </div>
+
+                  ) : (() => {
+                    const pData = reviewPipeline.data;
+                    const pp = pData.pipeline;
+                    const maturity = pData.maturityLevel;
+                    const isEarly = maturity === 'not_configured' || maturity === 'collecting';
+
+                    return (
+                    <div>
+                      {/* Maturity warning for early stages */}
+                      {isEarly && (
+                        <div className="p-4 bg-status-ordered-bg border-b border-status-ordered-bg">
+                          <h3 className="font-semibold text-status-ordered-text">
+                            {maturity === 'not_configured' ? 'Intelligence Not Yet Active' : 'Collecting Usage Data'}
+                          </h3>
+                          <p className="text-sm text-status-ordered-text mt-1">
+                            {maturity === 'not_configured'
+                              ? 'Set a go-live date in the Intelligence Report to begin tracking medication usage patterns.'
+                              : 'The system is collecting usage data. After the first full week, recommendations will appear here.'}
                           </p>
-                          <div className="flex gap-3 justify-center mt-4">
-                            <button onClick={loadDraftOrders} className="bg-btn-secondary text-txt-secondary px-4 py-2 rounded hover:bg-bdr-hover transition-colors text-sm">
-                              Refresh
+                          <button onClick={() => {
+                            setModals(prev => ({ ...prev, showIntelligenceReport: true }));
+                            fetchIntelligenceReport(null);
+                          }} className="mt-2 bg-status-ordered-text text-white px-4 py-1.5 rounded text-sm hover:opacity-90 transition-colors">
+                            Open Intelligence Report
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Pipeline content (only when mature enough) */}
+                      {!isEarly && pp && (
+                        <>
+                        {/* Summary cards */}
+                        <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <button onClick={() => setReviewPipelineTab('redistribute')} className={`p-3 rounded-lg border text-left transition-colors ${reviewPipelineTab === 'redistribute' ? 'border-status-ok-text bg-status-ok-bg' : 'border-bdr-default bg-white hover:bg-off-white'}`}>
+                            <div className="text-2xl font-bold text-near-black">{pp.summary.totalTransfers}</div>
+                            <div className="text-xs text-txt-tertiary">Transfers</div>
+                            {pp.summary.totalBoxesRedistributed > 0 && <div className="text-xs text-status-ok-text mt-1">{pp.summary.totalBoxesRedistributed} boxes</div>}
+                          </button>
+                          <button onClick={() => setReviewPipelineTab('order')} className={`p-3 rounded-lg border text-left transition-colors ${reviewPipelineTab === 'order' ? 'border-danger-solid bg-danger-ghost-bg' : 'border-bdr-default bg-white hover:bg-off-white'}`}>
+                            <div className="text-2xl font-bold text-near-black">{pp.summary.totalOrderLines}</div>
+                            <div className="text-xs text-txt-tertiary">Orders Needed</div>
+                            {pp.summary.totalBoxesToOrder > 0 && <div className="text-xs text-danger-ghost-text mt-1">{pp.summary.totalBoxesToOrder} boxes</div>}
+                          </button>
+                          <button onClick={() => setReviewPipelineTab('adjustments')} className={`p-3 rounded-lg border text-left transition-colors ${reviewPipelineTab === 'adjustments' ? 'border-status-low-text bg-status-low-bg' : 'border-bdr-default bg-white hover:bg-off-white'}`}>
+                            <div className="text-2xl font-bold text-near-black">{pp.summary.totalAdjustments}</div>
+                            <div className="text-xs text-txt-tertiary">Min Level Changes</div>
+                          </button>
+                          <div className="p-3 rounded-lg border border-bdr-default bg-white">
+                            <div className="text-2xl font-bold text-near-black">{pData.medications?.length || 0}</div>
+                            <div className="text-xs text-txt-tertiary">Medications Tracked</div>
+                          </div>
+                        </div>
+
+                        {/* Pipeline sub-tab navigation */}
+                        <div className="border-b border-bdr-default bg-off-white px-4">
+                          <div className="flex gap-1 overflow-x-auto">
+                            <button onClick={() => setReviewPipelineTab('all')} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${reviewPipelineTab === 'all' ? 'border-brand-mid text-brand-mid' : 'border-transparent text-txt-tertiary hover:text-txt-secondary'}`}>
+                              All
                             </button>
-                            {hasAccessTo('intelligenceReport') && (
-                              <button onClick={() => {
-                                setModals(prev => ({ ...prev, showIntelligenceReport: true }));
-                                const currentLocId = (() => {
-                                  if (ui.currentLocation === 'All') return null;
-                                  const loc = locations.find(l => l.displayName === ui.currentLocation);
-                                  return loc ? loc.id : null;
-                                })();
-                                fetchIntelligenceReport(currentLocId);
-                              }} className="bg-brand-mid text-white px-4 py-2 rounded hover:bg-brand-dark transition-colors text-sm">
-                                View Intelligence Report
+                            {pp.summary.totalTransfers > 0 && (
+                              <button onClick={() => setReviewPipelineTab('redistribute')} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${reviewPipelineTab === 'redistribute' ? 'border-status-ok-text text-status-ok-text' : 'border-transparent text-txt-tertiary hover:text-txt-secondary'}`}>
+                                Redistribute
+                                <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${reviewPipelineTab === 'redistribute' ? 'bg-status-ok-bg text-status-ok-text' : 'bg-btn-secondary text-txt-tertiary'}`}>{pp.summary.totalTransfers}</span>
+                              </button>
+                            )}
+                            {pp.summary.totalOrderLines > 0 && (
+                              <button onClick={() => setReviewPipelineTab('order')} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${reviewPipelineTab === 'order' ? 'border-danger-solid text-danger-ghost-text' : 'border-transparent text-txt-tertiary hover:text-txt-secondary'}`}>
+                                Order
+                                <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${reviewPipelineTab === 'order' ? 'bg-danger-ghost-bg text-danger-ghost-text' : 'bg-btn-secondary text-txt-tertiary'}`}>{pp.summary.totalOrderLines}</span>
+                              </button>
+                            )}
+                            {pp.summary.totalAdjustments > 0 && (
+                              <button onClick={() => setReviewPipelineTab('adjustments')} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${reviewPipelineTab === 'adjustments' ? 'border-status-low-text text-status-low-text' : 'border-transparent text-txt-tertiary hover:text-txt-secondary'}`}>
+                                Adjust Min Levels
+                                <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${reviewPipelineTab === 'adjustments' ? 'bg-status-low-bg text-status-low-text' : 'bg-btn-secondary text-txt-tertiary'}`}>{pp.summary.totalAdjustments}</span>
                               </button>
                             )}
                           </div>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-lg font-medium text-txt-secondary">No medications currently need ordering</p>
-                          <p className="text-sm text-txt-tertiary mt-1">All medications are at or above minimum stock levels.</p>
-                          <button onClick={loadDraftOrders} className="mt-4 bg-btn-secondary text-txt-secondary px-4 py-2 rounded hover:bg-bdr-hover transition-colors text-sm">
+                        </div>
+
+                        {/* Refresh + View Full Report buttons */}
+                        <div className="px-4 py-2 flex items-center justify-between bg-white border-b border-bdr-default">
+                          <button onClick={loadReviewPipeline} className="text-sm text-txt-tertiary hover:text-txt-secondary transition-colors">
                             Refresh
                           </button>
-                        </>
-                      )}
-                    </div>
+                          <button onClick={() => {
+                            setModals(prev => ({ ...prev, showIntelligenceReport: true }));
+                            fetchIntelligenceReport(null);
+                          }} className="text-sm text-brand-mid hover:text-brand-dark transition-colors">
+                            View Full Intelligence Report
+                          </button>
+                        </div>
 
-                  ) : (
-                    <div>
-                      {/* Header */}
-                      <div className="p-3 sm:p-4 md:p-6 bg-status-ordered-bg border-b border-status-ordered-bg">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                          <div>
-                            <h3 className="font-semibold text-status-ordered-text text-lg">
-                              Purchase Order Review — {draftOrders.drafts.length} item{draftOrders.drafts.length !== 1 ? 's' : ''}
-                            </h3>
-                            <p className="text-sm text-status-ordered-text mt-0.5">
-                              {draftOrders.summary?.urgent > 0 && <span className="font-medium">{draftOrders.summary.urgent} urgent</span>}
-                              {draftOrders.summary?.urgent > 0 && draftOrders.summary?.routine > 0 && ', '}
-                              {draftOrders.summary?.routine > 0 && <span>{draftOrders.summary.routine} routine</span>}
-                            </p>
+                        {/* Pipeline Step 1: Redistribute */}
+                        {(reviewPipelineTab === 'all' || reviewPipelineTab === 'redistribute') && pp.transfers.length > 0 && (
+                          <div className="p-4">
+                            <div className="bg-status-ok-bg border-l-4 border-status-ok-text p-4 mb-4 rounded-r">
+                              <div className="flex items-center justify-between flex-wrap gap-2">
+                                <div>
+                                  <h3 className="text-base font-bold text-status-ok-text flex items-center">
+                                    <span className="bg-status-ok-text text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-2">1</span>
+                                    Redistribute Stock — {pp.transfers.length} Transfer{pp.transfers.length !== 1 ? 's' : ''}
+                                  </h3>
+                                  <p className="text-sm text-status-ok-text mt-1">{pp.summary.totalBoxesRedistributed} boxes can be moved from surplus to deficit locations (FEFO)</p>
+                                </div>
+                                {pp.transfers.length > 1 && (
+                                  <button
+                                    onClick={async () => {
+                                      if (!confirm(`Execute all ${pp.transfers.length} recommended transfers?`)) return;
+                                      const currentUser = getCurrentUserInfo();
+                                      for (const t of pp.transfers) {
+                                        try {
+                                          await window.api.transferStock({
+                                            userId: currentUser?.id,
+                                            batchId: t.batchId,
+                                            sourceLocationId: t.sourceLoc,
+                                            targetLocationId: t.targetLoc,
+                                            quantity: t.quantity,
+                                            reason: 'Intelligence-recommended redistribution (FEFO)',
+                                            medicationName: t.medicationName,
+                                            batchCode: t.batchCode
+                                          });
+                                        } catch (err) {
+                                          alert(`Transfer failed for ${t.medicationName}: ${err.message}`);
+                                          break;
+                                        }
+                                      }
+                                      const data = await window.api.fetchAllData();
+                                      setMedications(data.medications || []);
+                                      setTransactions(data.transactions || []);
+                                      setLocations(data.locations || []);
+                                      loadReviewPipeline();
+                                    }}
+                                    className="px-4 py-1.5 bg-status-ok-text text-white text-sm font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
+                                  >
+                                    Execute All Transfers
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="bg-white rounded-lg border border-bdr-default overflow-hidden">
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                  <thead className="bg-off-white">
+                                    <tr>
+                                      <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Medication</th>
+                                      <th className="px-4 py-3 text-left font-semibold text-txt-secondary">From</th>
+                                      <th className="px-4 py-3 text-left font-semibold text-txt-secondary">To</th>
+                                      <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Batch Expiry</th>
+                                      <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Qty</th>
+                                      <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Action</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-bdr-default">
+                                    {pp.transfers.map((t, i) => (
+                                      <tr key={`${t.batchId}-${t.sourceLoc}-${t.targetLoc}-${i}`} className="hover:bg-off-white">
+                                        <td className="px-4 py-3 font-medium text-near-black">{t.medicationName}</td>
+                                        <td className="px-4 py-3 text-txt-secondary">{t.sourceLocName}</td>
+                                        <td className="px-4 py-3 text-txt-secondary">{t.targetLocName}</td>
+                                        <td className="px-4 py-3 text-center">
+                                          {t.expiryDate ? (
+                                            <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                              new Date(t.expiryDate) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+                                                ? 'bg-status-expired-bg text-status-expired-text'
+                                                : 'bg-off-white text-txt-secondary'
+                                            }`}>
+                                              {new Date(t.expiryDate).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
+                                            </span>
+                                          ) : <span className="text-txt-disabled">-</span>}
+                                        </td>
+                                        <td className="px-4 py-3 text-center font-semibold text-near-black">{t.quantityBoxes} {t.quantityBoxes === 1 ? 'box' : 'boxes'}</td>
+                                        <td className="px-4 py-3 text-center">
+                                          <button
+                                            onClick={async () => {
+                                              const currentUser = getCurrentUserInfo();
+                                              try {
+                                                await window.api.transferStock({
+                                                  userId: currentUser?.id,
+                                                  batchId: t.batchId,
+                                                  sourceLocationId: t.sourceLoc,
+                                                  targetLocationId: t.targetLoc,
+                                                  quantity: t.quantity,
+                                                  reason: 'Intelligence-recommended redistribution (FEFO)',
+                                                  medicationName: t.medicationName,
+                                                  batchCode: t.batchCode
+                                                });
+                                                const data = await window.api.fetchAllData();
+                                                setMedications(data.medications || []);
+                                                setTransactions(data.transactions || []);
+                                                setLocations(data.locations || []);
+                                                loadReviewPipeline();
+                                              } catch (err) {
+                                                alert(`Transfer failed: ${err.message}`);
+                                              }
+                                            }}
+                                            className="px-3 py-1 bg-status-ok-text text-white text-xs font-medium rounded hover:opacity-90 transition-colors"
+                                          >
+                                            Execute
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <button onClick={loadDraftOrders} className="bg-white text-status-ordered-text border border-status-ordered-text px-3 py-1.5 rounded text-sm hover:bg-status-ordered-bg transition-colors">
+                        )}
+
+                        {/* Pipeline Step 2: Order Stock */}
+                        {(reviewPipelineTab === 'all' || reviewPipelineTab === 'order') && pp.orders.length > 0 && (
+                          <div className="p-4">
+                            <div className="bg-danger-ghost-bg border-l-4 border-danger-solid p-4 mb-4 rounded-r">
+                              <h3 className="text-base font-bold text-danger-ghost-text flex items-center">
+                                <span className="bg-danger-solid text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-2">2</span>
+                                Order Stock — {pp.orders.length} Medication{pp.orders.length !== 1 ? 's' : ''} Need Ordering
+                              </h3>
+                              <p className="text-sm text-danger-ghost-text mt-1">
+                                These shortfalls cannot be resolved by redistribution alone — {pp.summary.totalBoxesToOrder} boxes need ordering
+                              </p>
+                            </div>
+
+                            {/* Pharmacist Email */}
+                            <div className="px-4 py-3 mb-3 border border-bdr-default rounded-lg bg-off-white">
+                              <div className="flex items-center gap-2">
+                                <label className="text-sm font-medium text-txt-secondary whitespace-nowrap">Send order to:</label>
+                                <input
+                                  type="email"
+                                  value={draftOrders.pharmacistEmail}
+                                  onChange={(e) => setDraftOrders(prev => ({ ...prev, pharmacistEmail: e.target.value }))}
+                                  className="flex-1 max-w-xs px-3 py-1.5 border border-bdr-default rounded text-sm focus:ring-2 focus:ring-brand-mid focus:border-transparent"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="bg-white rounded-lg border border-bdr-default overflow-hidden">
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                  <thead className="bg-off-white">
+                                    <tr>
+                                      <th className="px-3 py-2 text-left w-10">
+                                        <input type="checkbox" checked={pipelineOrderSelections.size === pp.orders.length && pp.orders.length > 0} onChange={() => toggleAllPipelineOrders(pp.orders.length)} className="rounded" />
+                                      </th>
+                                      <th className="px-3 py-2 text-left text-xs font-semibold text-txt-tertiary uppercase">Medication</th>
+                                      <th className="px-3 py-2 text-left text-xs font-semibold text-txt-tertiary uppercase">Location</th>
+                                      <th className="px-3 py-2 text-center text-xs font-semibold text-txt-tertiary uppercase">Current</th>
+                                      <th className="px-3 py-2 text-center text-xs font-semibold text-txt-tertiary uppercase">Target Min</th>
+                                      <th className="px-3 py-2 text-center text-xs font-semibold text-txt-tertiary uppercase">Order Qty</th>
+                                      <th className="px-3 py-2 text-center text-xs font-semibold text-txt-tertiary uppercase">Urgency</th>
+                                      <th className="px-3 py-2 text-center text-xs font-semibold text-txt-tertiary uppercase">Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-bdr-default">
+                                    {pp.orders.map((o, i) => (
+                                      <tr key={`${o.medicationId}-${o.locationId}-${i}`} className={`hover:bg-off-white ${pipelineOrderSelections.has(i) ? 'bg-brand-pale' : ''}`}>
+                                        <td className="px-3 py-2">
+                                          <input type="checkbox" checked={pipelineOrderSelections.has(i)} onChange={() => togglePipelineOrderSelection(i)} className="rounded" />
+                                        </td>
+                                        <td className="px-3 py-2 font-medium text-near-black">{o.medicationName}</td>
+                                        <td className="px-3 py-2 text-txt-secondary">{o.locationName}</td>
+                                        <td className="px-3 py-2 text-center">
+                                          <span className="px-2 py-1 rounded text-xs font-semibold bg-status-critical-bg text-status-critical-text">
+                                            {o.currentSimulatedBoxes} boxes
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2 text-center text-txt-secondary">{o.suggestedMinLevel} boxes</td>
+                                        <td className="px-3 py-2 text-center">
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            value={pipelineOrderAdjustments[i] != null ? pipelineOrderAdjustments[i] : o.orderQuantityBoxes}
+                                            onChange={(e) => setPipelineOrderAdjustments(prev => ({ ...prev, [i]: parseInt(e.target.value) || 0 }))}
+                                            className="w-16 px-2 py-1 border border-bdr-default rounded text-sm text-center focus:ring-2 focus:ring-brand-mid focus:border-transparent"
+                                          />
+                                          <span className="text-xs text-txt-tertiary ml-1">boxes</span>
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
+                                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                            o.urgency === 'urgent' ? 'bg-status-critical-bg text-status-critical-text' : 'bg-status-ordered-bg text-status-ordered-text'
+                                          }`}>
+                                            {o.urgency === 'urgent' ? 'URGENT' : 'ROUTINE'}
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
+                                          {o.existingPendingOrder ? (
+                                            <span className="px-2 py-1 rounded text-xs font-medium bg-status-ordered-bg text-status-ordered-text">
+                                              Order Pending
+                                            </span>
+                                          ) : (
+                                            <span className="text-xs text-txt-disabled">New</span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {/* Order action buttons */}
+                              <div className="px-4 py-3 border-t border-bdr-default bg-off-white flex flex-wrap gap-2 items-center">
+                                <button
+                                  onClick={handleCreatePipelineOrders}
+                                  className="bg-brand-mid text-white px-4 py-2 rounded text-sm font-medium hover:bg-brand-dark transition-colors"
+                                >
+                                  Create Purchase Order ({pipelineOrderSelections.size})
+                                </button>
+                                <span className="text-xs text-txt-tertiary ml-auto">
+                                  {pipelineOrderSelections.size} of {pp.orders.length} selected
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Pipeline Step 3: Adjust Min Levels */}
+                        {(reviewPipelineTab === 'all' || reviewPipelineTab === 'adjustments') && pp.adjustments.length > 0 && (
+                          <div className="p-4">
+                            <div className="bg-status-low-bg border-l-4 border-status-low-text p-4 mb-4 rounded-r">
+                              <div className="flex items-center justify-between flex-wrap gap-2">
+                                <div>
+                                  <h3 className="text-base font-bold text-status-low-text flex items-center">
+                                    <span className="bg-status-low-text text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-2">3</span>
+                                    Adjust Minimum Levels — {pp.adjustments.length} Change{pp.adjustments.length !== 1 ? 's' : ''}
+                                  </h3>
+                                  <p className="text-sm text-status-low-text mt-1">Align minimum stock levels with actual usage patterns</p>
+                                </div>
+                                {pp.adjustments.length > 1 && (
+                                  <button
+                                    onClick={async () => {
+                                      if (!confirm(`Apply all ${pp.adjustments.length} min level adjustments?`)) return;
+                                      for (const adj of pp.adjustments) {
+                                        await applyMinLevelRecommendation(
+                                          adj.medicationId, adj.locationId, adj.suggestedMinLevel,
+                                          adj.medicationName, adj.currentMinLevel, adj.locationName
+                                        );
+                                      }
+                                      loadReviewPipeline();
+                                    }}
+                                    className="px-4 py-1.5 bg-status-low-text text-white text-sm font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
+                                  >
+                                    Apply All ({pp.adjustments.length})
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="bg-white rounded-lg border border-bdr-default overflow-hidden">
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                  <thead className="bg-off-white">
+                                    <tr>
+                                      <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Medication</th>
+                                      <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Location</th>
+                                      <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Current Min</th>
+                                      <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Suggested Min</th>
+                                      <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Change</th>
+                                      <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Action</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-bdr-default">
+                                    {pp.adjustments.map((adj, i) => (
+                                      <tr key={`${adj.medicationId}-${adj.locationId}-${i}`} className="hover:bg-off-white">
+                                        <td className="px-4 py-3 font-medium text-near-black">{adj.medicationName}</td>
+                                        <td className="px-4 py-3 text-txt-secondary">{adj.locationName}</td>
+                                        <td className="px-4 py-3 text-center text-txt-secondary">{adj.currentMinLevel} boxes</td>
+                                        <td className="px-4 py-3 text-center font-semibold text-near-black">{adj.suggestedMinLevel} boxes</td>
+                                        <td className="px-4 py-3 text-center">
+                                          <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                            adj.direction === 'decrease' ? 'bg-status-ok-bg text-status-ok-text' : 'bg-status-expired-bg text-status-expired-text'
+                                          }`}>
+                                            {adj.direction === 'decrease' ? '-' : '+'}{adj.changeBoxes} {adj.changeBoxes === 1 ? 'box' : 'boxes'}
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                          <button
+                                            onClick={() => {
+                                              applyMinLevelRecommendation(
+                                                adj.medicationId, adj.locationId, adj.suggestedMinLevel,
+                                                adj.medicationName, adj.currentMinLevel, adj.locationName
+                                              );
+                                            }}
+                                            className="px-3 py-1 bg-brand-mid text-white text-xs font-medium rounded hover:bg-brand-dark transition-colors"
+                                          >
+                                            Apply
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* All optimal — no actions needed */}
+                        {pp.summary.totalTransfers === 0 && pp.summary.totalOrderLines === 0 && pp.summary.totalAdjustments === 0 && (
+                          <div className="p-8 text-center">
+                            <div className="text-4xl mb-3">&#10003;</div>
+                            <h3 className="text-lg font-bold text-status-ok-text mb-2">Stock Levels Are Optimal</h3>
+                            <p className="text-sm text-status-ok-text">No redistribution, orders, or min level adjustments are needed at this time.</p>
+                            <button onClick={loadReviewPipeline} className="mt-4 bg-btn-secondary text-txt-secondary px-4 py-2 rounded hover:bg-bdr-hover transition-colors text-sm">
                               Refresh
                             </button>
                           </div>
-                        </div>
-                      </div>
-
-                      {/* Pharmacist Email */}
-                      <div className="px-4 py-3 border-b border-bdr-default bg-off-white">
-                        <div className="flex items-center gap-2">
-                          <label className="text-sm font-medium text-txt-secondary whitespace-nowrap">Send to:</label>
-                          <input
-                            type="email"
-                            value={draftOrders.pharmacistEmail}
-                            onChange={(e) => setDraftOrders(prev => ({ ...prev, pharmacistEmail: e.target.value }))}
-                            className="flex-1 max-w-xs px-3 py-1.5 border border-bdr-default rounded text-sm focus:ring-2 focus:ring-brand-mid focus:border-transparent"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Review Table */}
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead className="bg-off-white">
-                            <tr>
-                              <th className="px-3 py-2 text-left w-10">
-                                <input type="checkbox" checked={draftSelections.size === draftOrders.drafts.length && draftOrders.drafts.length > 0} onChange={toggleAllDrafts} className="rounded" />
-                              </th>
-                              <th className="px-3 py-2 text-left text-xs font-semibold text-txt-tertiary uppercase">Medication</th>
-                              <th className="px-3 py-2 text-left text-xs font-semibold text-txt-tertiary uppercase">Location</th>
-                              <th className="px-3 py-2 text-center text-xs font-semibold text-txt-tertiary uppercase">Stock</th>
-                              <th className="px-3 py-2 text-center text-xs font-semibold text-txt-tertiary uppercase">Min</th>
-                              <th className="px-3 py-2 text-center text-xs font-semibold text-txt-tertiary uppercase">Order Qty</th>
-                              <th className="px-3 py-2 text-center text-xs font-semibold text-txt-tertiary uppercase">Urgency</th>
-                              <th className="px-3 py-2 text-center text-xs font-semibold text-txt-tertiary uppercase">Trend</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-bdr-default">
-                            {draftOrders.drafts.map(draft => (
-                              <tr key={draft.id} className={`hover:bg-off-white ${draftSelections.has(draft.id) ? 'bg-brand-pale' : ''}`}>
-                                <td className="px-3 py-2">
-                                  <input type="checkbox" checked={draftSelections.has(draft.id)} onChange={() => toggleDraftSelection(draft.id)} className="rounded" />
-                                </td>
-                                <td className="px-3 py-2 text-sm text-near-black font-medium">{draft.medicationName}</td>
-                                <td className="px-3 py-2 text-sm text-txt-secondary">{draft.locationName || 'All Locations'}</td>
-                                <td className="px-3 py-2 text-sm text-center">
-                                  <span className={`font-semibold ${draft.currentStockBoxes === 0 ? 'text-danger-ghost-text' : 'text-status-low-text'}`}>
-                                    {draft.currentStockBoxes}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-2 text-sm text-txt-tertiary text-center">{draft.minLevelBoxes}</td>
-                                <td className="px-3 py-2 text-center">
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    value={draftAdjustments[draft.id] != null ? draftAdjustments[draft.id] : draft.suggestedQuantity}
-                                    onChange={(e) => setDraftAdjustments(prev => ({ ...prev, [draft.id]: parseInt(e.target.value) || 0 }))}
-                                    className="w-16 px-2 py-1 border border-bdr-default rounded text-sm text-center focus:ring-2 focus:ring-brand-mid focus:border-transparent"
-                                  />
-                                  <span className="text-xs text-txt-tertiary ml-1">boxes</span>
-                                </td>
-                                <td className="px-3 py-2 text-center">
-                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                                    draft.urgency === 'urgent'
-                                      ? 'bg-status-critical-bg text-status-critical-text'
-                                      : 'bg-status-ordered-bg text-status-ordered-text'
-                                  }`}>
-                                    {draft.urgency}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-2 text-center">
-                                  {draft.intelligenceSnapshot?.usageTrend && draft.intelligenceSnapshot.usageTrend !== 'insufficient_data' && (
-                                    <span className={`text-xs font-medium ${
-                                      draft.intelligenceSnapshot.usageTrend === 'increasing' ? 'text-status-critical-text' :
-                                      draft.intelligenceSnapshot.usageTrend === 'decreasing' ? 'text-status-ok-text' :
-                                      'text-txt-tertiary'
-                                    }`}>
-                                      {draft.intelligenceSnapshot.usageTrend === 'increasing' ? 'Rising' :
-                                       draft.intelligenceSnapshot.usageTrend === 'decreasing' ? 'Falling' : 'Stable'}
-                                      {draft.intelligenceSnapshot.confidence > 0 && (
-                                        <span className="text-txt-disabled ml-1">({Math.round(draft.intelligenceSnapshot.confidence * 100)}%)</span>
-                                      )}
-                                    </span>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Action Buttons */}
-                      <div className="px-4 py-3 border-t border-bdr-default bg-off-white flex flex-wrap gap-2 items-center">
-                        <button
-                          onClick={() => handleApproveDrafts('all')}
-                          className="bg-status-ok-text text-white px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
-                        >
-                          Approve All ({draftOrders.drafts.length})
-                        </button>
-                        {draftSelections.size > 0 && (
-                          <>
-                            <button
-                              onClick={() => handleApproveDrafts('selected')}
-                              className="bg-brand-mid text-white px-4 py-2 rounded text-sm font-medium hover:bg-brand-dark transition-colors"
-                            >
-                              Approve Selected ({draftSelections.size})
-                            </button>
-                            <button
-                              onClick={handleRejectDrafts}
-                              className="bg-danger-ghost-text text-white px-4 py-2 rounded text-sm font-medium hover:opacity-90 transition-colors"
-                            >
-                              Reject Selected ({draftSelections.size})
-                            </button>
-                          </>
                         )}
-                        <span className="text-xs text-txt-tertiary ml-auto">
-                          {draftSelections.size} of {draftOrders.drafts.length} selected
-                        </span>
-                      </div>
+                        </>
+                      )}
                     </div>
-                  )}
+                    );
+                  })()}
                     </>
                   )}
                 </>
