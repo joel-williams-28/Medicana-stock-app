@@ -120,6 +120,7 @@ window.api = (function () {
       return out;
     },
     actionDraftOrders:    (payload)  => postJSON('/.netlify/functions/draft-orders-action', payload),
+    seedDemoData:         (payload)  => postJSON('/.netlify/functions/seed-demo-data', payload || {}),
     fetchIntelligenceReport,
     getIntelligenceConfig,
     fetchActivityLog,

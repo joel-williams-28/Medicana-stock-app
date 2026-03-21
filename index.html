@@ -5045,6 +5045,27 @@ Medicana Stock Management System`;
                             Export Simple Report
                           </button>
                         )}
+                        {getUserRole() === 'Administrator' && (
+                          <button
+                            onClick={async () => {
+                              if (!confirm('This will populate the database with demo data (20 medications, 12 weeks of transactions, etc.). Proceed?')) return;
+                              try {
+                                setUi(prev => ({ ...prev, seedingDemo: true }));
+                                const result = await window.api.seedDemoData({ clean: true });
+                                alert(`Demo data seeded!\n\n${result.medications} medications\n${result.batches} batches\n${result.transactions} transactions\n${result.inventory} inventory rows\n${result.maturityWeeks} weeks of history\n\nRefreshing...`);
+                                window.location.reload();
+                              } catch (err) {
+                                alert('Seed failed: ' + err.message);
+                              } finally {
+                                setUi(prev => ({ ...prev, seedingDemo: false }));
+                              }
+                            }}
+                            disabled={ui.seedingDemo}
+                            className="flex items-center bg-status-ordered-text text-white px-4 py-2 rounded hover:opacity-90 transition-colors text-sm ml-2"
+                          >
+                            {ui.seedingDemo ? 'Seeding...' : 'Seed Demo Data'}
+                          </button>
+                        )}
                     </div>
                   </div>
 
