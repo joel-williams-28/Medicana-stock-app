@@ -800,6 +800,7 @@
         const [intelligenceReport, setIntelligenceReport] = useState({
           loading: false, data: null, error: null
         });
+        const [intelligenceTab, setIntelligenceTab] = useState('all'); // 'all' | 'critical' | 'optimise'
 
         // Session timeout management
         const [sessionTimeout, setSessionTimeout] = useState({
@@ -7491,7 +7492,7 @@ Medicana Stock Management System`;
                             return loc ? loc.id : '';
                           })()}
                           onChange={(e) => {
-                            const locId = e.target.value ? parseInt(e.target.value) : null;
+                            const locId = e.target.value || null;
                             fetchIntelligenceReport(locId);
                           }}
                           className="px-3 py-1.5 rounded text-sm bg-white text-near-black border-0 focus:ring-2 focus:ring-brand-light"
@@ -7604,9 +7605,59 @@ Medicana Stock Management System`;
                             </div>
                             <div className="bg-white p-4 rounded-lg border-2 border-status-low-bg shadow-sm">
                               <div className="text-2xl font-bold text-status-low-text">{optimizeMeds.length}</div>
-                              <div className="text-sm text-txt-tertiary">Can Be Optimized</div>
+                              <div className="text-sm text-txt-tertiary">Can Be Optimised</div>
                             </div>
                           </div>
+
+                          {/* Section Tab Navigation */}
+                          {(criticalMeds.length > 0 || optimizeMeds.length > 0) && report.maturityLevel !== 'not_configured' && report.maturityLevel !== 'collecting' && (
+                            <div className="sticky top-0 z-10 bg-off-white -mx-6 px-6 pt-2 pb-0 border-b border-bdr-default mb-4">
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={() => setIntelligenceTab('all')}
+                                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                                    intelligenceTab === 'all'
+                                      ? 'border-brand-mid text-brand-mid'
+                                      : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'
+                                  }`}
+                                >
+                                  All
+                                </button>
+                                {criticalMeds.length > 0 && (
+                                  <button
+                                    onClick={() => setIntelligenceTab('critical')}
+                                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+                                      intelligenceTab === 'critical'
+                                        ? 'border-danger-solid text-danger-ghost-text'
+                                        : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'
+                                    }`}
+                                  >
+                                    <AlertTriangle className="w-3.5 h-3.5" />
+                                    Requiring Attention
+                                    <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${
+                                      intelligenceTab === 'critical' ? 'bg-danger-ghost-bg text-danger-ghost-text' : 'bg-btn-secondary text-txt-tertiary'
+                                    }`}>{criticalMeds.length}</span>
+                                  </button>
+                                )}
+                                {optimizeMeds.length > 0 && (
+                                  <button
+                                    onClick={() => setIntelligenceTab('optimise')}
+                                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+                                      intelligenceTab === 'optimise'
+                                        ? 'border-status-low-text text-status-low-text'
+                                        : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'
+                                    }`}
+                                  >
+                                    <TrendingUp className="w-3.5 h-3.5" style={{transform: 'rotate(180deg)'}} />
+                                    Can Be Optimised
+                                    <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${
+                                      intelligenceTab === 'optimise' ? 'bg-status-low-bg text-status-low-text' : 'bg-btn-secondary text-txt-tertiary'
+                                    }`}>{optimizeMeds.length}</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
 
                           {/* No Recommendations Yet */}
                           {(report.maturityLevel === 'not_configured' || report.maturityLevel === 'collecting') && (
@@ -7624,7 +7675,7 @@ Medicana Stock Management System`;
                           )}
 
                           {/* Critical Medications */}
-                          {criticalMeds.length > 0 && (
+                          {criticalMeds.length > 0 && (intelligenceTab === 'all' || intelligenceTab === 'critical') && (
                             <div className="mb-6">
                               <div className="bg-danger-ghost-bg border-l-4 border-danger-solid p-4 mb-4">
                                 <h3 className="text-lg font-bold text-danger-ghost-text flex items-center">
@@ -7642,13 +7693,18 @@ Medicana Stock Management System`;
                                         <div>
                                           <h4 className="font-bold text-near-black text-lg">{med.medicationName}</h4>
                                           <p className="text-xs text-txt-tertiary mt-0.5">{med.locationName}</p>
-                                          <div className="flex gap-4 mt-2 text-sm">
+                                          <div className="flex flex-wrap gap-2 mt-2 text-sm">
                                             <span className={`px-2 py-1 rounded ${med.currentBoxes < med.currentMinLevel ? 'bg-status-critical-bg text-status-critical-text font-semibold' : 'bg-status-ok-bg text-status-ok-text'}`}>
                                               Current: {med.currentBoxes} boxes
                                             </span>
                                             <span className="px-2 py-1 rounded bg-off-white text-near-black">
                                               Min Level: {med.currentMinLevel} boxes
                                             </span>
+                                            {med.projectedStockoutDate && (
+                                              <span className="px-2 py-1 rounded bg-danger-ghost-bg text-danger-ghost-text font-semibold">
+                                                Projected stock-out: {new Date(med.projectedStockoutDate).toLocaleDateString('en-GB')}
+                                              </span>
+                                            )}
                                           </div>
                                         </div>
                                         <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
@@ -7706,10 +7762,43 @@ Medicana Stock Management System`;
                                               )}
                                             </div>
                                             <div className="text-sm text-txt-secondary mb-2">{med.recommendation.reason}</div>
-                                            {med.recommendation.action !== 'maintain' && med.recommendation.action !== 'collecting_data' && med.recommendation.action !== 'not_configured' && med.recommendation.suggestedMinLevel !== med.currentMinLevel && (
+                                            {/* Explicit recommendation actions */}
+                                            {med.recommendation.action === 'order' && (
+                                              <div className="space-y-2">
+                                                <div className="flex items-center gap-2">
+                                                  <span className="text-sm font-semibold text-danger-ghost-text">
+                                                    Order {Math.max(1, med.currentMinLevel - med.currentBoxes)} {Math.max(1, med.currentMinLevel - med.currentBoxes) === 1 ? 'box' : 'boxes'} to reach minimum level of {med.currentMinLevel}
+                                                  </span>
+                                                </div>
+                                                {med.recommendation.secondaryAction && (
+                                                  <div className="bg-status-low-bg p-2 rounded border border-status-low-text mt-1">
+                                                    <div className="flex items-center gap-2">
+                                                      <span className="text-sm font-semibold text-status-low-text">
+                                                        Also: Reduce minimum level from {med.currentMinLevel} to {med.recommendation.secondaryAction.suggestedMinLevel} {med.recommendation.secondaryAction.suggestedMinLevel === 1 ? 'box' : 'boxes'} to optimise held stock
+                                                      </span>
+                                                      <button
+                                                        onClick={() => applyMinLevelRecommendation(
+                                                          med.medicationId,
+                                                          med.locationId,
+                                                          med.recommendation.secondaryAction.suggestedMinLevel,
+                                                          med.medicationName,
+                                                          med.currentMinLevel,
+                                                          med.locationName
+                                                        )}
+                                                        className="px-3 py-1 bg-status-low-text text-white text-xs font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
+                                                      >
+                                                        Apply Reduction
+                                                      </button>
+                                                    </div>
+                                                    <div className="text-xs text-status-low-text mt-1">{med.recommendation.secondaryAction.reason}</div>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
+                                            {med.recommendation.action === 'increase' && med.recommendation.suggestedMinLevel !== med.currentMinLevel && (
                                               <div className="flex items-center gap-3">
                                                 <span className="text-sm font-semibold text-brand-deepest">
-                                                  Suggested: {med.recommendation.suggestedMinLevel} {med.recommendation.suggestedMinLevel === 1 ? 'box' : 'boxes'}
+                                                  Increase minimum level from {med.currentMinLevel} to {med.recommendation.suggestedMinLevel} {med.recommendation.suggestedMinLevel === 1 ? 'box' : 'boxes'}
                                                 </span>
                                                 <button
                                                   onClick={() => applyMinLevelRecommendation(
@@ -7720,9 +7809,9 @@ Medicana Stock Management System`;
                                                     med.currentMinLevel,
                                                     med.locationName
                                                   )}
-                                                  className="px-3 py-1 bg-brand-mid text-white text-xs font-medium rounded hover:bg-brand-dark transition-colors"
+                                                  className="px-3 py-1 bg-brand-mid text-white text-xs font-medium rounded hover:bg-brand-dark transition-colors whitespace-nowrap"
                                                 >
-                                                  Apply Recommendation
+                                                  Apply Min Level Change
                                                 </button>
                                               </div>
                                             )}
@@ -7736,14 +7825,37 @@ Medicana Stock Management System`;
                             </div>
                           )}
 
-                          {/* Optimization Opportunities */}
-                          {optimizeMeds.length > 0 && (
+                          {/* Optimisation Opportunities */}
+                          {optimizeMeds.length > 0 && (intelligenceTab === 'all' || intelligenceTab === 'optimise') && (
                             <div className="mb-6">
                               <div className="bg-status-low-bg border-l-4 border-status-low-text p-4 mb-4">
-                                <h3 className="text-lg font-bold text-status-low-text">
-                                  Optimization: {optimizeMeds.length} Medication{optimizeMeds.length !== 1 ? 's' : ''} With Excess Stock
-                                </h3>
-                                <p className="text-sm text-status-low-text">Consider reducing minimum levels to optimize inventory</p>
+                                <div className="flex items-center justify-between flex-wrap gap-2">
+                                  <div>
+                                    <h3 className="text-lg font-bold text-status-low-text">
+                                      Optimisation: {optimizeMeds.length} Medication{optimizeMeds.length !== 1 ? 's' : ''} With Excess Stock
+                                    </h3>
+                                    <p className="text-sm text-status-low-text">
+                                      Reducing minimum levels would free up {optimizeMeds.reduce((sum, m) => sum + Math.max(0, m.currentMinLevel - m.recommendation.suggestedMinLevel), 0)} boxes of held stock across {optimizeMeds.length} medication{optimizeMeds.length !== 1 ? 's' : ''}
+                                    </p>
+                                  </div>
+                                  {optimizeMeds.filter(m => m.recommendation.suggestedMinLevel !== m.currentMinLevel).length > 1 && (
+                                    <button
+                                      onClick={async () => {
+                                        const applicableMeds = optimizeMeds.filter(m => m.recommendation.suggestedMinLevel !== m.currentMinLevel);
+                                        if (!confirm(`Apply all ${applicableMeds.length} optimisation recommendations? This will reduce minimum levels for ${applicableMeds.length} medication${applicableMeds.length !== 1 ? 's' : ''}.`)) return;
+                                        for (const med of applicableMeds) {
+                                          await applyMinLevelRecommendation(
+                                            med.medicationId, med.locationId, med.recommendation.suggestedMinLevel,
+                                            med.medicationName, med.currentMinLevel, med.locationName
+                                          );
+                                        }
+                                      }}
+                                      className="px-4 py-1.5 bg-status-low-text text-white text-sm font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
+                                    >
+                                      Apply All ({optimizeMeds.filter(m => m.recommendation.suggestedMinLevel !== m.currentMinLevel).length})
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                               <div className="space-y-3">
                                 {optimizeMeds.map(med => {
@@ -7788,7 +7900,7 @@ Medicana Stock Management System`;
                                         {med.recommendation.suggestedMinLevel !== med.currentMinLevel && (
                                           <div className="flex items-center gap-3 mt-2">
                                             <span className="text-sm font-semibold text-status-low-text">
-                                              Suggested: {med.recommendation.suggestedMinLevel} {med.recommendation.suggestedMinLevel === 1 ? 'box' : 'boxes'}
+                                              Reduce minimum level from {med.currentMinLevel} to {med.recommendation.suggestedMinLevel} {med.recommendation.suggestedMinLevel === 1 ? 'box' : 'boxes'} — {med.currentMinLevel - med.recommendation.suggestedMinLevel} fewer {med.currentMinLevel - med.recommendation.suggestedMinLevel === 1 ? 'box' : 'boxes'} held
                                             </span>
                                             <button
                                               onClick={() => applyMinLevelRecommendation(
@@ -7799,9 +7911,9 @@ Medicana Stock Management System`;
                                                 med.currentMinLevel,
                                                 med.locationName
                                               )}
-                                              className="px-3 py-1 bg-urgent text-white text-xs font-medium rounded hover:bg-urgent-hover transition-colors"
+                                              className="px-3 py-1 bg-status-low-text text-white text-xs font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
                                             >
-                                              Apply Recommendation
+                                              Apply Reduction
                                             </button>
                                           </div>
                                         )}
@@ -7904,12 +8016,25 @@ Medicana Stock Management System`;
                         {report && !isLoading && (
                           <button onClick={() => {
                             const reportText = `MEDICANA WINCHESTER - STOCK INTELLIGENCE REPORT\n\nGenerated: ${new Date().toLocaleString('en-GB')}\nBy: ${getCurrentUserInfo()?.fullName || auth.currentUser}\nData: ${report.weeksOfData} weeks | Maturity: ${maturity.label}\n\n` +
-                              `SUMMARY:\n- Tracked: ${allMeds.length}\n- Attention: ${criticalMeds.length}\n- Optimizable: ${optimizeMeds.length}\n\n` +
-                              (criticalMeds.length > 0 ? `CRITICAL:\n${criticalMeds.map(m =>
-                                `  ${m.medicationName} @ ${m.locationName}: ${m.recommendation.reason} (suggest ${m.recommendation.suggestedMinLevel} boxes)`
-                              ).join('\n')}\n\n` : '') +
-                              (optimizeMeds.length > 0 ? `OPTIMIZATION:\n${optimizeMeds.map(m =>
-                                `  ${m.medicationName} @ ${m.locationName}: ${m.recommendation.reason} (suggest ${m.recommendation.suggestedMinLevel} boxes)`
+                              `SUMMARY:\n- Tracked: ${allMeds.length}\n- Attention: ${criticalMeds.length}\n- Can Be Optimised: ${optimizeMeds.length}\n\n` +
+                              (criticalMeds.length > 0 ? `REQUIRING ATTENTION:\n${criticalMeds.map(m => {
+                                const lines = [`  ${m.medicationName} @ ${m.locationName}:`];
+                                if (m.recommendation.action === 'order') {
+                                  lines.push(`    Order ${Math.max(1, m.currentMinLevel - m.currentBoxes)} boxes to reach minimum level of ${m.currentMinLevel}`);
+                                } else if (m.recommendation.action === 'increase') {
+                                  lines.push(`    Increase minimum level from ${m.currentMinLevel} to ${m.recommendation.suggestedMinLevel} boxes`);
+                                }
+                                if (m.recommendation.secondaryAction) {
+                                  lines.push(`    Also: Reduce minimum level from ${m.currentMinLevel} to ${m.recommendation.secondaryAction.suggestedMinLevel} boxes to optimise held stock`);
+                                }
+                                if (m.projectedStockoutDate) {
+                                  lines.push(`    Projected stock-out: ${new Date(m.projectedStockoutDate).toLocaleDateString('en-GB')}`);
+                                }
+                                lines.push(`    ${m.recommendation.reason}`);
+                                return lines.join('\n');
+                              }).join('\n')}\n\n` : '') +
+                              (optimizeMeds.length > 0 ? `OPTIMISATION:\n${optimizeMeds.map(m =>
+                                `  ${m.medicationName} @ ${m.locationName}: Reduce minimum level from ${m.currentMinLevel} to ${m.recommendation.suggestedMinLevel} boxes (${m.recommendation.excessBoxes} fewer boxes held)\n    ${m.recommendation.reason}`
                               ).join('\n')}` : '');
                             navigator.clipboard.writeText(reportText).then(() => alert('Report copied to clipboard!'));
                           }} className="flex-1 bg-near-black text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium">

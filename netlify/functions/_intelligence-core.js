@@ -267,6 +267,40 @@ function analyzeMedication(row, weeklyUsage, itemsPerBox) {
     }
   }
 
+  // Secondary action: if ordering AND min level is too high, suggest reducing it too
+  let secondaryAction = null;
+  if (action === 'order' && dataPoints >= 1 && currentMinLevel > 0 && suggestedMinLevel < currentMinLevel * 0.8) {
+    const recentHighUsage = weeklyUsage.slice(-4).some(w => {
+      const usageBoxes = itemsPerBox > 0 ? w.totalOut / itemsPerBox : 0;
+      return usageBoxes > currentMinLevel * 0.6;
+    });
+    if (!recentHighUsage) {
+      const pctDecrease = Math.round(((currentMinLevel - suggestedMinLevel) / currentMinLevel) * 100);
+      secondaryAction = {
+        action: 'decrease',
+        suggestedMinLevel,
+        reason: `Minimum level of ${currentMinLevel} boxes appears high for current usage (avg ${Math.round(avgWeeklyUsageBoxes * 10) / 10} boxes/week). Consider reducing to ${suggestedMinLevel} boxes (-${pctDecrease}%).`
+      };
+    }
+  }
+
+  // Projected stock-out date
+  let projectedStockoutDate = null;
+  const currentQuantity = Number(row.current_quantity);
+  if (avgWeeklyUsageItems > 0 && currentQuantity > 0) {
+    const weeksUntilStockout = currentQuantity / avgWeeklyUsageItems;
+    if (weeksUntilStockout < 8) {
+      const stockoutDate = new Date();
+      stockoutDate.setDate(stockoutDate.getDate() + Math.floor(weeksUntilStockout * 7));
+      projectedStockoutDate = stockoutDate.toISOString().slice(0, 10);
+    }
+  }
+
+  // Excess boxes for decrease recommendations
+  const excessBoxes = (action === 'decrease' || (secondaryAction && secondaryAction.action === 'decrease'))
+    ? Math.max(0, currentMinLevel - suggestedMinLevel)
+    : 0;
+
   return {
     medicationId: row.medication_id,
     medicationName: row.medication_name,
@@ -274,20 +308,23 @@ function analyzeMedication(row, weeklyUsage, itemsPerBox) {
     locationId: row.location_id,
     locationName: row.location_name,
     currentBoxes,
-    currentQuantity: Number(row.current_quantity),
+    currentQuantity,
     currentMinLevel,
     weeklyUsage,
     avgWeeklyUsage: Math.round(avgWeeklyUsageBoxes * 10) / 10,
     usageTrend,
     slope,
     itemsPerBox,
+    projectedStockoutDate,
     recommendation: {
       action,
       currentMinLevel,
       suggestedMinLevel,
       confidence: Math.round(confidence * 100) / 100,
       reason,
-      weeklyDataPoints: dataPoints
+      weeklyDataPoints: dataPoints,
+      secondaryAction,
+      excessBoxes
     }
   };
 }

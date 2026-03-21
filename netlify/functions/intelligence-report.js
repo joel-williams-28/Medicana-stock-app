@@ -14,7 +14,7 @@ exports.handler = async (event) => {
 
   try {
     const params = event.queryStringParameters || {};
-    const locationId = params.location_id ? parseInt(params.location_id) : null;
+    const locationId = params.location_id || null;
 
     // 1. Get maturity info
     const { goLiveDate, weeksOfData, maturityLevel } = await getMaturityInfo();
