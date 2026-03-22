@@ -12,6 +12,23 @@ const {
   runOptimisationPipeline
 } = require('./_intelligence-core');
 
+// Ensure pipeline_snapshots table exists (auto-create on first use)
+let snapshotsTableReady = false;
+async function ensureSnapshotsTable() {
+  if (snapshotsTableReady) return;
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS pipeline_snapshots (
+        id SERIAL PRIMARY KEY,
+        snapshot JSONB NOT NULL,
+        generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        generated_by INT4
+      )`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_pipeline_snapshots_generated_at ON pipeline_snapshots (generated_at DESC)`);
+    snapshotsTableReady = true;
+  } catch (_) { /* non-critical */ }
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'GET') return db.methodNotAllowed();
 
@@ -23,6 +40,7 @@ exports.handler = async (event) => {
     // For org-wide requests (no locationId), check for cached pipeline snapshot
     if (!locationId && !forceRegenerate) {
       try {
+        await ensureSnapshotsTable();
         const cached = await db.query(
           `SELECT snapshot, generated_at FROM pipeline_snapshots
            WHERE generated_at > NOW() - INTERVAL '7 days'
@@ -150,6 +168,7 @@ exports.handler = async (event) => {
       const snapshotData = { goLiveDate, weeksOfData, maturityLevel, medications, aggregated, pipeline };
       lastPipelineRun = new Date().toISOString();
       try {
+        await ensureSnapshotsTable();
         await db.query(
           `INSERT INTO pipeline_snapshots (snapshot, generated_at)
            VALUES ($1, $2)`,
