@@ -967,7 +967,12 @@
         // Auto-reload activity log when filters or user selection changes
         useEffect(() => {
           if (ui.activeTab === 'transactions') {
-            loadActivityLog(true);
+            if (activityLogFilters.length === 0) {
+              setActivityLog([]);
+              setActivityLogHasMore(false);
+            } else {
+              loadActivityLog(true);
+            }
           }
         }, [activityLogFilters, activityUserFilter]);
         useEffect(() => { storage.save('medicana_medication_filters', medicationFilters); }, [medicationFilters]);
@@ -2305,6 +2310,11 @@
 
       const loadActivityLog = async (reset = false) => {
         if (activityLogLoading) return;
+        if (activityLogFilters.length === 0) {
+          setActivityLog([]);
+          setActivityLogHasMore(false);
+          return;
+        }
         setActivityLogLoading(true);
         try {
           const params = {
