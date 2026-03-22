@@ -29,6 +29,36 @@ async function ensureSnapshotsTable() {
   } catch (_) { /* non-critical */ }
 }
 
+// Reconcile cached adjustments against current DB min levels.
+// Filters out adjustments that have already been applied (or manually changed).
+async function reconcileAdjustments(adjustments) {
+  if (!adjustments || adjustments.length === 0) return adjustments;
+
+  const medIds = adjustments.map(a => a.medicationId);
+  const locIds = adjustments.map(a => a.locationId);
+
+  const result = await db.query(`
+    SELECT t.m_id AS medication_id, t.l_id AS location_id,
+           COALESCE(lml.min_level_boxes, m.min_level_boxes, 0) AS current_min_level
+    FROM UNNEST($1::text[], $2::text[]) AS t(m_id, l_id)
+    JOIN medications m ON m.id = t.m_id
+    LEFT JOIN location_min_levels lml
+      ON lml.medication_id = t.m_id AND lml.location_id = t.l_id
+  `, [medIds, locIds]);
+
+  const currentLevels = {};
+  for (const row of result.rows) {
+    currentLevels[`${row.medication_id}-${row.location_id}`] = Number(row.current_min_level);
+  }
+
+  // Keep only adjustments where the DB still matches the snapshot's currentMinLevel
+  // (meaning the adjustment hasn't been applied yet)
+  return adjustments.filter(adj => {
+    const dbLevel = currentLevels[`${adj.medicationId}-${adj.locationId}`];
+    return dbLevel !== undefined && dbLevel === adj.currentMinLevel;
+  });
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'GET') return db.methodNotAllowed();
 
@@ -49,9 +79,20 @@ exports.handler = async (event) => {
         );
         if (cached.rows.length > 0) {
           const row = cached.rows[0];
+          const snapshot = row.snapshot;
+
+          // Reconcile adjustments against current DB state — filter out
+          // adjustments that have already been applied since the snapshot was generated
+          if (snapshot.pipeline && snapshot.pipeline.adjustments) {
+            snapshot.pipeline.adjustments = await reconcileAdjustments(snapshot.pipeline.adjustments);
+            if (snapshot.pipeline.summary) {
+              snapshot.pipeline.summary.totalAdjustments = snapshot.pipeline.adjustments.length;
+            }
+          }
+
           return db.json(200, {
             success: true,
-            ...row.snapshot,
+            ...snapshot,
             lastPipelineRun: row.generated_at.toISOString(),
             fromCache: true
           });
