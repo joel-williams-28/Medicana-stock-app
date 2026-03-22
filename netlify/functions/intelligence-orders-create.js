@@ -50,7 +50,7 @@ exports.handler = async (event) => {
           userId || null,
           quantityInItems,
           urgency || 'routine',
-          `Intelligence pipeline order${locationId ? ` for location ${locationId}` : ''}`,
+          `Intelligence pipeline order for Pharmacy${item.supplyDestinations?.length > 0 ? ' | Supplies: ' + item.supplyDestinations.map(d => d.locationName).join(', ') : ''}`,
           pharmacistEmail
         ]
       );
@@ -81,7 +81,8 @@ exports.handler = async (event) => {
         quantityItems: quantityInItems,
         urgency: urgency || 'routine',
         currentStock: item.currentSimulatedBoxes != null ? Number(item.currentSimulatedBoxes) : 0,
-        minLevel: item.suggestedMinLevel != null ? Number(item.suggestedMinLevel) : 0,
+        minLevel: item.pharmacyDerivedMin != null ? Number(item.pharmacyDerivedMin) : (item.suggestedMinLevel != null ? Number(item.suggestedMinLevel) : 0),
+        supplyDestinations: item.supplyDestinations || [],
         orderedAt: order.ordered_at
       });
     }
@@ -112,8 +113,13 @@ exports.handler = async (event) => {
     const routineItems = createdOrders.filter(o => o.urgency === 'routine');
     const nonUrgentItems = createdOrders.filter(o => o.urgency === 'non-urgent');
 
-    const formatItem = (o, idx) =>
-      `${idx + 1}. ${o.medicationName} - ${o.quantityBoxes} ${o.quantityBoxes === 1 ? 'box' : 'boxes'} (${o.quantityItems} items) - Current Stock: ${o.currentStock} boxes`;
+    const formatItem = (o, idx) => {
+      let line = `${idx + 1}. ${o.medicationName} - ${o.quantityBoxes} ${o.quantityBoxes === 1 ? 'box' : 'boxes'} (${o.quantityItems} items) - Current Stock: ${o.currentStock} boxes`;
+      if (o.supplyDestinations && o.supplyDestinations.length > 0) {
+        line += `\n   Supplies: ${o.supplyDestinations.map(d => `${d.locationName} (avg ${d.avgWeeklyUsage} boxes/wk)`).join(', ')}`;
+      }
+      return line;
+    };
 
     let body = `Dear Pharmacist,\n\nPlease find below the consolidated stock order for ${createdOrders.length} medication${createdOrders.length !== 1 ? 's' : ''}.\n\n`;
     body += `CONSOLIDATED STOCK ORDER\n========================\n\n`;
