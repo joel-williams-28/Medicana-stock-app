@@ -96,11 +96,21 @@ async function getStockLevels(locationId) {
 }
 
 /**
- * Get weekly transaction aggregates for usage analysis
+ * Get weekly transaction aggregates for usage analysis.
+ * Only counts actual patient/clinical usage — excludes transfers, deliveries,
+ * batch removals, and intelligence-recommended redistributions.
  */
 async function getWeeklyUsageData(locationId, weeksBack) {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - (weeksBack * 7));
+
+  // Exclude non-usage transactions by reason prefix
+  const usageFilter = `AND (t.reason IS NULL OR (
+          t.reason NOT LIKE 'Transfer%'
+          AND t.reason NOT LIKE 'Delivery%'
+          AND t.reason NOT LIKE 'Batch removed%'
+          AND t.reason NOT LIKE 'Intelligence-recommended%'
+        ))`;
 
   const txQuery = locationId
     ? `SELECT
@@ -113,6 +123,7 @@ async function getWeeklyUsageData(locationId, weeksBack) {
        WHERE t.medication_id IS NOT NULL
          AND t.location_id = $1
          AND t.occurred_at >= $2
+         ${usageFilter}
        GROUP BY t.medication_id, t.location_id, date_trunc('week', t.occurred_at)
        ORDER BY t.medication_id, t.location_id, week_start`
     : `SELECT
@@ -124,6 +135,7 @@ async function getWeeklyUsageData(locationId, weeksBack) {
        FROM transactions t
        WHERE t.medication_id IS NOT NULL
          AND t.occurred_at >= $1
+         ${usageFilter}
        GROUP BY t.medication_id, t.location_id, date_trunc('week', t.occurred_at)
        ORDER BY t.medication_id, t.location_id, week_start`;
 
