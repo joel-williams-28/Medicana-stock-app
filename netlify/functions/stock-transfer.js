@@ -21,6 +21,15 @@ exports.handler = async (event) => {
     const medicationName = body.medicationName;
     const batchCode = body.batchCode;
 
+    // Pipeline context (optional — passed by intelligence pipeline execution)
+    const pipelineContext = {};
+    if (body.pipelineStep) pipelineContext.pipelineStep = body.pipelineStep;
+    if (body.sourceStockBoxes != null) pipelineContext.sourceStockBoxes = body.sourceStockBoxes;
+    if (body.targetStockBoxes != null) pipelineContext.targetStockBoxes = body.targetStockBoxes;
+    if (body.sourceMinLevel != null) pipelineContext.sourceMinLevel = body.sourceMinLevel;
+    if (body.targetMinLevel != null) pipelineContext.targetMinLevel = body.targetMinLevel;
+    if (body.quantityBoxes != null) pipelineContext.quantityBoxes = body.quantityBoxes;
+
     const missing = [];
     if (!userId && userId !== 0) missing.push('userId');
     if (!batchId && batchId !== 0) missing.push('batchId');
@@ -133,7 +142,8 @@ exports.handler = async (event) => {
           sourceLocationName,
           targetLocationId,
           targetLocationName,
-          reason: reason || ''
+          reason: reason || '',
+          ...pipelineContext
         }
       });
 

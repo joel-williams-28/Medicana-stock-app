@@ -57,7 +57,7 @@ exports.handler = async (event) => {
 
       const order = orderResult.rows[0];
 
-      // Log activity
+      // Log activity with full pipeline context
       await logActivity({
         userId: userId || null,
         actionType: 'order_placed',
@@ -69,7 +69,10 @@ exports.handler = async (event) => {
           quantityBoxes,
           quantityInItems,
           urgency: urgency || 'routine',
-          source: 'intelligence_pipeline'
+          source: 'intelligence_pipeline',
+          currentSimulatedBoxes: item.currentSimulatedBoxes != null ? Number(item.currentSimulatedBoxes) : null,
+          pharmacyDerivedMin: item.pharmacyDerivedMin != null ? Number(item.pharmacyDerivedMin) : null,
+          supplyDestinations: item.supplyDestinations || []
         }
       });
 

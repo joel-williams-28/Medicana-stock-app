@@ -66,7 +66,16 @@ exports.handler = async (event) => {
     const params = event.queryStringParameters || {};
     const locationId = params.location_id || null;
     const forceRegenerate = params.force === 'true';
-    const saveSnapshot = params.nosave !== 'true'; // Skip snapshot save for Step 1 internal regeneration
+    const saveSnapshot = params.nosave !== 'true'; // Skip snapshot save for Step 1/2/3 internal regeneration
+    const useCurrentMinLevels = params.use_current_mins === 'true'; // Use DB min levels instead of suggested
+
+    // Check generation lock status
+    let lockedUntil = null;
+    try {
+      const lockResult = await db.query("SELECT value FROM intelligence_config WHERE key = 'pipeline_lock_until'");
+      if (lockResult.rows.length > 0) lockedUntil = lockResult.rows[0].value;
+    } catch (_) {}
+    const isLocked = lockedUntil && new Date(lockedUntil) > new Date();
 
     // For org-wide requests (no locationId), check for cached pipeline snapshot
     if (!locationId && !forceRegenerate) {
@@ -94,6 +103,7 @@ exports.handler = async (event) => {
             success: true,
             ...snapshot,
             lastPipelineRun: row.generated_at.toISOString(),
+            lockedUntil: lockedUntil || null,
             fromCache: true
           });
         }
@@ -203,8 +213,10 @@ exports.handler = async (event) => {
       }
 
       // Run optimisation pipeline (redistribute → order → adjust)
+      // When useCurrentMinLevels=true (mid-workflow regeneration after Step 1),
+      // use actual DB min levels instead of re-computed suggested levels
       const batchInventory = await getBatchInventory();
-      pipeline = runOptimisationPipeline(medications, batchInventory, pendingOrderMap);
+      pipeline = runOptimisationPipeline(medications, batchInventory, pendingOrderMap, useCurrentMinLevels);
 
       // Save pipeline snapshot to database for cross-device access
       // Skip save for internal regenerations (Step 1 advancement) — only save for
@@ -226,6 +238,14 @@ exports.handler = async (event) => {
              ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
             [lastPipelineRun]
           );
+          // Set 7-day generation lock
+          lockedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+          await db.query(
+            `INSERT INTO intelligence_config (key, value, updated_at)
+             VALUES ('pipeline_lock_until', $1, NOW())
+             ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+            [lockedUntil]
+          );
         } catch (_) { /* non-critical */ }
       }
     } else {
@@ -244,7 +264,8 @@ exports.handler = async (event) => {
       medications,
       aggregated,
       pipeline,
-      lastPipelineRun
+      lastPipelineRun,
+      lockedUntil: lockedUntil || null
     });
   } catch (e) {
     return db.serverError('intelligence-report', e);

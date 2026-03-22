@@ -394,8 +394,11 @@ async function getBatchInventory() {
  * 4. Calculate pharmacy's derived min level (1.5× hospital-wide mins)
  * 5. External orders for pharmacy only (with supply destination projections)
  */
-function runOptimisationPipeline(medications, batchInventory, pendingOrderMap = {}) {
+function runOptimisationPipeline(medications, batchInventory, pendingOrderMap = {}, useCurrentMinLevels = false) {
   // Step 1: Build min level map from already-analyzed medications
+  // When useCurrentMinLevels=true (mid-workflow regeneration after Step 1),
+  // use actual DB min levels as the target instead of re-computed suggestions.
+  // This ensures Steps 2-4 honour the levels the user applied in Step 1.
   const minLevelMap = {};
   for (const med of medications) {
     const key = `${med.medicationId}|${med.locationId}`;
@@ -406,7 +409,7 @@ function runOptimisationPipeline(medications, batchInventory, pendingOrderMap = 
       locationName: med.locationName,
       currentBoxes: med.currentBoxes,
       currentMinLevel: med.currentMinLevel,
-      suggestedMinLevel: med.recommendation.suggestedMinLevel,
+      suggestedMinLevel: useCurrentMinLevels ? med.currentMinLevel : med.recommendation.suggestedMinLevel,
       avgWeeklyUsage: med.avgWeeklyUsage,
       itemsPerBox: med.itemsPerBox,
       isPharmacy: med.locationId === PHARMACY_LOCATION_ID
