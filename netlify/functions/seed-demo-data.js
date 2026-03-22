@@ -167,8 +167,10 @@ async function seed(clean) {
 
     // ---- Clean (optional) ----
     if (clean) {
-      for (const t of ['activity_log', 'draft_orders', 'orders', 'transactions', 'inventory', 'batches', 'location_min_levels', 'medications', 'users', 'locations', 'intelligence_config']) {
-        await client.query(`DELETE FROM ${t}`);
+      for (const t of ['pipeline_snapshots', 'activity_log', 'draft_orders', 'orders', 'transactions', 'inventory', 'batches', 'location_min_levels', 'medications', 'users', 'locations', 'intelligence_config']) {
+        await client.query(`SAVEPOINT clean_${t}`);
+        try { await client.query(`DELETE FROM ${t}`); } catch (_) { await client.query(`ROLLBACK TO SAVEPOINT clean_${t}`); }
+        await client.query(`RELEASE SAVEPOINT clean_${t}`);
       }
     }
 
