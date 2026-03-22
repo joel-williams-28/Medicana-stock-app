@@ -317,9 +317,16 @@ async function seed(clean) {
         else invRows.push([locId, batches[0].batchId, onHand]);
       }
 
+      // Deduplicate by (location_id, batch_id) — last value wins
+      const invMap = new Map();
+      for (const r of invRows) {
+        invMap.set(`${r[0]}|${r[1]}`, r);
+      }
+      const dedupedInv = Array.from(invMap.values());
+
       // Bulk insert inventory
       const params = [];
-      const valueClauses = invRows.map((r, i) => {
+      const valueClauses = dedupedInv.map((r, i) => {
         params.push(r[0], r[1], Math.max(0, r[2]));
         return `($${i*3+1},$${i*3+2},$${i*3+3})`;
       });
@@ -328,7 +335,7 @@ async function seed(clean) {
          ON CONFLICT (location_id, batch_id) DO UPDATE SET on_hand = EXCLUDED.on_hand`,
         params
       );
-      stats.inventory = invRows.length;
+      stats.inventory = dedupedInv.length;
     }
 
     // ---- 6. Transactions — 12 weeks of history (bulk, chunked) ----
