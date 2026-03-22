@@ -454,6 +454,127 @@ async function seed(clean) {
       stats.pendingOrders = orders.length;
     }
 
+    // ---- 10. Activity log — mirror the seeded data ----
+    {
+      const actRows = []; // [user_id, action_type, entity_type, entity_id, location_id, details, occurred_at]
+
+      // Login entries — one per week for pharmacist
+      for (let weekOffset = WEEKS_OF_HISTORY; weekOffset >= 0; weekOffset--) {
+        const weekStart = new Date(TODAY);
+        weekStart.setDate(weekStart.getDate() - weekOffset * 7);
+        const ts = weekdayTs(weekStart, randomInt(0, 4));
+        actRows.push([pharmacistId, 'login', null, null, null, JSON.stringify({ ip: '10.0.1.' + randomInt(10, 250) }), ts]);
+      }
+
+      // Stock in/out — one summary entry per medication per location per week
+      for (let weekOffset = WEEKS_OF_HISTORY; weekOffset >= 0; weekOffset--) {
+        const weekStart = new Date(TODAY);
+        weekStart.setDate(weekStart.getDate() - weekOffset * 7);
+
+        for (const med of MEDICATIONS) {
+          const profile = USAGE_PROFILES[med.id] || {};
+          const batches = batchMap[med.id];
+          if (!batches || batches.length === 0) continue;
+          const batchId = batches[weekOffset % batches.length].batchId;
+
+          for (const [locId, baseUsage] of Object.entries(profile)) {
+            const weeksFromStart = WEEKS_OF_HISTORY - weekOffset;
+            const trendMultiplier = 1 + (med.trendRate * weeksFromStart);
+            const adjustedUsage = Math.max(1, Math.round(baseUsage * trendMultiplier));
+            const noise = 1 + (Math.random() * 0.3 - 0.15);
+            const weeklyUsage = Math.max(1, Math.round(adjustedUsage * noise));
+
+            // Stock out activity (usage)
+            actRows.push([
+              pharmacistId, 'stock_out', 'medication', med.id, locId,
+              JSON.stringify({ medicationName: med.name, batchId, delta: -weeklyUsage, reason: getReason(locId), weekSummary: true }),
+              weekdayTs(weekStart, randomInt(0, 4))
+            ]);
+
+            // Stock in activity (delivery to pharmacy)
+            if (weekOffset > 0) {
+              const deliveryItems = Math.round(weeklyUsage * 1.1);
+              actRows.push([
+                pharmacistId, 'stock_in', 'medication', med.id, 'pharmacy',
+                JSON.stringify({ medicationName: med.name, batchId, delta: deliveryItems, reason: `Delivery received - ${deliveryItems} units` }),
+                weekdayTs(weekStart, randomInt(0, 2))
+              ]);
+            }
+
+            // Transfer activity (bi-weekly)
+            if (weekOffset % 2 === 0 && weekOffset > 0) {
+              const transferItems = Math.round(weeklyUsage * 1.5);
+              const locName = LOCATIONS.find(l => l.id === locId)?.displayName || locId;
+              const ts = weekdayTs(weekStart, randomInt(1, 3));
+              actRows.push([
+                pharmacistId, 'stock_transfer', 'medication', med.id, locId,
+                JSON.stringify({ medicationName: med.name, batchId, delta: transferItems, fromLocation: 'Pharmacy', toLocation: locName }),
+                ts
+              ]);
+            }
+          }
+        }
+      }
+
+      // Min level changed entries
+      const minLevels = [
+        ['propofol-200mg', 'theatre-1', 5], ['propofol-200mg', 'theatre-2', 4], ['propofol-200mg', 'theatre-3', 3],
+        ['fentanyl-100mcg', 'theatre-1', 4], ['fentanyl-100mcg', 'theatre-2', 3],
+        ['ondansetron-4mg', 'pacu', 4], ['ondansetron-4mg', 'theatre-1', 2],
+        ['morphine-10mg', 'ward-1', 3], ['morphine-10mg', 'pacu', 3],
+        ['rocuronium-50mg', 'theatre-1', 3], ['rocuronium-50mg', 'theatre-2', 2], ['rocuronium-50mg', 'theatre-3', 2],
+        ['paracetamol-1g', 'ward-1', 6], ['paracetamol-1g', 'ward-2', 5],
+        ['coamoxiclav-625mg', 'ward-1', 4], ['coamoxiclav-625mg', 'ward-2', 3],
+        ['saline-1000ml', 'theatre-1', 4], ['saline-1000ml', 'ward-1', 5],
+      ];
+      for (const [medId, locId, minBoxes] of minLevels) {
+        const med = MEDICATIONS.find(m => m.id === medId);
+        const loc = LOCATIONS.find(l => l.id === locId);
+        const weeksAgo = randomInt(2, 8);
+        const ts = new Date(TODAY);
+        ts.setDate(ts.getDate() - weeksAgo * 7 + randomInt(0, 4));
+        ts.setHours(9 + randomInt(0, 8), randomInt(0, 59), 0);
+        actRows.push([
+          pharmacistId, 'min_level_changed', 'medication', medId, locId,
+          JSON.stringify({ medicationName: med?.name || medId, oldMinLevel: med?.minBoxes || 0, newMinLevel: minBoxes, locationId: locId, locationName: loc?.displayName || locId }),
+          ts.toISOString()
+        ]);
+      }
+
+      // Order placed entries
+      const orderEntries = [
+        ['ondansetron-4mg', 20, 'urgent', 'PACU stock depleted - urgent reorder'],
+        ['rocuronium-50mg', 30, 'urgent', 'Theatre 3 out of stock'],
+        ['coamoxiclav-625mg', 63, 'routine', 'Ward stock running low'],
+      ];
+      for (const [medId, qty, urgency, notes] of orderEntries) {
+        const med = MEDICATIONS.find(m => m.id === medId);
+        const ts = new Date(TODAY);
+        ts.setDate(ts.getDate() - randomInt(1, 5));
+        ts.setHours(10 + randomInt(0, 6), randomInt(0, 59), 0);
+        actRows.push([
+          pharmacistId, 'order_placed', 'medication', medId, null,
+          JSON.stringify({ medicationName: med?.name || medId, quantity: qty, urgency, notes, pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk' }),
+          ts.toISOString()
+        ]);
+      }
+
+      // Bulk insert activity logs in chunks of 500
+      const actCols = 'user_id, action_type, entity_type, entity_id, location_id, details, occurred_at';
+      const actColCount = 7;
+      for (let i = 0; i < actRows.length; i += 500) {
+        const chunk = actRows.slice(i, i + 500);
+        const params = [];
+        const valueClauses = chunk.map((row, ri) => {
+          params.push(...row);
+          const off = ri * actColCount;
+          return `($${off+1},$${off+2},$${off+3},$${off+4},$${off+5},$${off+6},$${off+7})`;
+        });
+        await client.query(`INSERT INTO activity_log (${actCols}) VALUES ${valueClauses.join(',')}`, params);
+      }
+      stats.activityLogEntries = actRows.length;
+    }
+
     // ---- COMMIT — all or nothing ----
     await client.query('COMMIT');
 

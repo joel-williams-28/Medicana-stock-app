@@ -4090,6 +4090,14 @@ Medicana Stock Management System`;
           await loadReviewPipeline(true); // resets appliedMinLevels so counter restarts from 0
           if (isFinal) {
             setMinLevelRefreshDone(true);
+            // Ensure step 1 is marked reviewed so user can advance without password
+            setWizardState(prev => ({
+              ...prev,
+              stepStatus: {
+                ...prev.stepStatus,
+                adjustments: { ...prev.stepStatus.adjustments, reviewed: true }
+              }
+            }));
           }
         } catch (err) {
           console.error('Min level refresh failed:', err);
@@ -4206,6 +4214,23 @@ Medicana Stock Management System`;
           }
         }
       }, [reviewPipelineTab]);
+
+      // Live-update the step 1 badge count as items are applied locally
+      useEffect(() => {
+        const adjs = reviewPipeline.data?.pipeline?.adjustments || [];
+        if (adjs.length === 0 && appliedMinLevels.size === 0) return;
+        const pendingCount = adjs.filter(adj => !appliedMinLevels.has(`${adj.medicationId}-${adj.locationId}`)).length;
+        setWizardState(prev => {
+          if (prev.stepStatus.adjustments.total === pendingCount) return prev;
+          return {
+            ...prev,
+            stepStatus: {
+              ...prev.stepStatus,
+              adjustments: { ...prev.stepStatus.adjustments, total: pendingCount }
+            }
+          };
+        });
+      }, [appliedMinLevels, reviewPipeline.data]);
 
       const handleCreatePipelineOrders = async () => {
         const pipeline = reviewPipeline.data?.pipeline;
@@ -5652,12 +5677,24 @@ Medicana Stock Management System`;
                         <>
                         {/* Summary cards — reordered: Min Levels first */}
                         <div className="p-4 grid grid-cols-2 sm:grid-cols-5 gap-3">
-                          <button onClick={() => advanceWizardStep(0)} className={`p-3 rounded-lg border text-left transition-colors relative ${reviewPipelineTab === 'adjustments' ? 'border-status-low-text bg-status-low-bg' : 'border-bdr-default bg-white hover:bg-off-white'}`}>
-                            {wizardState.stepStatus.adjustments.reviewed && <span className="absolute top-1 right-1 text-status-ok-text text-xs font-bold">{'\u2713'}</span>}
-                            <div className="text-2xl font-bold text-near-black">{pp.summary.totalAdjustments}</div>
-                            <div className="text-xs text-txt-tertiary">Min Level Changes</div>
-                            <div className="text-xs text-status-low-text mt-1">Step 1</div>
-                          </button>
+                          {(() => {
+                            const adjPendingCount = (pp.adjustments || []).filter(adj => !appliedMinLevels.has(`${adj.medicationId}-${adj.locationId}`)).length;
+                            const adjComplete = minLevelRefreshDone;
+                            return (
+                            <button onClick={() => advanceWizardStep(0)} className={`p-3 rounded-lg border text-left transition-colors relative ${
+                              adjComplete
+                                ? 'border-status-ok-text bg-status-ok-bg'
+                                : reviewPipelineTab === 'adjustments'
+                                  ? 'border-status-low-text bg-status-low-bg'
+                                  : 'border-bdr-default bg-white hover:bg-off-white'
+                            }`}>
+                              {adjComplete && <span className="absolute top-1 right-1 text-status-ok-text text-xs font-bold">{'\u2713'}</span>}
+                              <div className={`text-2xl font-bold ${adjComplete ? 'text-status-ok-text' : 'text-near-black'}`}>{adjPendingCount}</div>
+                              <div className="text-xs text-txt-tertiary">Min Level Changes</div>
+                              <div className={`text-xs mt-1 ${adjComplete ? 'text-status-ok-text' : 'text-status-low-text'}`}>{adjComplete ? 'Complete' : 'Step 1'}</div>
+                            </button>
+                            );
+                          })()}
                           <button onClick={() => advanceWizardStep(1)} className={`p-3 rounded-lg border text-left transition-colors relative ${reviewPipelineTab === 'redistribute' ? 'border-status-ok-text bg-status-ok-bg' : 'border-bdr-default bg-white hover:bg-off-white'}`}>
                             {wizardState.stepStatus.redistribute.reviewed && <span className="absolute top-1 right-1 text-status-ok-text text-xs font-bold">{'\u2713'}</span>}
                             <div className="text-2xl font-bold text-near-black">{pp.summary.totalTransfers}</div>
@@ -5800,6 +5837,45 @@ Medicana Stock Management System`;
                                         : 'Minimum stock levels have been aligned with usage patterns. Continue to review redistributions.'}
                                     </p>
                                   </div>
+                                  {reviewPipelineTab !== 'all' && pendingAdjs.length > 1 && (
+                                    <button
+                                      disabled={applyingMinLevels}
+                                      onClick={async () => {
+                                        if (!confirm(`Apply all ${pendingAdjs.length} new suggestions?`)) return;
+                                        setApplyingMinLevels(true);
+                                        const currentUser = getCurrentUserInfo();
+                                        try {
+                                          await Promise.all(pendingAdjs.map(adj => {
+                                            const overrideKey = `${adj.medicationId}-${adj.locationId}`;
+                                            const newMin = minLevelOverrides[overrideKey] !== undefined ? minLevelOverrides[overrideKey] : adj.suggestedMinLevel;
+                                            return window.api.setMedicationMinLevel({
+                                              medicationId: adj.medicationId,
+                                              locationId: adj.locationId,
+                                              minLevel: newMin,
+                                              userId: currentUser?.id,
+                                              medicationName: adj.medicationName,
+                                              oldMinLevel: adj.currentMinLevel,
+                                              locationName: adj.locationName
+                                            });
+                                          }));
+                                          setAppliedMinLevels(prev => {
+                                            const next = new Set(prev);
+                                            pendingAdjs.forEach(adj => next.add(`${adj.medicationId}-${adj.locationId}`));
+                                            return next;
+                                          });
+                                        } catch (err) {
+                                          alert('Failed to apply: ' + (err.message || 'Unknown error'));
+                                        } finally {
+                                          setApplyingMinLevels(false);
+                                        }
+                                      }}
+                                      className={`px-4 py-1.5 text-white text-sm font-medium rounded transition-colors whitespace-nowrap ${
+                                        applyingMinLevels ? 'bg-gray-400 cursor-not-allowed' : 'bg-status-ok-text hover:opacity-90'
+                                      }`}
+                                    >
+                                      {applyingMinLevels ? 'Applying...' : `Apply All (${pendingAdjs.length})`}
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             ) : (
