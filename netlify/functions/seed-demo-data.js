@@ -144,7 +144,13 @@ function getReason(locId) {
 function weekdayTs(weekStart, dayOffset) {
   const d = new Date(weekStart);
   d.setDate(d.getDate() + dayOffset);
-  d.setHours(7 + randomInt(0, 11), randomInt(0, 59), randomInt(0, 59));
+  // Never generate timestamps in the future
+  if (d > TODAY) {
+    d.setTime(TODAY.getTime());
+    d.setHours(7 + randomInt(0, 4), randomInt(0, 59), randomInt(0, 59));
+  } else {
+    d.setHours(7 + randomInt(0, 11), randomInt(0, 59), randomInt(0, 59));
+  }
   return d.toISOString();
 }
 
@@ -361,8 +367,11 @@ async function seed(clean) {
             const dailyUsage = Math.max(1, Math.round(weeklyUsage / 5));
             const batchId = batches[weekOffset % batches.length].batchId;
 
-            // 5 weekdays of usage (out)
+            // 5 weekdays of usage (out) — skip future days
             for (let day = 0; day < 5; day++) {
+              const dayDate = new Date(weekStart);
+              dayDate.setDate(dayDate.getDate() + day);
+              if (dayDate > TODAY) break; // Don't generate entries for future dates
               const dayItems = day < 4 ? dailyUsage : Math.max(1, weeklyUsage - dailyUsage * 4);
               txRows.push([weekdayTs(weekStart, day), pharmacistId, locId, batchId, med.id, -dayItems, getReason(locId), 'out']);
             }
