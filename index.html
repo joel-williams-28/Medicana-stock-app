@@ -726,6 +726,9 @@
       const [pipelineOrderSelections, setPipelineOrderSelections] = useState(new Set());
       const [pipelineOrderAdjustments, setPipelineOrderAdjustments] = useState({});
       const [pharmacySupplyAdjustments, setPharmacySupplyAdjustments] = useState({});
+      const [executingTransfers, setExecutingTransfers] = useState(false);
+      const [executingSupplies, setExecutingSupplies] = useState(false);
+      const [creatingOrders, setCreatingOrders] = useState(false);
 
       // Guided wizard state for pipeline steps
       const WIZARD_STEPS = [
@@ -4405,6 +4408,7 @@ Medicana Stock Management System`;
 
         if (selectedOrders.length === 0) { alert('No orders selected'); return; }
 
+        setCreatingOrders(true);
         try {
           const userInfo = getCurrentUserInfo();
           const result = await window.api.createIntelligenceOrders({
@@ -4426,6 +4430,8 @@ Medicana Stock Management System`;
           setDraftOrderCount(data.draftOrderCount || 0);
         } catch (err) {
           alert('Failed to create orders: ' + err.message);
+        } finally {
+          setCreatingOrders(false);
         }
       };
 
@@ -6386,68 +6392,74 @@ Medicana Stock Management System`;
                                 </div>
                                 {reviewPipelineTab !== 'all' && pp.transfers.length > 1 && (
                                   <button
+                                    disabled={executingTransfers}
                                     onClick={async () => {
                                       if (!confirm(`Execute all ${pp.transfers.length} recommended transfers?`)) return;
-                                      const currentUser = getCurrentUserInfo();
-                                      let succeeded = 0;
-                                      const failures = [];
-                                      for (const t of pp.transfers) {
-                                        try {
-                                          await window.api.transferStock({
-                                            userId: currentUser?.id,
-                                            batchId: t.batchId,
-                                            sourceLocationId: t.sourceLoc,
-                                            targetLocationId: t.targetLoc,
-                                            quantity: t.quantity,
-                                            reason: 'Intelligence-recommended redistribution (FEFO)',
-                                            medicationName: t.medicationName,
-                                            batchCode: t.batchCode,
-                                            sourceStockBoxes: t.sourceStockBoxes,
-                                            targetStockBoxes: t.targetStockBoxes,
-                                            sourceMinLevel: t.sourceMinLevel,
-                                            targetMinLevel: t.targetMinLevel,
-                                            quantityBoxes: t.quantityBoxes,
-                                            pipelineStep: 'redistribute'
-                                          });
-                                          succeeded++;
-                                        } catch (err) {
-                                          failures.push(`${t.medicationName}: ${err.message}`);
-                                        }
-                                      }
-                                      if (failures.length > 0) {
-                                        alert(`${succeeded} of ${pp.transfers.length} transfers executed.\n\nFailed (${failures.length}):\n${failures.join('\n')}`);
-                                      }
-                                      const data = await window.api.fetchAllData();
-                                      setMedications(data.medications || []);
-                                      setTransactions(data.transactions || []);
-                                      setLocations(data.locations || []);
-                                      // Log bulk summary
+                                      setExecutingTransfers(true);
                                       try {
-                                        await window.api.postActivityLog({
-                                          userId: currentUser?.id,
-                                          actionType: 'bulk_transfers_executed',
-                                          entityType: 'pipeline',
-                                          details: {
-                                            totalTransfers: succeeded,
-                                            totalFailed: failures.length,
-                                            totalBoxesMoved: pp.transfers.reduce((sum, t) => sum + t.quantityBoxes, 0),
-                                            source: 'intelligence_pipeline'
+                                        const currentUser = getCurrentUserInfo();
+                                        let succeeded = 0;
+                                        const failures = [];
+                                        for (const t of pp.transfers) {
+                                          try {
+                                            await window.api.transferStock({
+                                              userId: currentUser?.id,
+                                              batchId: t.batchId,
+                                              sourceLocationId: t.sourceLoc,
+                                              targetLocationId: t.targetLoc,
+                                              quantity: t.quantity,
+                                              reason: 'Intelligence-recommended redistribution (FEFO)',
+                                              medicationName: t.medicationName,
+                                              batchCode: t.batchCode,
+                                              sourceStockBoxes: t.sourceStockBoxes,
+                                              targetStockBoxes: t.targetStockBoxes,
+                                              sourceMinLevel: t.sourceMinLevel,
+                                              targetMinLevel: t.targetMinLevel,
+                                              quantityBoxes: t.quantityBoxes,
+                                              pipelineStep: 'redistribute'
+                                            });
+                                            succeeded++;
+                                          } catch (err) {
+                                            failures.push(`${t.medicationName}: ${err.message}`);
                                           }
-                                        });
-                                      } catch (_) {}
-                                      // Regenerate pipeline server-side to recalculate Steps 3-4
-                                      // with current inventory (post-transfer)
-                                      await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
-                                      // Mark step 2 as reviewed
-                                      setWizardState(prev => ({
-                                        ...prev,
-                                        stepStatus: { ...prev.stepStatus, redistribute: { ...prev.stepStatus.redistribute, reviewed: true } }
-                                      }));
-                                      loadActivityLog(true);
+                                        }
+                                        if (failures.length > 0) {
+                                          alert(`${succeeded} of ${pp.transfers.length} transfers executed.\n\nFailed (${failures.length}):\n${failures.join('\n')}`);
+                                        }
+                                        const data = await window.api.fetchAllData();
+                                        setMedications(data.medications || []);
+                                        setTransactions(data.transactions || []);
+                                        setLocations(data.locations || []);
+                                        // Log bulk summary
+                                        try {
+                                          await window.api.postActivityLog({
+                                            userId: currentUser?.id,
+                                            actionType: 'bulk_transfers_executed',
+                                            entityType: 'pipeline',
+                                            details: {
+                                              totalTransfers: succeeded,
+                                              totalFailed: failures.length,
+                                              totalBoxesMoved: pp.transfers.reduce((sum, t) => sum + t.quantityBoxes, 0),
+                                              source: 'intelligence_pipeline'
+                                            }
+                                          });
+                                        } catch (_) {}
+                                        // Regenerate pipeline server-side to recalculate Steps 3-4
+                                        // with current inventory (post-transfer)
+                                        await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
+                                        // Mark step 2 as reviewed
+                                        setWizardState(prev => ({
+                                          ...prev,
+                                          stepStatus: { ...prev.stepStatus, redistribute: { ...prev.stepStatus.redistribute, reviewed: true } }
+                                        }));
+                                        loadActivityLog(true);
+                                      } finally {
+                                        setExecutingTransfers(false);
+                                      }
                                     }}
-                                    className="px-4 py-1.5 bg-status-ok-text text-white text-sm font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
+                                    className={`px-4 py-1.5 text-white text-sm font-medium rounded transition-colors whitespace-nowrap ${executingTransfers ? 'bg-gray-400 cursor-not-allowed' : 'bg-status-ok-text hover:opacity-90'}`}
                                   >
-                                    Execute All Transfers
+                                    {executingTransfers ? 'Executing...' : 'Execute All Transfers'}
                                   </button>
                                 )}
                               </div>
@@ -6486,9 +6498,11 @@ Medicana Stock Management System`;
                                         {reviewPipelineTab !== 'all' && (
                                           <td className="px-4 py-3 text-center">
                                             <button
+                                              disabled={executingTransfers}
                                               onClick={async () => {
-                                                const currentUser = getCurrentUserInfo();
+                                                setExecutingTransfers(true);
                                                 try {
+                                                  const currentUser = getCurrentUserInfo();
                                                   await window.api.transferStock({
                                                     userId: currentUser?.id,
                                                     batchId: t.batchId,
@@ -6522,11 +6536,13 @@ Medicana Stock Management System`;
                                                   loadActivityLog(true);
                                                 } catch (err) {
                                                   alert(`Transfer failed: ${err.message}`);
+                                                } finally {
+                                                  setExecutingTransfers(false);
                                                 }
                                               }}
-                                              className="px-3 py-1 bg-status-ok-text text-white text-xs font-medium rounded hover:opacity-90 transition-colors"
+                                              className={`px-3 py-1 text-white text-xs font-medium rounded transition-colors ${executingTransfers ? 'bg-gray-400 cursor-not-allowed' : 'bg-status-ok-text hover:opacity-90'}`}
                                             >
-                                              Execute
+                                              {executingTransfers ? '...' : 'Execute'}
                                             </button>
                                           </td>
                                         )}
@@ -6570,71 +6586,77 @@ Medicana Stock Management System`;
                                 </div>
                                 {reviewPipelineTab !== 'all' && pp.pharmacySupplies.length > 1 && (
                                   <button
+                                    disabled={executingSupplies}
                                     onClick={async () => {
                                       if (!confirm(`Execute all ${pp.pharmacySupplies.length} pharmacy supply actions?`)) return;
-                                      const currentUser = getCurrentUserInfo();
-                                      let succeeded = 0;
-                                      const failures = [];
-                                      const successIndices = [];
-                                      for (let si = 0; si < pp.pharmacySupplies.length; si++) {
-                                        const s = pp.pharmacySupplies[si];
-                                        const adjBoxes = pharmacySupplyAdjustments[si] != null ? Number(pharmacySupplyAdjustments[si]) : s.quantityBoxes;
-                                        const adjItems = adjBoxes * (s.itemsPerBox || 1);
-                                        if (adjBoxes <= 0) { successIndices.push(si); continue; }
-                                        try {
-                                          await window.api.transferStock({
-                                            userId: currentUser?.id,
-                                            batchId: s.batchId,
-                                            sourceLocationId: s.sourceLoc,
-                                            targetLocationId: s.targetLoc,
-                                            quantity: adjItems,
-                                            reason: 'Pharmacy supply (intelligence-recommended)',
-                                            medicationName: s.medicationName,
-                                            batchCode: s.batchCode,
-                                            sourceStockBoxes: s.sourceStockBoxes,
-                                            quantityBoxes: adjBoxes,
-                                            pipelineStep: 'pharmacy_supply'
-                                          });
-                                          succeeded++;
-                                          successIndices.push(si);
-                                        } catch (err) {
-                                          failures.push(`${s.medicationName}: ${err.message}`);
-                                        }
-                                      }
-                                      if (failures.length > 0) {
-                                        alert(`${succeeded} of ${pp.pharmacySupplies.length} supplies executed.\n\nFailed (${failures.length}):\n${failures.join('\n')}`);
-                                      }
-                                      const data = await window.api.fetchAllData();
-                                      setMedications(data.medications || []);
-                                      setTransactions(data.transactions || []);
-                                      setLocations(data.locations || []);
-                                      // Log bulk summary
+                                      setExecutingSupplies(true);
                                       try {
-                                        await window.api.postActivityLog({
-                                          userId: currentUser?.id,
-                                          actionType: 'bulk_pharmacy_supplies_executed',
-                                          entityType: 'pipeline',
-                                          details: {
-                                            totalSupplies: succeeded,
-                                            totalFailed: failures.length,
-                                            totalBoxesSupplied: pp.pharmacySupplies.reduce((sum, s) => sum + s.quantityBoxes, 0),
-                                            source: 'intelligence_pipeline'
+                                        const currentUser = getCurrentUserInfo();
+                                        let succeeded = 0;
+                                        const failures = [];
+                                        const successIndices = [];
+                                        for (let si = 0; si < pp.pharmacySupplies.length; si++) {
+                                          const s = pp.pharmacySupplies[si];
+                                          const adjBoxes = pharmacySupplyAdjustments[si] != null ? Number(pharmacySupplyAdjustments[si]) : s.quantityBoxes;
+                                          const adjItems = adjBoxes * (s.itemsPerBox || 1);
+                                          if (adjBoxes <= 0) { successIndices.push(si); continue; }
+                                          try {
+                                            await window.api.transferStock({
+                                              userId: currentUser?.id,
+                                              batchId: s.batchId,
+                                              sourceLocationId: s.sourceLoc,
+                                              targetLocationId: s.targetLoc,
+                                              quantity: adjItems,
+                                              reason: 'Pharmacy supply (intelligence-recommended)',
+                                              medicationName: s.medicationName,
+                                              batchCode: s.batchCode,
+                                              sourceStockBoxes: s.sourceStockBoxes,
+                                              quantityBoxes: adjBoxes,
+                                              pipelineStep: 'pharmacy_supply'
+                                            });
+                                            succeeded++;
+                                            successIndices.push(si);
+                                          } catch (err) {
+                                            failures.push(`${s.medicationName}: ${err.message}`);
                                           }
-                                        });
-                                      } catch (_) {}
-                                      // Regenerate pipeline server-side to recalculate Step 4
-                                      // with current inventory (post-pharmacy-supply)
-                                      await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
-                                      // Mark step 3 as reviewed
-                                      setWizardState(prev => ({
-                                        ...prev,
-                                        stepStatus: { ...prev.stepStatus, pharmacy_supply: { ...prev.stepStatus.pharmacy_supply, reviewed: true } }
-                                      }));
-                                      loadActivityLog(true);
+                                        }
+                                        if (failures.length > 0) {
+                                          alert(`${succeeded} of ${pp.pharmacySupplies.length} supplies executed.\n\nFailed (${failures.length}):\n${failures.join('\n')}`);
+                                        }
+                                        const data = await window.api.fetchAllData();
+                                        setMedications(data.medications || []);
+                                        setTransactions(data.transactions || []);
+                                        setLocations(data.locations || []);
+                                        // Log bulk summary
+                                        try {
+                                          await window.api.postActivityLog({
+                                            userId: currentUser?.id,
+                                            actionType: 'bulk_pharmacy_supplies_executed',
+                                            entityType: 'pipeline',
+                                            details: {
+                                              totalSupplies: succeeded,
+                                              totalFailed: failures.length,
+                                              totalBoxesSupplied: pp.pharmacySupplies.reduce((sum, s) => sum + s.quantityBoxes, 0),
+                                              source: 'intelligence_pipeline'
+                                            }
+                                          });
+                                        } catch (_) {}
+                                        // Regenerate pipeline server-side to recalculate Step 4
+                                        // with current inventory (post-pharmacy-supply)
+                                        await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
+                                        // Mark step 3 as reviewed
+                                        setWizardState(prev => ({
+                                          ...prev,
+                                          stepStatus: { ...prev.stepStatus, pharmacy_supply: { ...prev.stepStatus.pharmacy_supply, reviewed: true } }
+                                        }));
+                                        loadActivityLog(true);
+                                      } finally {
+                                        setExecutingSupplies(false);
+                                      }
                                     }}
-                                    className="px-4 py-1.5 bg-brand-mid text-white text-sm font-medium rounded hover:bg-brand-dark transition-colors whitespace-nowrap"
+                                    className={`px-4 py-1.5 text-white text-sm font-medium rounded transition-colors whitespace-nowrap ${executingSupplies ? 'bg-gray-400 cursor-not-allowed' : 'bg-brand-mid hover:bg-brand-dark'}`}
                                   >
-                                    Execute All Supplies
+                                    {executingSupplies ? 'Executing...' : 'Execute All Supplies'}
                                   </button>
                                 )}
                               </div>
@@ -6689,11 +6711,13 @@ Medicana Stock Management System`;
                                         {reviewPipelineTab !== 'all' && (
                                           <td className="px-4 py-3 text-center">
                                             <button
+                                              disabled={executingSupplies}
                                               onClick={async () => {
-                                                const adjustedBoxes = pharmacySupplyAdjustments[i] != null ? Number(pharmacySupplyAdjustments[i]) : s.quantityBoxes;
-                                                const adjustedItems = adjustedBoxes * (s.itemsPerBox || 1);
-                                                const currentUser = getCurrentUserInfo();
+                                                setExecutingSupplies(true);
                                                 try {
+                                                  const adjustedBoxes = pharmacySupplyAdjustments[i] != null ? Number(pharmacySupplyAdjustments[i]) : s.quantityBoxes;
+                                                  const adjustedItems = adjustedBoxes * (s.itemsPerBox || 1);
+                                                  const currentUser = getCurrentUserInfo();
                                                   await window.api.transferStock({
                                                     userId: currentUser?.id,
                                                     batchId: s.batchId,
@@ -6724,11 +6748,13 @@ Medicana Stock Management System`;
                                                   loadActivityLog(true);
                                                 } catch (err) {
                                                   alert(`Pharmacy supply failed: ${err.message}`);
+                                                } finally {
+                                                  setExecutingSupplies(false);
                                                 }
                                               }}
-                                              className="px-3 py-1 bg-brand-mid text-white text-xs font-medium rounded hover:bg-brand-dark transition-colors"
+                                              className={`px-3 py-1 text-white text-xs font-medium rounded transition-colors ${executingSupplies ? 'bg-gray-400 cursor-not-allowed' : 'bg-brand-mid hover:bg-brand-dark'}`}
                                             >
-                                              Execute
+                                              {executingSupplies ? '...' : 'Execute'}
                                             </button>
                                           </td>
                                         )}
@@ -6883,10 +6909,11 @@ Medicana Stock Management System`;
                               {reviewPipelineTab !== 'all' && (
                                 <div className="px-4 py-3 border-t border-bdr-default bg-off-white flex flex-wrap gap-2 items-center">
                                   <button
+                                    disabled={creatingOrders}
                                     onClick={handleCreatePipelineOrders}
-                                    className="bg-brand-mid text-white px-4 py-2 rounded text-sm font-medium hover:bg-brand-dark transition-colors"
+                                    className={`px-4 py-2 rounded text-sm font-medium text-white transition-colors ${creatingOrders ? 'bg-gray-400 cursor-not-allowed' : 'bg-brand-mid hover:bg-brand-dark'}`}
                                   >
-                                    Create Purchase Order ({pipelineOrderSelections.size})
+                                    {creatingOrders ? 'Creating Orders...' : `Create Purchase Order (${pipelineOrderSelections.size})`}
                                   </button>
                                   <span className="text-xs text-txt-tertiary ml-auto">
                                     {pipelineOrderSelections.size} of {pp.orders.length} selected
@@ -9655,35 +9682,41 @@ Medicana Stock Management System`;
                                   </div>
                                   {report.pipeline.transfers.length > 1 && (
                                     <button
+                                      disabled={executingTransfers}
                                       onClick={async () => {
                                         if (!confirm(`Execute all ${report.pipeline.transfers.length} recommended transfers?`)) return;
-                                        const currentUser = getCurrentUserInfo();
-                                        for (const t of report.pipeline.transfers) {
-                                          try {
-                                            await window.api.transferStock({
-                                              userId: currentUser?.id,
-                                              batchId: t.batchId,
-                                              sourceLocationId: t.sourceLoc,
-                                              targetLocationId: t.targetLoc,
-                                              quantity: t.quantity,
-                                              reason: 'Intelligence-recommended redistribution (FEFO)',
-                                              medicationName: t.medicationName,
-                                              batchCode: t.batchCode
-                                            });
-                                          } catch (err) {
-                                            alert(`Transfer failed for ${t.medicationName}: ${err.message}`);
-                                            break;
+                                        setExecutingTransfers(true);
+                                        try {
+                                          const currentUser = getCurrentUserInfo();
+                                          for (const t of report.pipeline.transfers) {
+                                            try {
+                                              await window.api.transferStock({
+                                                userId: currentUser?.id,
+                                                batchId: t.batchId,
+                                                sourceLocationId: t.sourceLoc,
+                                                targetLocationId: t.targetLoc,
+                                                quantity: t.quantity,
+                                                reason: 'Intelligence-recommended redistribution (FEFO)',
+                                                medicationName: t.medicationName,
+                                                batchCode: t.batchCode
+                                              });
+                                            } catch (err) {
+                                              alert(`Transfer failed for ${t.medicationName}: ${err.message}`);
+                                              break;
+                                            }
                                           }
+                                          const data = await window.api.fetchAllData();
+                                          setMedications(data.medications || []);
+                                          setTransactions(data.transactions || []);
+                                          setLocations(data.locations || []);
+                                          fetchIntelligenceReport(null);
+                                        } finally {
+                                          setExecutingTransfers(false);
                                         }
-                                        const data = await window.api.fetchAllData();
-                                        setMedications(data.medications || []);
-                                        setTransactions(data.transactions || []);
-                                        setLocations(data.locations || []);
-                                        fetchIntelligenceReport(null);
                                       }}
-                                      className="px-4 py-1.5 bg-status-ok-text text-white text-sm font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
+                                      className={`px-4 py-1.5 text-white text-sm font-medium rounded transition-colors whitespace-nowrap ${executingTransfers ? 'bg-gray-400 cursor-not-allowed' : 'bg-status-ok-text hover:opacity-90'}`}
                                     >
-                                      Execute All Transfers
+                                      {executingTransfers ? 'Executing...' : 'Execute All Transfers'}
                                     </button>
                                   )}
                                 </div>
@@ -9721,9 +9754,11 @@ Medicana Stock Management System`;
                                           <td className="px-4 py-3 text-center font-semibold text-near-black">{t.quantityBoxes} {t.quantityBoxes === 1 ? 'box' : 'boxes'}</td>
                                           <td className="px-4 py-3 text-center">
                                             <button
+                                              disabled={executingTransfers}
                                               onClick={async () => {
-                                                const currentUser = getCurrentUserInfo();
+                                                setExecutingTransfers(true);
                                                 try {
+                                                  const currentUser = getCurrentUserInfo();
                                                   await window.api.transferStock({
                                                     userId: currentUser?.id,
                                                     batchId: t.batchId,
@@ -9741,11 +9776,13 @@ Medicana Stock Management System`;
                                                   fetchIntelligenceReport(null);
                                                 } catch (err) {
                                                   alert(`Transfer failed: ${err.message}`);
+                                                } finally {
+                                                  setExecutingTransfers(false);
                                                 }
                                               }}
-                                              className="px-3 py-1 bg-status-ok-text text-white text-xs font-medium rounded hover:opacity-90 transition-colors"
+                                              className={`px-3 py-1 text-white text-xs font-medium rounded transition-colors ${executingTransfers ? 'bg-gray-400 cursor-not-allowed' : 'bg-status-ok-text hover:opacity-90'}`}
                                             >
-                                              Execute
+                                              {executingTransfers ? '...' : 'Execute'}
                                             </button>
                                           </td>
                                         </tr>
