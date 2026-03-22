@@ -761,6 +761,7 @@
       const [activityLogLoading, setActivityLogLoading] = useState(false);
       const [activityLogHasMore, setActivityLogHasMore] = useState(true);
       const [activityUserFilter, setActivityUserFilter] = useState('');
+      const [activityUsers, setActivityUsers] = useState([]);
       const [collapsedDates, setCollapsedDates] = useState([]);
         const [changePasswordForm, setChangePasswordForm] = useState({
           currentPassword: '',
@@ -4099,6 +4100,8 @@ Medicana Stock Management System`;
               }
             }));
           }
+          // Refresh activity log so newly created min_level_changed entries appear
+          loadActivityLog(true);
         } catch (err) {
           console.error('Min level refresh failed:', err);
         }
@@ -4621,7 +4624,7 @@ Medicana Stock Management System`;
                       <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'medications' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'medications' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>Medications List</button>
                     )}
                     {canAccessTab('transactions') && (
-                      <button onClick={() => { setUi(prev => ({ ...prev, activeTab: 'transactions' })); if (ui.activeTab !== 'transactions') { setTimeout(() => loadActivityLog(true), 0); } }} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-all whitespace-nowrap relative ${ui.activeTab === 'transactions' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>Activity Log</button>
+                      <button onClick={() => { setUi(prev => ({ ...prev, activeTab: 'transactions' })); if (ui.activeTab !== 'transactions') { setTimeout(() => loadActivityLog(true), 0); window.api.fetchUsers().then(u => setActivityUsers(u)).catch(() => {}); } }} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-all whitespace-nowrap relative ${ui.activeTab === 'transactions' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>Activity Log</button>
                     )}
                     {canAccessTab('lowstock') && (
                       <button onClick={() => {
@@ -5089,16 +5092,9 @@ Medicana Stock Management System`;
                         className="text-sm border border-bdr-default rounded px-2 py-1"
                       >
                         <option value="">All Users</option>
-                        {(() => {
-                          const userSet = new Map();
-                          activityLog.forEach(entry => {
-                            if (entry.userId && entry.userFullName) userSet.set(entry.userId, entry.userFullName);
-                            else if (entry.userId && entry.username) userSet.set(entry.userId, entry.username);
-                          });
-                          return Array.from(userSet.entries()).sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => (
-                            <option key={id} value={id}>{name}</option>
-                          ));
-                        })()}
+                        {activityUsers.map(u => (
+                          <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>
+                        ))}
                       </select>
                       <button onClick={() => loadActivityLog(true)} className="text-xs bg-brand-mid text-white px-3 py-1 rounded hover:bg-brand-dark transition-colors">Refresh</button>
                     </div>
@@ -5753,18 +5749,20 @@ Medicana Stock Management System`;
                                       }
                                     }}
                                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-                                      isActive
-                                        ? `bg-${step.bgColor} text-${step.textColor} ring-2 ring-${step.textColor}`
-                                        : isReviewed
-                                          ? 'bg-status-ok-bg text-status-ok-text'
-                                          : isLocked
-                                            ? 'bg-btn-secondary text-txt-disabled cursor-not-allowed'
-                                            : 'bg-btn-secondary text-txt-secondary hover:bg-bdr-hover'
+                                      (step.key === 'adjustments' && minLevelRefreshDone)
+                                        ? 'bg-status-ok-bg text-status-ok-text ring-2 ring-status-ok-text'
+                                        : isActive
+                                          ? `bg-${step.bgColor} text-${step.textColor} ring-2 ring-${step.textColor}`
+                                          : isReviewed
+                                            ? 'bg-status-ok-bg text-status-ok-text'
+                                            : isLocked
+                                              ? 'bg-btn-secondary text-txt-disabled cursor-not-allowed'
+                                              : 'bg-btn-secondary text-txt-secondary hover:bg-bdr-hover'
                                     }`}
                                   >
                                     {/* Step indicator circle */}
                                     <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
-                                      isReviewed && !isActive
+                                      (isReviewed && !isActive) || (step.key === 'adjustments' && minLevelRefreshDone)
                                         ? 'bg-status-ok-text text-white'
                                         : isActive
                                           ? `bg-${step.textColor} text-white`
@@ -5772,7 +5770,7 @@ Medicana Stock Management System`;
                                             ? 'bg-bdr-default text-txt-disabled'
                                             : 'bg-txt-tertiary text-white'
                                     }`}>
-                                      {isReviewed && !isActive ? '\u2713' : step.stepNum}
+                                      {(isReviewed && !isActive) || (step.key === 'adjustments' && minLevelRefreshDone) ? '\u2713' : step.stepNum}
                                     </span>
                                     <span className="hidden sm:inline">{step.label}</span>
                                     {/* Item count badge */}

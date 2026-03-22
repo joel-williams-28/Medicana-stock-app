@@ -457,13 +457,26 @@ async function seed(clean) {
     // ---- 10. Activity log — mirror the seeded data ----
     {
       const actRows = []; // [user_id, action_type, entity_type, entity_id, location_id, details, occurred_at]
+      const scrubTechId = userIdMap['ScrubTech'];
+      const nurseJonesId = userIdMap['NurseJones'];
+      const adminId = userIdMap['DemoAdmin'];
 
-      // Login entries — one per week for pharmacist
+      // Pick user based on location context
+      const userForLoc = (locId) => {
+        if (locId.startsWith('theatre') || locId === 'pacu') return scrubTechId;
+        if (locId.startsWith('ward')) return nurseJonesId;
+        return pharmacistId;
+      };
+
+      // Login entries — one per week for each user
+      const allUserIds = [pharmacistId, adminId, nurseJonesId, scrubTechId];
       for (let weekOffset = WEEKS_OF_HISTORY; weekOffset >= 0; weekOffset--) {
         const weekStart = new Date(TODAY);
         weekStart.setDate(weekStart.getDate() - weekOffset * 7);
-        const ts = weekdayTs(weekStart, randomInt(0, 4));
-        actRows.push([pharmacistId, 'login', null, null, null, JSON.stringify({ ip: '10.0.1.' + randomInt(10, 250) }), ts]);
+        for (const uid of allUserIds) {
+          const ts = weekdayTs(weekStart, randomInt(0, 4));
+          actRows.push([uid, 'login', null, null, null, JSON.stringify({ ip: '10.0.1.' + randomInt(10, 250) }), ts]);
+        }
       }
 
       // Stock in/out — one summary entry per medication per location per week
@@ -483,10 +496,11 @@ async function seed(clean) {
             const adjustedUsage = Math.max(1, Math.round(baseUsage * trendMultiplier));
             const noise = 1 + (Math.random() * 0.3 - 0.15);
             const weeklyUsage = Math.max(1, Math.round(adjustedUsage * noise));
+            const actUserId = userForLoc(locId);
 
             // Stock out activity (usage)
             actRows.push([
-              pharmacistId, 'stock_out', 'medication', med.id, locId,
+              actUserId, 'stock_out', 'medication', med.id, locId,
               JSON.stringify({ medicationName: med.name, batchId, delta: -weeklyUsage, reason: getReason(locId), weekSummary: true }),
               weekdayTs(weekStart, randomInt(0, 4))
             ]);
@@ -507,7 +521,7 @@ async function seed(clean) {
               const locName = LOCATIONS.find(l => l.id === locId)?.displayName || locId;
               const ts = weekdayTs(weekStart, randomInt(1, 3));
               actRows.push([
-                pharmacistId, 'stock_transfer', 'medication', med.id, locId,
+                actUserId, 'stock_transfer', 'medication', med.id, locId,
                 JSON.stringify({ medicationName: med.name, batchId, delta: transferItems, fromLocation: 'Pharmacy', toLocation: locName }),
                 ts
               ]);
