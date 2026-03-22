@@ -4004,6 +4004,13 @@ Medicana Stock Management System`;
         }
       };
 
+      // Auto-load intelligence pipeline when Intelligent Stock tab is active
+      useEffect(() => {
+        if (ui.activeTab === 'lowstock' && !reviewPipeline.data && !reviewPipeline.loading && auth.isLoggedIn) {
+          loadReviewPipeline();
+        }
+      }, [ui.activeTab]);
+
       const handleCreatePipelineOrders = async () => {
         const pipeline = reviewPipeline.data?.pipeline;
         if (!pipeline) return;
