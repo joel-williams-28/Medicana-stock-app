@@ -205,23 +205,36 @@ function analyzeMedication(row, weeklyUsage, itemsPerBox) {
   const currentMinLevel = Number(row.current_min_level);
   const currentBoxes = Number(row.current_boxes);
 
-  // Average weekly usage
-  const totalOutAllWeeks = weeklyUsage.reduce((sum, w) => sum + w.totalOut, 0);
-  const avgWeeklyUsageItems = dataPoints > 0 ? totalOutAllWeeks / Math.max(dataPoints, 1) : 0;
+  // Only weeks with actual outgoing usage count for recommendations
+  // (weeks with only incoming transactions like transfers/deliveries are excluded)
+  const usageWeeks = weeklyUsage.filter(w => w.totalOut > 0);
+  const usageDataPoints = usageWeeks.length;
+
+  // Recency-weighted average: recent weeks count more (exponential decay)
+  // With decay=0.85: most recent week=1.0, 1 week ago=0.85, 4 weeks ago=0.52, 8 weeks ago=0.27
+  const RECENCY_DECAY = 0.85;
+  let weightedTotalOut = 0;
+  let totalWeight = 0;
+  for (let i = 0; i < usageWeeks.length; i++) {
+    const recencyWeight = Math.pow(RECENCY_DECAY, usageWeeks.length - 1 - i);
+    weightedTotalOut += usageWeeks[i].totalOut * recencyWeight;
+    totalWeight += recencyWeight;
+  }
+  const avgWeeklyUsageItems = totalWeight > 0 ? weightedTotalOut / totalWeight : 0;
   const avgWeeklyUsageBoxes = itemsPerBox > 0 ? avgWeeklyUsageItems / itemsPerBox : 0;
 
-  // Trend
+  // Trend (uses all weeks including zero-usage for full pattern detection)
   const { usageTrend, slope } = calculateTrend(weeklyUsage);
 
-  // Confidence
-  const confidence = Math.min(1.0, dataPoints / 8);
+  // Confidence based on weeks with actual usage data
+  const confidence = Math.min(1.0, usageDataPoints / 8);
 
   // Recommended min level
   let suggestedMinLevel = currentMinLevel;
   let action = 'maintain';
   let reason = 'Stock levels are appropriate for current usage patterns.';
 
-  if (dataPoints >= 1) {
+  if (usageDataPoints >= 1) {
     let base = Math.ceil(avgWeeklyUsageBoxes * 1.5);
 
     if (usageTrend === 'increasing' && itemsPerBox > 0) {
@@ -229,11 +242,11 @@ function analyzeMedication(row, weeklyUsage, itemsPerBox) {
       base += Math.ceil(Math.abs(slopeInBoxes) * 0.5);
     }
 
-    const highUsageWeeks = weeklyUsage.filter(w => {
+    const highUsageWeeks = usageWeeks.filter(w => {
       const usageBoxes = itemsPerBox > 0 ? w.totalOut / itemsPerBox : 0;
       return usageBoxes > currentMinLevel * 0.8;
     }).length;
-    const lowStockRate = dataPoints > 0 ? highUsageWeeks / dataPoints : 0;
+    const lowStockRate = usageDataPoints > 0 ? highUsageWeeks / usageDataPoints : 0;
 
     if (lowStockRate > 0.3) {
       base = Math.ceil(base * 1.25);
@@ -273,7 +286,7 @@ function analyzeMedication(row, weeklyUsage, itemsPerBox) {
 
   // If ordering but min level is too high, re-evaluate: might not need to order at all
   let secondaryAction = null;
-  if (action === 'order' && dataPoints >= 1 && currentMinLevel > 0 && suggestedMinLevel < currentMinLevel * 0.8) {
+  if (action === 'order' && usageDataPoints >= 1 && currentMinLevel > 0 && suggestedMinLevel < currentMinLevel * 0.8) {
     const recentHighUsage = weeklyUsage.slice(-4).some(w => {
       const usageBoxes = itemsPerBox > 0 ? w.totalOut / itemsPerBox : 0;
       return usageBoxes > currentMinLevel * 0.6;
@@ -333,7 +346,7 @@ function analyzeMedication(row, weeklyUsage, itemsPerBox) {
       suggestedMinLevel,
       confidence: Math.round(confidence * 100) / 100,
       reason,
-      weeklyDataPoints: dataPoints,
+      weeklyDataPoints: usageDataPoints,
       secondaryAction,
       excessBoxes
     }
