@@ -5193,7 +5193,7 @@ Medicana Stock Management System`;
                           })()}
                         </button>
                         <button
-                          onClick={() => { setOrderingSubTab('review'); loadReviewPipeline(); }}
+                          onClick={() => { setOrderingSubTab('review'); if (!reviewPipeline.data && !reviewPipeline.loading) loadReviewPipeline(); }}
                           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${orderingSubTab === 'review' ? 'border-brand-mid text-brand-mid' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}
                         >
                           Review & Order
