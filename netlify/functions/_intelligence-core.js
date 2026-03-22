@@ -369,7 +369,7 @@ async function getBatchInventory() {
  * 4. Calculate pharmacy's derived min level (1.5× hospital-wide mins)
  * 5. External orders for pharmacy only (with supply destination projections)
  */
-function runOptimisationPipeline(medications, batchInventory) {
+function runOptimisationPipeline(medications, batchInventory, pendingOrderMap = {}) {
   // Step 1: Build min level map from already-analyzed medications
   const minLevelMap = {};
   for (const med of medications) {
@@ -623,6 +623,7 @@ function runOptimisationPipeline(medications, batchInventory) {
 
   // Stage 5: External orders — pharmacy only
   // Orders are placed for pharmacy to restock itself to meet its derived minimum
+  // Subtract any already-pending orders to avoid double-ordering
   const orders = [];
   for (const medId in pharmacyNeeds) {
     const need = pharmacyNeeds[medId];
@@ -646,12 +647,20 @@ function runOptimisationPipeline(medications, batchInventory) {
     // Sort by highest usage first
     supplyDestinations.sort((a, b) => b.avgWeeklyUsage - a.avgWeeklyUsage);
 
+    // Check for existing pending orders and subtract from shortfall
+    const pending = pendingOrderMap[medId] || null;
+    const alreadyOrderedBoxes = pending ? pending.totalQuantityBoxes : 0;
+    const adjustedShortfall = Math.max(0, need.shortfall - alreadyOrderedBoxes);
+
     orders.push({
       medicationId: medId,
       medicationName: need.medicationName,
       locationId: PHARMACY_LOCATION_ID,
       locationName: 'Pharmacy',
-      orderQuantityBoxes: need.shortfall,
+      totalShortfallBoxes: need.shortfall,
+      alreadyOrderedBoxes,
+      orderQuantityBoxes: adjustedShortfall,
+      existingPendingOrder: pending,
       urgency: need.currentSimulatedBoxes === 0 || need.currentSimulatedBoxes <= need.derivedMin * 0.5 ? 'urgent' : 'routine',
       currentSimulatedBoxes: need.currentSimulatedBoxes,
       pharmacyDerivedMin: need.derivedMin,
@@ -692,7 +701,9 @@ function runOptimisationPipeline(medications, batchInventory) {
       totalAdjustments: adjustments.length,
       totalBoxesRedistributed: transfers.reduce((sum, t) => sum + t.quantityBoxes, 0),
       totalBoxesFromPharmacy: pharmacySupplies.reduce((sum, s) => sum + s.quantityBoxes, 0),
-      totalBoxesToOrder: orders.reduce((sum, o) => sum + o.orderQuantityBoxes, 0)
+      totalBoxesToOrder: orders.reduce((sum, o) => sum + o.orderQuantityBoxes, 0),
+      totalBoxesAlreadyOrdered: orders.reduce((sum, o) => sum + o.alreadyOrderedBoxes, 0),
+      totalShortfallBoxes: orders.reduce((sum, o) => sum + o.totalShortfallBoxes, 0)
     }
   };
 }
