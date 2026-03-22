@@ -717,6 +717,7 @@
       // Pipeline-based Review & Order state
       const [reviewPipeline, setReviewPipeline] = useState({ loading: false, data: null, error: null });
       const [reviewPipelineTab, setReviewPipelineTab] = useState('adjustments');
+      const [applyingMinLevels, setApplyingMinLevels] = useState(false);
       const [pipelineOrderSelections, setPipelineOrderSelections] = useState(new Set());
       const [pipelineOrderAdjustments, setPipelineOrderAdjustments] = useState({});
       const [pharmacySupplyAdjustments, setPharmacySupplyAdjustments] = useState({});
@@ -4035,11 +4036,11 @@ Medicana Stock Management System`;
             };
 
             if (preserveWizardStep) {
-              // Keep step 1 status, recalculate steps 2-4
+              // Keep step 1 reviewed status, update all totals from fresh data
               setWizardState(prev => ({
                 ...prev,
                 stepStatus: {
-                  adjustments: prev.stepStatus.adjustments,
+                  adjustments: { reviewed: prev.stepStatus.adjustments.reviewed, total: totals.adjustments },
                   redistribute:    { reviewed: totals.redistribute === 0, total: totals.redistribute },
                   pharmacy_supply: { reviewed: totals.pharmacy_supply === 0, total: totals.pharmacy_supply },
                   order:           { reviewed: totals.order === 0, total: totals.order },
@@ -5761,12 +5762,14 @@ Medicana Stock Management System`;
                                 </div>
                                 {reviewPipelineTab !== 'all' && pp.adjustments.length > 1 && (
                                   <button
+                                    disabled={applyingMinLevels}
                                     onClick={async () => {
                                       if (!confirm(`Apply all ${pp.adjustments.length} min level adjustments?`)) return;
+                                      setApplyingMinLevels(true);
                                       const currentUser = getCurrentUserInfo();
                                       try {
-                                        for (const adj of pp.adjustments) {
-                                          await window.api.setMedicationMinLevel({
+                                        await Promise.all(pp.adjustments.map(adj =>
+                                          window.api.setMedicationMinLevel({
                                             medicationId: adj.medicationId,
                                             locationId: adj.locationId,
                                             minLevel: adj.suggestedMinLevel,
@@ -5774,8 +5777,8 @@ Medicana Stock Management System`;
                                             medicationName: adj.medicationName,
                                             oldMinLevel: adj.currentMinLevel,
                                             locationName: adj.locationName
-                                          });
-                                        }
+                                          })
+                                        ));
                                         const data = await window.api.fetchAllData();
                                         setMedications(data.medications || []);
                                         setTransactions(data.transactions || []);
@@ -5784,11 +5787,15 @@ Medicana Stock Management System`;
                                         loadReviewPipeline(true);
                                       } catch (err) {
                                         alert('Failed to apply: ' + (err.message || 'Unknown error'));
+                                      } finally {
+                                        setApplyingMinLevels(false);
                                       }
                                     }}
-                                    className="px-4 py-1.5 bg-status-low-text text-white text-sm font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
+                                    className={`px-4 py-1.5 text-white text-sm font-medium rounded transition-colors whitespace-nowrap ${
+                                      applyingMinLevels ? 'bg-gray-400 cursor-not-allowed' : 'bg-status-low-text hover:opacity-90'
+                                    }`}
                                   >
-                                    Apply All ({pp.adjustments.length})
+                                    {applyingMinLevels ? 'Applying...' : `Apply All (${pp.adjustments.length})`}
                                   </button>
                                 )}
                               </div>
@@ -5823,7 +5830,9 @@ Medicana Stock Management System`;
                                         {reviewPipelineTab !== 'all' && (
                                           <td className="px-4 py-3 text-center">
                                             <button
+                                              disabled={applyingMinLevels}
                                               onClick={async () => {
+                                                setApplyingMinLevels(true);
                                                 try {
                                                   const currentUser = getCurrentUserInfo();
                                                   await window.api.setMedicationMinLevel({
@@ -5843,11 +5852,15 @@ Medicana Stock Management System`;
                                                   loadReviewPipeline(true);
                                                 } catch (err) {
                                                   alert('Failed to apply: ' + (err.message || 'Unknown error'));
+                                                } finally {
+                                                  setApplyingMinLevels(false);
                                                 }
                                               }}
-                                              className="px-3 py-1 bg-brand-mid text-white text-xs font-medium rounded hover:bg-brand-dark transition-colors"
+                                              className={`px-3 py-1 text-white text-xs font-medium rounded transition-colors ${
+                                                applyingMinLevels ? 'bg-gray-400 cursor-not-allowed' : 'bg-brand-mid hover:bg-brand-dark'
+                                              }`}
                                             >
-                                              Apply
+                                              {applyingMinLevels ? 'Applying...' : 'Apply'}
                                             </button>
                                           </td>
                                         )}
