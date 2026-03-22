@@ -30,6 +30,7 @@ function parseBody(event) {
 }
 
 module.exports = {
+  pool,
   query: (text, params) => pool.query(text, params),
   json,
   ok,
