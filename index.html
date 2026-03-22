@@ -4014,14 +4014,12 @@ Medicana Stock Management System`;
       // =============================================
       // PIPELINE-BASED REVIEW & ORDER HANDLERS
       // =============================================
-      const loadReviewPipeline = async (preserveWizardStep = false, keepAppliedState = false) => {
+      const loadReviewPipeline = async (preserveWizardStep = false) => {
         setReviewPipeline({ loading: true, data: null, error: null });
-        if (!keepAppliedState) {
-          setMinLevelOverrides({});
-          setAppliedMinLevels(new Set());
-          setMinLevelRefreshDone(false);
-        }
+        setMinLevelOverrides({});
+        setAppliedMinLevels(new Set());
         if (!preserveWizardStep) {
+          setMinLevelRefreshDone(false);
           setReviewPipelineTab('adjustments');
         }
         try {
@@ -4089,7 +4087,7 @@ Medicana Stock Management System`;
           setTransactions(data.transactions || []);
           setLocations(data.locations || []);
           setOrders(data.orders || []);
-          await loadReviewPipeline(true, true); // preserve wizard step AND applied state
+          await loadReviewPipeline(true); // resets appliedMinLevels so counter restarts from 0
           if (isFinal) {
             setMinLevelRefreshDone(true);
           }
@@ -5941,11 +5939,12 @@ Medicana Stock Management System`;
                                                     oldMinLevel: adj.currentMinLevel,
                                                     locationName: adj.locationName
                                                   });
-                                                  const totalAdjs = pp.adjustments.length;
                                                   setAppliedMinLevels(prev => {
                                                     const next = new Set(prev).add(overrideKey);
-                                                    const allApplied = next.size >= totalAdjs;
-                                                    const batchHit = next.size % 10 === 0;
+                                                    // Check actual remaining items (not cumulative count)
+                                                    const remainingAfter = pp.adjustments.filter(a => !next.has(`${a.medicationId}-${a.locationId}`)).length;
+                                                    const allApplied = remainingAfter === 0;
+                                                    const batchHit = next.size > 0 && next.size % 10 === 0;
                                                     if (allApplied || batchHit) {
                                                       doMinLevelRefresh(allApplied);
                                                     }
