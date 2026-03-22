@@ -964,6 +964,12 @@
           });
         }, [ui.currentLocation, ui.activeTab, ui.searchTerm]);
         useEffect(() => { storage.save('medicana_activity_filters', activityLogFilters); }, [activityLogFilters]);
+        // Auto-reload activity log when filters or user selection changes
+        useEffect(() => {
+          if (ui.activeTab === 'transactions') {
+            loadActivityLog(true);
+          }
+        }, [activityLogFilters, activityUserFilter]);
         useEffect(() => { storage.save('medicana_medication_filters', medicationFilters); }, [medicationFilters]);
 
         // Prevent background scrolling when any modal is open
@@ -4624,7 +4630,7 @@ Medicana Stock Management System`;
                       <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'medications' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'medications' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>Medications List</button>
                     )}
                     {canAccessTab('transactions') && (
-                      <button onClick={() => { setUi(prev => ({ ...prev, activeTab: 'transactions' })); if (ui.activeTab !== 'transactions') { setTimeout(() => loadActivityLog(true), 0); window.api.fetchUsers().then(u => setActivityUsers(u)).catch(() => {}); } }} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-all whitespace-nowrap relative ${ui.activeTab === 'transactions' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>Activity Log</button>
+                      <button onClick={() => { setUi(prev => ({ ...prev, activeTab: 'transactions' })); if (ui.activeTab !== 'transactions') { loadActivityLog(true); window.api.fetchUsers().then(u => setActivityUsers(u)).catch(() => {}); } }} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-all whitespace-nowrap relative ${ui.activeTab === 'transactions' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>Activity Log</button>
                     )}
                     {canAccessTab('lowstock') && (
                       <button onClick={() => {
@@ -5066,7 +5072,7 @@ Medicana Stock Management System`;
                     <div className="flex justify-between items-start mb-3">
                       <p className="text-sm font-medium text-txt-secondary">Filter by Activity Type:</p>
                       <div className="flex gap-2">
-                          <button onClick={() => { setActivityLogFilters(ACTIVITY_FILTERS.map(f => f.id)); setTimeout(() => loadActivityLog(true), 0); }} className="text-xs text-brand-mid hover:text-brand-dark font-medium underline">Select All</button>
+                          <button onClick={() => setActivityLogFilters(ACTIVITY_FILTERS.map(f => f.id))} className="text-xs text-brand-mid hover:text-brand-dark font-medium underline">Select All</button>
                         <span className="text-txt-disabled">|</span>
                           <button onClick={() => { setActivityLogFilters([]); setActivityLog([]); }} className="text-xs text-txt-tertiary hover:text-txt-secondary font-medium underline">Deselect All</button>
                       </div>
@@ -5078,8 +5084,6 @@ Medicana Stock Management System`;
                               ? activityLogFilters.filter(f => f !== filter.id)
                               : [...activityLogFilters, filter.id];
                             setActivityLogFilters(newFilters);
-                            // Reload with new filters after state update
-                            setTimeout(() => loadActivityLog(true), 0);
                           }} className={`px-3 py-1.5 rounded-lg text-xs font-medium border-2 transition-all ${activityLogFilters.includes(filter.id) ? filter.color : 'bg-white text-txt-disabled border-bdr-default'}`}>{filter.label}</button>
                       ))}
                     </div>
@@ -5088,7 +5092,7 @@ Medicana Stock Management System`;
                       <label className="text-sm text-txt-tertiary">Filter by user:</label>
                       <select
                         value={activityUserFilter}
-                        onChange={(e) => { setActivityUserFilter(e.target.value); setTimeout(() => loadActivityLog(true), 0); }}
+                        onChange={(e) => setActivityUserFilter(e.target.value)}
                         className="text-sm border border-bdr-default rounded px-2 py-1"
                       >
                         <option value="">All Users</option>
@@ -6032,6 +6036,8 @@ Medicana Stock Management System`;
                                                     }
                                                     return next;
                                                   });
+                                                  // Refresh activity log with the new min_level_changed entry
+                                                  loadActivityLog(true);
                                                 } catch (err) {
                                                   alert('Failed to apply: ' + (err.message || 'Unknown error'));
                                                 } finally {

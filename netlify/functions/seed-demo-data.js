@@ -25,7 +25,7 @@ exports.handler = async (event) => {
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
-const TODAY = new Date('2026-03-21');
+const TODAY = new Date('2026-03-22');
 const WEEKS_OF_HISTORY = 12;
 const GO_LIVE_DATE = new Date(TODAY);
 GO_LIVE_DATE.setDate(GO_LIVE_DATE.getDate() - WEEKS_OF_HISTORY * 7);
