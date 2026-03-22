@@ -4068,7 +4068,7 @@ Medicana Stock Management System`;
       // =============================================
       // PIPELINE-BASED REVIEW & ORDER HANDLERS
       // =============================================
-      const loadReviewPipeline = async (preserveWizardStep = false, forceRegenerate = false) => {
+      const loadReviewPipeline = async (preserveWizardStep = false, forceRegenerate = false, skipSnapshotSave = false) => {
         setReviewPipeline({ loading: true, data: null, error: null });
         setMinLevelOverrides({});
         setAppliedMinLevels(new Set());
@@ -4079,7 +4079,8 @@ Medicana Stock Management System`;
         try {
           // Server handles 7-day cooldown: returns cached snapshot if within cooldown,
           // or generates fresh pipeline if expired or force=true
-          const data = await window.api.fetchIntelligenceReport(null, forceRegenerate);
+          // skipSnapshotSave=true for Step 1 internal regeneration (don't overwrite the cached snapshot)
+          const data = await window.api.fetchIntelligenceReport(null, forceRegenerate, skipSnapshotSave);
           setReviewPipeline({ loading: false, data, error: null });
           // Pre-select order items that still need ordering (skip those fully covered by pending orders)
           const orders = data.pipeline?.orders || [];
@@ -4178,7 +4179,7 @@ Medicana Stock Management System`;
           setTransactions(data.transactions || []);
           setLocations(data.locations || []);
           setOrders(data.orders || []);
-          await loadReviewPipeline(true, true); // resets appliedMinLevels so counter restarts from 0
+          await loadReviewPipeline(true, true, true); // resets appliedMinLevels so counter restarts from 0
           if (isFinal) {
             setMinLevelRefreshDone(true);
             // Ensure step 1 is marked reviewed so user can advance without password
@@ -4236,7 +4237,7 @@ Medicana Stock Management System`;
                 setLocations(data.locations || []);
                 setOrders(data.orders || []);
               });
-              loadReviewPipeline(true, true);
+              loadReviewPipeline(true, true, true);
             }
           } else {
             setWizardState(prev => ({ ...prev, currentStep: targetIndex }));
@@ -4276,7 +4277,7 @@ Medicana Stock Management System`;
           setSkipConfirm({ show: false, password: '', error: '', targetStep: null, loading: false });
           // If we skipped past step 1, trigger recalculation
           if (wizardState.currentStep === 0 && targetIndex > 0) {
-            loadReviewPipeline(true, true);
+            loadReviewPipeline(true, true, true);
           }
         } catch (err) {
           setSkipConfirm(prev => ({ ...prev, loading: false, error: 'Network error. Please try again.' }));

@@ -36,6 +36,7 @@ exports.handler = async (event) => {
     const params = event.queryStringParameters || {};
     const locationId = params.location_id || null;
     const forceRegenerate = params.force === 'true';
+    const saveSnapshot = params.nosave !== 'true'; // Skip snapshot save for Step 1 internal regeneration
 
     // For org-wide requests (no locationId), check for cached pipeline snapshot
     if (!locationId && !forceRegenerate) {
@@ -165,23 +166,27 @@ exports.handler = async (event) => {
       pipeline = runOptimisationPipeline(medications, batchInventory, pendingOrderMap);
 
       // Save pipeline snapshot to database for cross-device access
+      // Skip save for internal regenerations (Step 1 advancement) — only save for
+      // initial generation (cooldown expired) or explicit admin "Force Regenerate"
       const snapshotData = { goLiveDate, weeksOfData, maturityLevel, medications, aggregated, pipeline };
       lastPipelineRun = new Date().toISOString();
-      try {
-        await ensureSnapshotsTable();
-        await db.query(
-          `INSERT INTO pipeline_snapshots (snapshot, generated_at)
-           VALUES ($1, $2)`,
-          [JSON.stringify(snapshotData), lastPipelineRun]
-        );
-        // Also update intelligence_config for backward compatibility
-        await db.query(
-          `INSERT INTO intelligence_config (key, value, updated_at)
-           VALUES ('last_pipeline_run', $1, NOW())
-           ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
-          [lastPipelineRun]
-        );
-      } catch (_) { /* non-critical */ }
+      if (saveSnapshot) {
+        try {
+          await ensureSnapshotsTable();
+          await db.query(
+            `INSERT INTO pipeline_snapshots (snapshot, generated_at)
+             VALUES ($1, $2)`,
+            [JSON.stringify(snapshotData), lastPipelineRun]
+          );
+          // Also update intelligence_config for backward compatibility
+          await db.query(
+            `INSERT INTO intelligence_config (key, value, updated_at)
+             VALUES ('last_pipeline_run', $1, NOW())
+             ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+            [lastPipelineRun]
+          );
+        } catch (_) { /* non-critical */ }
+      }
     } else {
       // For location-specific reports, fetch last pipeline run timestamp
       try {
