@@ -719,6 +719,7 @@
       const [reviewPipelineTab, setReviewPipelineTab] = useState('all');
       const [pipelineOrderSelections, setPipelineOrderSelections] = useState(new Set());
       const [pipelineOrderAdjustments, setPipelineOrderAdjustments] = useState({});
+      const [pharmacySupplyAdjustments, setPharmacySupplyAdjustments] = useState({});
 
       const [newMedicationOrderForm, setNewMedicationOrderForm] = useState({
         name: '',
@@ -3999,6 +4000,7 @@ Medicana Stock Management System`;
           const orders = data.pipeline?.orders || [];
           setPipelineOrderSelections(new Set(orders.map((o, i) => o.orderQuantityBoxes > 0 ? i : null).filter(i => i !== null)));
           setPipelineOrderAdjustments({});
+          setPharmacySupplyAdjustments({});
         } catch (err) {
           setReviewPipeline({ loading: false, data: null, error: err.message });
         }
@@ -5661,14 +5663,18 @@ Medicana Stock Management System`;
                                     onClick={async () => {
                                       if (!confirm(`Execute all ${pp.pharmacySupplies.length} pharmacy supply actions?`)) return;
                                       const currentUser = getCurrentUserInfo();
-                                      for (const s of pp.pharmacySupplies) {
+                                      for (let si = 0; si < pp.pharmacySupplies.length; si++) {
+                                        const s = pp.pharmacySupplies[si];
+                                        const adjBoxes = pharmacySupplyAdjustments[si] != null ? Number(pharmacySupplyAdjustments[si]) : s.quantityBoxes;
+                                        const adjItems = adjBoxes * (s.itemsPerBox || 1);
+                                        if (adjBoxes <= 0) continue;
                                         try {
                                           await window.api.transferStock({
                                             userId: currentUser?.id,
                                             batchId: s.batchId,
                                             sourceLocationId: s.sourceLoc,
                                             targetLocationId: s.targetLoc,
-                                            quantity: s.quantity,
+                                            quantity: adjItems,
                                             reason: 'Pharmacy supply (intelligence-recommended)',
                                             medicationName: s.medicationName,
                                             batchCode: s.batchCode
@@ -5719,10 +5725,22 @@ Medicana Stock Management System`;
                                             </span>
                                           ) : <span className="text-txt-disabled">-</span>}
                                         </td>
-                                        <td className="px-4 py-3 text-center font-semibold text-near-black">{s.quantityBoxes} {s.quantityBoxes === 1 ? 'box' : 'boxes'}</td>
+                                        <td className="px-4 py-3 text-center">
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            max={s.quantityBoxes}
+                                            value={pharmacySupplyAdjustments[i] != null ? pharmacySupplyAdjustments[i] : s.quantityBoxes}
+                                            onChange={(e) => setPharmacySupplyAdjustments(prev => ({ ...prev, [i]: parseInt(e.target.value) || 0 }))}
+                                            className="w-16 px-2 py-1 border border-bdr-default rounded text-sm text-center focus:ring-2 focus:ring-brand-mid focus:border-transparent"
+                                          />
+                                          <span className="text-xs text-txt-tertiary ml-1">boxes</span>
+                                        </td>
                                         <td className="px-4 py-3 text-center">
                                           <button
                                             onClick={async () => {
+                                              const adjustedBoxes = pharmacySupplyAdjustments[i] != null ? Number(pharmacySupplyAdjustments[i]) : s.quantityBoxes;
+                                              const adjustedItems = adjustedBoxes * (s.itemsPerBox || 1);
                                               const currentUser = getCurrentUserInfo();
                                               try {
                                                 await window.api.transferStock({
@@ -5730,7 +5748,7 @@ Medicana Stock Management System`;
                                                   batchId: s.batchId,
                                                   sourceLocationId: s.sourceLoc,
                                                   targetLocationId: s.targetLoc,
-                                                  quantity: s.quantity,
+                                                  quantity: adjustedItems,
                                                   reason: 'Pharmacy supply (intelligence-recommended)',
                                                   medicationName: s.medicationName,
                                                   batchCode: s.batchCode
