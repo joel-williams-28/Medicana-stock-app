@@ -5763,13 +5763,28 @@ Medicana Stock Management System`;
                                   <button
                                     onClick={async () => {
                                       if (!confirm(`Apply all ${pp.adjustments.length} min level adjustments?`)) return;
-                                      for (const adj of pp.adjustments) {
-                                        await applyMinLevelRecommendation(
-                                          adj.medicationId, adj.locationId, adj.suggestedMinLevel,
-                                          adj.medicationName, adj.currentMinLevel, adj.locationName
-                                        );
+                                      const currentUser = getCurrentUserInfo();
+                                      try {
+                                        for (const adj of pp.adjustments) {
+                                          await window.api.setMedicationMinLevel({
+                                            medicationId: adj.medicationId,
+                                            locationId: adj.locationId,
+                                            minLevel: adj.suggestedMinLevel,
+                                            userId: currentUser?.id,
+                                            medicationName: adj.medicationName,
+                                            oldMinLevel: adj.currentMinLevel,
+                                            locationName: adj.locationName
+                                          });
+                                        }
+                                        const data = await window.api.fetchAllData();
+                                        setMedications(data.medications || []);
+                                        setTransactions(data.transactions || []);
+                                        setLocations(data.locations || []);
+                                        setOrders(data.orders || []);
+                                        loadReviewPipeline(true);
+                                      } catch (err) {
+                                        alert('Failed to apply: ' + (err.message || 'Unknown error'));
                                       }
-                                      loadReviewPipeline();
                                     }}
                                     className="px-4 py-1.5 bg-status-low-text text-white text-sm font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
                                   >
@@ -5808,11 +5823,27 @@ Medicana Stock Management System`;
                                         {reviewPipelineTab !== 'all' && (
                                           <td className="px-4 py-3 text-center">
                                             <button
-                                              onClick={() => {
-                                                applyMinLevelRecommendation(
-                                                  adj.medicationId, adj.locationId, adj.suggestedMinLevel,
-                                                  adj.medicationName, adj.currentMinLevel, adj.locationName
-                                                );
+                                              onClick={async () => {
+                                                try {
+                                                  const currentUser = getCurrentUserInfo();
+                                                  await window.api.setMedicationMinLevel({
+                                                    medicationId: adj.medicationId,
+                                                    locationId: adj.locationId,
+                                                    minLevel: adj.suggestedMinLevel,
+                                                    userId: currentUser?.id,
+                                                    medicationName: adj.medicationName,
+                                                    oldMinLevel: adj.currentMinLevel,
+                                                    locationName: adj.locationName
+                                                  });
+                                                  const data = await window.api.fetchAllData();
+                                                  setMedications(data.medications || []);
+                                                  setTransactions(data.transactions || []);
+                                                  setLocations(data.locations || []);
+                                                  setOrders(data.orders || []);
+                                                  loadReviewPipeline(true);
+                                                } catch (err) {
+                                                  alert('Failed to apply: ' + (err.message || 'Unknown error'));
+                                                }
                                               }}
                                               className="px-3 py-1 bg-brand-mid text-white text-xs font-medium rounded hover:bg-brand-dark transition-colors"
                                             >
