@@ -57,7 +57,7 @@ exports.handler = async (event) => {
 
       const order = orderResult.rows[0];
 
-      // Log activity
+      // Log activity with full pipeline context
       await logActivity({
         userId: userId || null,
         actionType: 'order_placed',
@@ -69,7 +69,10 @@ exports.handler = async (event) => {
           quantityBoxes,
           quantityInItems,
           urgency: urgency || 'routine',
-          source: 'intelligence_pipeline'
+          source: 'intelligence_pipeline',
+          currentSimulatedBoxes: item.currentSimulatedBoxes != null ? Number(item.currentSimulatedBoxes) : null,
+          pharmacyDerivedMin: item.pharmacyDerivedMin != null ? Number(item.pharmacyDerivedMin) : null,
+          supplyDestinations: item.supplyDestinations || []
         }
       });
 
@@ -91,7 +94,7 @@ exports.handler = async (event) => {
       return db.fail(400, 'No valid orders to create');
     }
 
-    // Log bulk activity
+    // Log bulk activity with medication details
     await logActivity({
       userId: userId || null,
       actionType: 'bulk_order_approved',
@@ -100,7 +103,12 @@ exports.handler = async (event) => {
         count: createdOrders.length,
         totalBoxes: createdOrders.reduce((sum, o) => sum + o.quantityBoxes, 0),
         pharmacistEmail,
-        source: 'intelligence_pipeline'
+        source: 'intelligence_pipeline',
+        medications: createdOrders.map(o => ({
+          name: o.medicationName,
+          boxes: o.quantityBoxes,
+          urgency: o.urgency
+        }))
       }
     });
 
