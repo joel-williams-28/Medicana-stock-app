@@ -167,8 +167,10 @@ async function seed(clean) {
 
     // ---- Clean (optional) ----
     if (clean) {
-      for (const t of ['activity_log', 'draft_orders', 'orders', 'transactions', 'inventory', 'batches', 'location_min_levels', 'medications', 'users', 'locations', 'intelligence_config']) {
-        await client.query(`DELETE FROM ${t}`);
+      for (const t of ['pipeline_snapshots', 'activity_log', 'draft_orders', 'orders', 'transactions', 'inventory', 'batches', 'location_min_levels', 'medications', 'users', 'locations', 'intelligence_config']) {
+        await client.query(`SAVEPOINT clean_${t}`);
+        try { await client.query(`DELETE FROM ${t}`); } catch (_) { await client.query(`ROLLBACK TO SAVEPOINT clean_${t}`); }
+        await client.query(`RELEASE SAVEPOINT clean_${t}`);
       }
     }
 
@@ -532,7 +534,7 @@ async function seed(clean) {
               const ts = weekdayTs(weekStart, randomInt(1, 3));
               actRows.push([
                 actUserId, 'stock_transfer', 'medication', med.id, locId,
-                JSON.stringify({ medicationName: med.name, batchId, delta: transferItems, fromLocation: 'Pharmacy', toLocation: locName }),
+                JSON.stringify({ medicationName: med.name, batchId, delta: transferItems, sourceLocationName: 'Pharmacy', targetLocationName: locName }),
                 ts
               ]);
             }

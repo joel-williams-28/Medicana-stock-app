@@ -81,9 +81,11 @@ window.api = (function () {
     return out;
   }
 
-  async function fetchIntelligenceReport(locationId) {
-    const params = locationId ? `?location_id=${locationId}` : '';
-    const res = await fetch(`/.netlify/functions/intelligence-report${params}`);
+  async function fetchIntelligenceReport(locationId, force = false, nosave = false) {
+    let qs = locationId ? `?location_id=${locationId}` : '';
+    if (force) qs += (qs ? '&' : '?') + 'force=true';
+    if (nosave) qs += (qs ? '&' : '?') + 'nosave=true';
+    const res = await fetch(`/.netlify/functions/intelligence-report${qs}`);
     const out = await res.json();
     if (!res.ok || !out.success) throw new Error(out.message || 'Failed to fetch intelligence report');
     return out;
@@ -130,6 +132,7 @@ window.api = (function () {
     seedDemoData:         (payload)  => postJSON('/.netlify/functions/seed-demo-data', payload || {}),
     fetchIntelligenceReport,
     getIntelligenceConfig,
+    postActivityLog:      (payload)  => postJSON('/.netlify/functions/activity-log', payload),
     fetchActivityLog,
     loginUser,
     startPolling,

@@ -198,13 +198,15 @@
       { id: 'order_placed',       label: 'Orders Placed',     color: 'bg-urgent-ghost-bg text-urgent-ghost-text border-urgent' },
       { id: 'order_fulfilled',    label: 'Orders Fulfilled',  color: 'bg-status-fulfilled-bg text-status-fulfilled-text border-brand-light' },
       { id: 'medication_created', label: 'Meds Added',        color: 'bg-status-fulfilled-bg text-status-fulfilled-text border-brand-light' },
-      { id: 'medication_deleted', label: 'Meds Deleted',      color: 'bg-status-critical-bg text-status-critical-text border-status-critical-text' },
+      { id: 'medication_deleted', label: 'Meds Status',        color: 'bg-status-critical-bg text-status-critical-text border-status-critical-text' },
       { id: 'batch_removed',      label: 'Batch Removals',    color: 'bg-status-expired-bg text-status-expired-text border-status-expired-text' },
       { id: 'min_level_changed',  label: 'Min Level Changes', color: 'bg-status-low-bg text-status-low-text border-status-low-text' },
       { id: 'drafts_generated',   label: 'Drafts Generated',  color: 'bg-status-ordered-bg text-status-ordered-text border-status-ordered-text' },
       { id: 'draft_approved',     label: 'Drafts Approved',   color: 'bg-status-ok-bg text-status-ok-text border-status-ok-text' },
       { id: 'draft_rejected',     label: 'Drafts Rejected',   color: 'bg-status-critical-bg text-status-critical-text border-status-critical-text' },
-      { id: 'bulk_order_approved', label: 'Bulk Orders',      color: 'bg-status-fulfilled-bg text-status-fulfilled-text border-brand-light' }
+      { id: 'bulk_order_approved', label: 'Bulk Orders',      color: 'bg-status-fulfilled-bg text-status-fulfilled-text border-brand-light' },
+      { id: 'logout',              label: 'Logouts',           color: 'bg-status-expired-bg text-status-expired-text border-status-expired-text' },
+      { id: 'config_changed',      label: 'Config Changes',    color: 'bg-status-low-bg text-status-low-text border-status-low-text' }
     ];
 
     const formatExpiry = (expiryDate, format = 'short') => {
@@ -763,6 +765,7 @@
       const [activityUserFilter, setActivityUserFilter] = useState('');
       const [activityUsers, setActivityUsers] = useState([]);
       const [collapsedDates, setCollapsedDates] = useState([]);
+      const activityLoadRef = useRef(0);
         const [changePasswordForm, setChangePasswordForm] = useState({
           currentPassword: '',
           newPassword: '',
@@ -1061,7 +1064,19 @@
               // We calculate based on INACTIVITY_TIMEOUT + WARNING_DURATION from lastActivity
               const totalTimeout = INACTIVITY_TIMEOUT + WARNING_DURATION;
               if (elapsed >= totalTimeout) {
-                // Auto logout
+                // Auto logout — log before clearing
+                try {
+                  const user = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+                  if (user.id) {
+                    window.api.postActivityLog({
+                      userId: user.id,
+                      actionType: 'logout',
+                      entityType: 'user',
+                      entityId: String(user.id),
+                      details: { username: user.username, fullName: user.full_name || user.fullName, method: 'auto_timeout' }
+                    }).catch(() => {});
+                  }
+                } catch (_) {}
                 warningShownRef.current = false;
                 window.api.stopPolling();
                 storage.remove('medicana_auth');
@@ -2309,16 +2324,21 @@
       };
 
       const loadActivityLog = async (reset = false) => {
-        if (activityLogLoading) return;
         if (activityLogFilters.length === 0) {
           setActivityLog([]);
           setActivityLogHasMore(false);
           return;
         }
+        const loadId = ++activityLoadRef.current;
         setActivityLogLoading(true);
         try {
+          // Expand filter aliases: medication_deleted also covers medication_restored
+          const expandedFilters = [...activityLogFilters];
+          if (expandedFilters.includes('medication_deleted') && !expandedFilters.includes('medication_restored')) {
+            expandedFilters.push('medication_restored');
+          }
           const params = {
-            actionTypes: activityLogFilters,
+            actionTypes: expandedFilters,
             limit: 50
           };
           if (activityUserFilter) params.userId = activityUserFilter;
@@ -2326,6 +2346,7 @@
             params.beforeId = activityLog[activityLog.length - 1].id;
           }
           const data = await window.api.fetchActivityLog(params);
+          if (loadId !== activityLoadRef.current) return; // stale response
           if (reset) {
             setActivityLog(data.entries || []);
           } else {
@@ -2333,9 +2354,12 @@
           }
           setActivityLogHasMore(data.hasMore || false);
         } catch (err) {
+          if (loadId !== activityLoadRef.current) return; // stale
           console.error('Failed to load activity log:', err);
         } finally {
-          setActivityLogLoading(false);
+          if (loadId === activityLoadRef.current) {
+            setActivityLogLoading(false);
+          }
         }
       };
 
@@ -2461,6 +2485,19 @@
         }
       };
       const handleLogout = () => {
+        // Log logout before clearing auth
+        try {
+          const user = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+          if (user.id) {
+            window.api.postActivityLog({
+              userId: user.id,
+              actionType: 'logout',
+              entityType: 'user',
+              entityId: String(user.id),
+              details: { username: user.username, fullName: user.full_name || user.fullName, method: 'manual' }
+            }).catch(() => {}); // Fire and forget
+          }
+        } catch (_) {}
         window.api.stopPolling();
         setAuth({ currentUser: '', password: '', isLoggedIn: false, error: '' });
           storage.remove('medicana_auth');
@@ -4031,7 +4068,7 @@ Medicana Stock Management System`;
       // =============================================
       // PIPELINE-BASED REVIEW & ORDER HANDLERS
       // =============================================
-      const loadReviewPipeline = async (preserveWizardStep = false) => {
+      const loadReviewPipeline = async (preserveWizardStep = false, forceRegenerate = false, skipSnapshotSave = false) => {
         setReviewPipeline({ loading: true, data: null, error: null });
         setMinLevelOverrides({});
         setAppliedMinLevels(new Set());
@@ -4040,7 +4077,10 @@ Medicana Stock Management System`;
           setReviewPipelineTab('adjustments');
         }
         try {
-          const data = await window.api.fetchIntelligenceReport(null); // Always org-wide for pipeline
+          // Server handles 7-day cooldown: returns cached snapshot if within cooldown,
+          // or generates fresh pipeline if expired or force=true
+          // skipSnapshotSave=true for Step 1 internal regeneration (don't overwrite the cached snapshot)
+          const data = await window.api.fetchIntelligenceReport(null, forceRegenerate, skipSnapshotSave);
           setReviewPipeline({ loading: false, data, error: null });
           // Pre-select order items that still need ordering (skip those fully covered by pending orders)
           const orders = data.pipeline?.orders || [];
@@ -4096,6 +4136,41 @@ Medicana Stock Management System`;
         }
       };
 
+      // Remove executed item(s) from the pipeline without regenerating
+      // Used after executing transfers/pharmacy supplies in Steps 2-4
+      const removeFromPipeline = (type, indexOrIndices) => {
+        let updatedPipeline;
+        setReviewPipeline(prev => {
+          if (!prev.data?.pipeline) return prev;
+          const pipeline = { ...prev.data.pipeline };
+          const arr = [...(pipeline[type] || [])];
+          if (Array.isArray(indexOrIndices)) {
+            [...indexOrIndices].sort((a, b) => b - a).forEach(idx => arr.splice(idx, 1));
+          } else {
+            arr.splice(indexOrIndices, 1);
+          }
+          pipeline[type] = arr;
+          pipeline.summary = {
+            ...pipeline.summary,
+            totalTransfers: pipeline.transfers.length,
+            totalPharmacySupplies: pipeline.pharmacySupplies.length,
+            totalBoxesRedistributed: pipeline.transfers.reduce((s, t) => s + t.quantityBoxes, 0),
+            totalBoxesFromPharmacy: pipeline.pharmacySupplies.reduce((s, t) => s + t.quantityBoxes, 0)
+          };
+          updatedPipeline = pipeline;
+          const newData = { ...prev.data, pipeline };
+          return { ...prev, data: newData };
+        });
+        setWizardState(prev => ({
+          ...prev,
+          stepStatus: {
+            ...prev.stepStatus,
+            redistribute: { ...prev.stepStatus.redistribute, total: updatedPipeline ? updatedPipeline.transfers.length : prev.stepStatus.redistribute.total },
+            pharmacy_supply: { ...prev.stepStatus.pharmacy_supply, total: updatedPipeline ? updatedPipeline.pharmacySupplies.length : prev.stepStatus.pharmacy_supply.total }
+          }
+        }));
+      };
+
       // Refresh data + pipeline after min level applies (batch or final)
       const doMinLevelRefresh = async (isFinal) => {
         try {
@@ -4104,7 +4179,7 @@ Medicana Stock Management System`;
           setTransactions(data.transactions || []);
           setLocations(data.locations || []);
           setOrders(data.orders || []);
-          await loadReviewPipeline(true); // resets appliedMinLevels so counter restarts from 0
+          await loadReviewPipeline(true, true, true); // resets appliedMinLevels so counter restarts from 0
           if (isFinal) {
             setMinLevelRefreshDone(true);
             // Ensure step 1 is marked reviewed so user can advance without password
@@ -4162,7 +4237,7 @@ Medicana Stock Management System`;
                 setLocations(data.locations || []);
                 setOrders(data.orders || []);
               });
-              loadReviewPipeline(true);
+              loadReviewPipeline(true, true, true);
             }
           } else {
             setWizardState(prev => ({ ...prev, currentStep: targetIndex }));
@@ -4202,7 +4277,7 @@ Medicana Stock Management System`;
           setSkipConfirm({ show: false, password: '', error: '', targetStep: null, loading: false });
           // If we skipped past step 1, trigger recalculation
           if (wizardState.currentStep === 0 && targetIndex > 0) {
-            loadReviewPipeline(true);
+            loadReviewPipeline(true, true, true);
           }
         } catch (err) {
           setSkipConfirm(prev => ({ ...prev, loading: false, error: 'Network error. Please try again.' }));
@@ -5157,7 +5232,14 @@ Medicana Stock Management System`;
                       medication_created: { label: 'NEW MED',     css: 'bg-status-fulfilled-bg text-status-fulfilled-text', icon: Plus },
                       medication_deleted: { label: 'DELETED',     css: 'bg-status-critical-bg text-status-critical-text', icon: AlertTriangle },
                       batch_removed:      { label: 'REMOVED',     css: 'bg-status-expired-bg text-status-expired-text', icon: AlertTriangle },
-                      min_level_changed:  { label: 'MIN LEVEL',   css: 'bg-status-low-bg text-status-low-text', icon: null }
+                      min_level_changed:  { label: 'MIN LEVEL',   css: 'bg-status-low-bg text-status-low-text', icon: null },
+                      logout:             { label: 'LOGOUT',      css: 'bg-status-expired-bg text-status-expired-text', icon: null },
+                      config_changed:     { label: 'CONFIG',      css: 'bg-status-low-bg text-status-low-text', icon: null },
+                      medication_restored:{ label: 'RESTORED',    css: 'bg-status-fulfilled-bg text-status-fulfilled-text', icon: Plus },
+                      drafts_generated:   { label: 'DRAFTS',      css: 'bg-status-ordered-bg text-status-ordered-text', icon: Download },
+                      draft_approved:     { label: 'APPROVED',    css: 'bg-status-ok-bg text-status-ok-text', icon: null },
+                      draft_rejected:     { label: 'REJECTED',    css: 'bg-status-critical-bg text-status-critical-text', icon: AlertTriangle },
+                      bulk_order_approved:{ label: 'BULK ORDER',  css: 'bg-status-fulfilled-bg text-status-fulfilled-text', icon: Download }
                     };
 
                     const renderEntryDetails = (entry) => {
@@ -5197,7 +5279,7 @@ Medicana Stock Management System`;
                       if (at === 'stock_transfer') {
                         return (
                           <div className="text-sm text-txt-tertiary">
-                            <p><span className="font-medium">From:</span> {d.sourceLocationName || 'Unknown'} <span className="font-medium ml-2">To:</span> {d.targetLocationName || 'Unknown'}</p>
+                            <p><span className="font-medium">From:</span> {d.sourceLocationName || d.fromLocation || entry.locationName || 'Unknown'} <span className="font-medium ml-2">To:</span> {d.targetLocationName || d.toLocation || 'Unknown'}</p>
                             <p><span className="font-medium">Quantity:</span> {d.delta || 0} items</p>
                             {d.batchCode && <p><span className="font-medium">Batch:</span> {d.batchCode}</p>}
                           </div>
@@ -5237,6 +5319,7 @@ Medicana Stock Management System`;
                       if (at === 'min_level_changed') {
                         return (
                           <div className="text-sm text-txt-tertiary">
+                            {(d.locationName || entry.locationName) && <p><span className="font-medium">Location:</span> {d.locationName || entry.locationName}</p>}
                             <p>Minimum level changed from <span className="font-medium">{d.oldMinLevel ?? '?'} boxes</span> to <span className="font-medium">{d.newMinLevel ?? '?'} boxes</span></p>
                           </div>
                         );
@@ -5257,6 +5340,68 @@ Medicana Stock Management System`;
                           <div className="text-sm text-txt-tertiary">
                             <p>Order #{d.orderId || '?'} {d.autoFulfilled ? 'auto-fulfilled by delivery' : 'marked as fulfilled'}</p>
                             {d.quantityDelivered && <p>Delivered: {d.quantityDelivered} units{d.partial ? ` (${d.quantityFulfilled}/${d.quantityOrdered} total)` : ' — order complete'}</p>}
+                          </div>
+                        );
+                      }
+
+                      if (at === 'logout') {
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <p><span className="font-medium">User Logout</span> — {d.fullName || d.username || entry.userFullName || 'Unknown'} logged out{d.method === 'auto_timeout' ? ' (session timeout)' : ''}</p>
+                          </div>
+                        );
+                      }
+
+                      if (at === 'config_changed') {
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <p><span className="font-medium">Setting:</span> {d.key || entry.entityId || 'Unknown'}</p>
+                            {d.oldValue != null && <p><span className="font-medium">Previous:</span> {d.oldValue || '(empty)'}</p>}
+                            <p><span className="font-medium">New value:</span> {d.newValue || '(empty)'}</p>
+                          </div>
+                        );
+                      }
+
+                      if (at === 'medication_restored') {
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <p>Medication reactivated in the system</p>
+                          </div>
+                        );
+                      }
+
+                      if (at === 'drafts_generated') {
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <p><span className="font-medium">{d.count || '?'}</span> draft order{(d.count || 0) !== 1 ? 's' : ''} generated</p>
+                            {d.locationId && <p><span className="font-medium">Location:</span> {entry.locationName || d.locationId}</p>}
+                            {d.batchRef && <p><span className="font-medium">Batch ref:</span> {String(d.batchRef).slice(0, 8)}</p>}
+                          </div>
+                        );
+                      }
+
+                      if (at === 'draft_approved') {
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <p>Draft #{d.draftId || '?'} approved — <span className="font-medium">{d.approvedQuantity || '?'} boxes</span>{d.suggestedQuantity ? ` (suggested: ${d.suggestedQuantity})` : ''}</p>
+                            {d.orderId && <p><span className="font-medium">Order:</span> #{d.orderId}</p>}
+                          </div>
+                        );
+                      }
+
+                      if (at === 'draft_rejected') {
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <p>Draft #{d.draftId || '?'} rejected{d.medicationName ? ` — ${d.medicationName}` : ''}</p>
+                          </div>
+                        );
+                      }
+
+                      if (at === 'bulk_order_approved') {
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <p><span className="font-medium">{d.count || '?'}</span> order{(d.count || 0) !== 1 ? 's' : ''} created — <span className="font-medium">{d.totalBoxes || '?'} boxes</span> total</p>
+                            {d.pharmacistEmail && <p><span className="font-medium">Sent to:</span> {d.pharmacistEmail}</p>}
                           </div>
                         );
                       }
@@ -5286,12 +5431,21 @@ Medicana Stock Management System`;
                               {!isCollapsed && groupedByDate[dateKey].map(entry => {
                                 const badge = badgeConfig[entry.actionType] || { label: entry.actionType.toUpperCase(), css: 'bg-off-white text-near-black', icon: null };
                                 const BadgeIcon = badge.icon;
-                                const medName = entry.details?.medicationName || (entry.actionType === 'login' ? '' : 'Unknown Medication');
+                                const NON_MED_ACTIONS = ['login', 'logout', 'config_changed', 'bulk_order_approved', 'drafts_generated'];
+                                const medName = entry.details?.medicationName || (NON_MED_ACTIONS.includes(entry.actionType) ? '' : 'Unknown Medication');
                                 const delta = entry.details?.delta ? Math.abs(entry.details.delta) : null;
                                 return (
                                   <div key={entry.id} className="p-4 hover:bg-off-white">
                                     <div className="flex justify-between items-start mb-1">
-                                      <span className="font-medium text-near-black">{medName || (entry.actionType === 'login' ? (entry.userFullName || entry.username) : '')}</span>
+                                      <span className="font-medium text-near-black">{medName || (
+                                        entry.actionType === 'login' || entry.actionType === 'logout'
+                                          ? (entry.userFullName || entry.username)
+                                          : entry.actionType === 'config_changed'
+                                            ? (entry.details?.key || 'Configuration')
+                                            : entry.actionType === 'drafts_generated' || entry.actionType === 'bulk_order_approved'
+                                              ? (entry.details?.count ? `${entry.details.count} item${entry.details.count !== 1 ? 's' : ''}` : '')
+                                              : ''
+                                      )}</span>
                                       <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${badge.css}`}>
                                         {BadgeIcon && <BadgeIcon className="w-3 h-3 mr-1" />}
                                         {badge.label}{delta != null && (entry.actionType === 'stock_in' || entry.actionType === 'stock_out') ? ` ${entry.actionType === 'stock_in' ? '+' : '-'}${delta}` : ''}
@@ -5730,6 +5884,36 @@ Medicana Stock Management System`;
                           </div>
                         </div>
 
+                        {/* Pipeline generation info + cooldown */}
+                        {(() => {
+                          const genAt = pData?.lastPipelineRun;
+                          if (!genAt) return null;
+                          const daysSince = Math.floor((Date.now() - new Date(genAt).getTime()) / (1000 * 60 * 60 * 24));
+                          const daysRemaining = Math.max(0, 7 - daysSince);
+                          const isCached = pData?.fromCache;
+                          return (
+                            <div className="px-4 py-2 bg-status-ordered-bg border-b border-bdr-default flex items-center justify-between">
+                              <p className="text-xs text-status-ordered-text">
+                                Pipeline generated {daysSince === 0 ? 'today' : `${daysSince} day${daysSince !== 1 ? 's' : ''} ago`}{isCached ? ' (cached)' : ''}.
+                                {daysRemaining > 0 ? ` Next generation available in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}.` : ' Ready to regenerate.'}
+                              </p>
+                              {(getCurrentUserInfo()?.role === 'Administrator' || getCurrentUserInfo()?.role === 'Pharmacist') && (
+                                <button
+                                  onClick={() => {
+                                    if (daysRemaining > 0) {
+                                      if (!confirm(`Pipeline was generated ${daysSince} day${daysSince !== 1 ? 's' : ''} ago. Regenerating early may not have enough new data for accurate recommendations.\n\nForce regenerate?`)) return;
+                                    }
+                                    loadReviewPipeline(false, true);
+                                  }}
+                                  className="text-xs text-status-ordered-text underline hover:text-brand-dark font-medium ml-2 whitespace-nowrap"
+                                >
+                                  {daysRemaining > 0 ? 'Force Regenerate' : 'Regenerate'}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
+
                         {/* Pipeline wizard stepper navigation */}
                         <div className="border-b border-bdr-default bg-off-white px-4 py-3">
                           <div className="flex items-center gap-2 overflow-x-auto">
@@ -6105,6 +6289,8 @@ Medicana Stock Management System`;
                                     onClick={async () => {
                                       if (!confirm(`Execute all ${pp.transfers.length} recommended transfers?`)) return;
                                       const currentUser = getCurrentUserInfo();
+                                      let succeeded = 0;
+                                      const failures = [];
                                       for (const t of pp.transfers) {
                                         try {
                                           await window.api.transferStock({
@@ -6117,16 +6303,24 @@ Medicana Stock Management System`;
                                             medicationName: t.medicationName,
                                             batchCode: t.batchCode
                                           });
+                                          succeeded++;
                                         } catch (err) {
-                                          alert(`Transfer failed for ${t.medicationName}: ${err.message}`);
-                                          break;
+                                          failures.push(`${t.medicationName}: ${err.message}`);
                                         }
+                                      }
+                                      if (failures.length > 0) {
+                                        alert(`${succeeded} of ${pp.transfers.length} transfers executed.\n\nFailed (${failures.length}):\n${failures.join('\n')}`);
                                       }
                                       const data = await window.api.fetchAllData();
                                       setMedications(data.medications || []);
                                       setTransactions(data.transactions || []);
                                       setLocations(data.locations || []);
-                                      loadReviewPipeline();
+                                      // Remove all successfully executed transfers from local pipeline state
+                                      const successIndices = [];
+                                      for (let ti = 0; ti < pp.transfers.length; ti++) {
+                                        if (!failures.some(f => f.startsWith(pp.transfers[ti].medicationName + ':'))) successIndices.push(ti);
+                                      }
+                                      removeFromPipeline('transfers', successIndices);
                                     }}
                                     className="px-4 py-1.5 bg-status-ok-text text-white text-sm font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
                                   >
@@ -6152,8 +6346,8 @@ Medicana Stock Management System`;
                                     {pp.transfers.map((t, i) => (
                                       <tr key={`${t.batchId}-${t.sourceLoc}-${t.targetLoc}-${i}`} className="hover:bg-off-white">
                                         <td className="px-4 py-3 font-medium text-near-black">{t.medicationName}</td>
-                                        <td className="px-4 py-3 text-txt-secondary">{t.sourceLocName}</td>
-                                        <td className="px-4 py-3 text-txt-secondary">{t.targetLocName}</td>
+                                        <td className="px-4 py-3"><span className="text-txt-secondary">{t.sourceLocName}</span>{t.sourceStockBoxes != null && <span className="block text-xs text-txt-tertiary">{t.sourceStockBoxes} boxes (min: {t.sourceMinLevel})</span>}</td>
+                                        <td className="px-4 py-3"><span className="text-txt-secondary">{t.targetLocName}</span>{t.targetStockBoxes != null && <span className="block text-xs text-txt-tertiary">{t.targetStockBoxes} boxes (min: {t.targetMinLevel})</span>}</td>
                                         <td className="px-4 py-3 text-center">
                                           {t.expiryDate ? (
                                             <span className={`px-2 py-1 rounded text-xs font-semibold ${
@@ -6186,7 +6380,7 @@ Medicana Stock Management System`;
                                                   setMedications(data.medications || []);
                                                   setTransactions(data.transactions || []);
                                                   setLocations(data.locations || []);
-                                                  loadReviewPipeline();
+                                                  removeFromPipeline('transfers', i);
                                                 } catch (err) {
                                                   alert(`Transfer failed: ${err.message}`);
                                                 }
@@ -6240,11 +6434,14 @@ Medicana Stock Management System`;
                                     onClick={async () => {
                                       if (!confirm(`Execute all ${pp.pharmacySupplies.length} pharmacy supply actions?`)) return;
                                       const currentUser = getCurrentUserInfo();
+                                      let succeeded = 0;
+                                      const failures = [];
+                                      const successIndices = [];
                                       for (let si = 0; si < pp.pharmacySupplies.length; si++) {
                                         const s = pp.pharmacySupplies[si];
                                         const adjBoxes = pharmacySupplyAdjustments[si] != null ? Number(pharmacySupplyAdjustments[si]) : s.quantityBoxes;
                                         const adjItems = adjBoxes * (s.itemsPerBox || 1);
-                                        if (adjBoxes <= 0) continue;
+                                        if (adjBoxes <= 0) { successIndices.push(si); continue; }
                                         try {
                                           await window.api.transferStock({
                                             userId: currentUser?.id,
@@ -6256,16 +6453,20 @@ Medicana Stock Management System`;
                                             medicationName: s.medicationName,
                                             batchCode: s.batchCode
                                           });
+                                          succeeded++;
+                                          successIndices.push(si);
                                         } catch (err) {
-                                          alert(`Pharmacy supply failed for ${s.medicationName}: ${err.message}`);
-                                          break;
+                                          failures.push(`${s.medicationName}: ${err.message}`);
                                         }
+                                      }
+                                      if (failures.length > 0) {
+                                        alert(`${succeeded} of ${pp.pharmacySupplies.length} supplies executed.\n\nFailed (${failures.length}):\n${failures.join('\n')}`);
                                       }
                                       const data = await window.api.fetchAllData();
                                       setMedications(data.medications || []);
                                       setTransactions(data.transactions || []);
                                       setLocations(data.locations || []);
-                                      loadReviewPipeline();
+                                      removeFromPipeline('pharmacySupplies', successIndices);
                                     }}
                                     className="px-4 py-1.5 bg-brand-mid text-white text-sm font-medium rounded hover:bg-brand-dark transition-colors whitespace-nowrap"
                                   >
@@ -6280,6 +6481,7 @@ Medicana Stock Management System`;
                                   <thead className="bg-off-white">
                                     <tr>
                                       <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Medication</th>
+                                      <th className="px-4 py-3 text-left font-semibold text-txt-secondary">From</th>
                                       <th className="px-4 py-3 text-left font-semibold text-txt-secondary">To</th>
                                       <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Batch Expiry</th>
                                       <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Qty</th>
@@ -6290,6 +6492,7 @@ Medicana Stock Management System`;
                                     {pp.pharmacySupplies.map((s, i) => (
                                       <tr key={`pharm-${s.batchId}-${s.targetLoc}-${i}`} className="hover:bg-off-white">
                                         <td className="px-4 py-3 font-medium text-near-black">{s.medicationName}</td>
+                                        <td className="px-4 py-3"><span className="text-txt-secondary">{s.sourceLocName}</span>{s.sourceStockBoxes != null && <span className="block text-xs text-txt-tertiary">{s.sourceStockBoxes} boxes</span>}</td>
                                         <td className="px-4 py-3 text-txt-secondary">{s.targetLocName}</td>
                                         <td className="px-4 py-3 text-center">
                                           {s.expiryDate ? (
@@ -6341,7 +6544,7 @@ Medicana Stock Management System`;
                                                   setMedications(data.medications || []);
                                                   setTransactions(data.transactions || []);
                                                   setLocations(data.locations || []);
-                                                  loadReviewPipeline();
+                                                  removeFromPipeline('pharmacySupplies', i);
                                                 } catch (err) {
                                                   alert(`Pharmacy supply failed: ${err.message}`);
                                                 }
@@ -8793,7 +8996,7 @@ Medicana Stock Management System`;
                                         report.goLiveDate || new Date().toISOString().slice(0, 10)
                                       );
                                       if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-                                        window.api.setIntelligenceConfig({ key: 'go_live_date', value: dateStr })
+                                        window.api.setIntelligenceConfig({ key: 'go_live_date', value: dateStr, userId: getCurrentUserInfo()?.id })
                                           .then(() => {
                                             // Find current location ID for refresh
                                             const currentLocId = (() => {
@@ -9325,8 +9528,8 @@ Medicana Stock Management System`;
                                       {report.pipeline.transfers.map((t, i) => (
                                         <tr key={`${t.batchId}-${t.sourceLoc}-${t.targetLoc}-${i}`} className="hover:bg-off-white">
                                           <td className="px-4 py-3 font-medium text-near-black">{t.medicationName}</td>
-                                          <td className="px-4 py-3 text-txt-secondary">{t.sourceLocName}</td>
-                                          <td className="px-4 py-3 text-txt-secondary">{t.targetLocName}</td>
+                                          <td className="px-4 py-3"><span className="text-txt-secondary">{t.sourceLocName}</span>{t.sourceStockBoxes != null && <span className="block text-xs text-txt-tertiary">{t.sourceStockBoxes} boxes (min: {t.sourceMinLevel})</span>}</td>
+                                          <td className="px-4 py-3"><span className="text-txt-secondary">{t.targetLocName}</span>{t.targetStockBoxes != null && <span className="block text-xs text-txt-tertiary">{t.targetStockBoxes} boxes (min: {t.targetMinLevel})</span>}</td>
                                           <td className="px-4 py-3 text-center">
                                             {t.expiryDate ? (
                                               <span className={`px-2 py-1 rounded text-xs font-semibold ${
@@ -9395,6 +9598,7 @@ Medicana Stock Management System`;
                                     <thead className="bg-off-white">
                                       <tr>
                                         <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Medication</th>
+                                        <th className="px-4 py-3 text-left font-semibold text-txt-secondary">From</th>
                                         <th className="px-4 py-3 text-left font-semibold text-txt-secondary">To</th>
                                         <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Batch Expiry</th>
                                         <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Qty</th>
@@ -9404,6 +9608,7 @@ Medicana Stock Management System`;
                                       {report.pipeline.pharmacySupplies.map((s, i) => (
                                         <tr key={`pharm-${s.batchId}-${s.targetLoc}-${i}`} className="hover:bg-off-white">
                                           <td className="px-4 py-3 font-medium text-near-black">{s.medicationName}</td>
+                                          <td className="px-4 py-3"><span className="text-txt-secondary">{s.sourceLocName}</span>{s.sourceStockBoxes != null && <span className="block text-xs text-txt-tertiary">{s.sourceStockBoxes} boxes</span>}</td>
                                           <td className="px-4 py-3 text-txt-secondary">{s.targetLocName}</td>
                                           <td className="px-4 py-3 text-center">
                                             {s.expiryDate ? (

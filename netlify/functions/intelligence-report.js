@@ -1,5 +1,6 @@
 // netlify/functions/intelligence-report.js
 // Server-side intelligence report generation with full transaction history access
+// Supports pipeline snapshot caching with 7-day cooldown
 const db = require('./_db');
 const {
   getMaturityInfo,
@@ -11,12 +12,95 @@ const {
   runOptimisationPipeline
 } = require('./_intelligence-core');
 
+// Ensure pipeline_snapshots table exists (auto-create on first use)
+let snapshotsTableReady = false;
+async function ensureSnapshotsTable() {
+  if (snapshotsTableReady) return;
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS pipeline_snapshots (
+        id SERIAL PRIMARY KEY,
+        snapshot JSONB NOT NULL,
+        generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        generated_by INT4
+      )`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_pipeline_snapshots_generated_at ON pipeline_snapshots (generated_at DESC)`);
+    snapshotsTableReady = true;
+  } catch (_) { /* non-critical */ }
+}
+
+// Reconcile cached adjustments against current DB min levels.
+// Filters out adjustments that have already been applied (or manually changed).
+async function reconcileAdjustments(adjustments) {
+  if (!adjustments || adjustments.length === 0) return adjustments;
+
+  const medIds = adjustments.map(a => a.medicationId);
+  const locIds = adjustments.map(a => a.locationId);
+
+  const result = await db.query(`
+    SELECT t.m_id AS medication_id, t.l_id AS location_id,
+           COALESCE(lml.min_level_boxes, m.min_level_boxes, 0) AS current_min_level
+    FROM UNNEST($1::text[], $2::text[]) AS t(m_id, l_id)
+    JOIN medications m ON m.id = t.m_id
+    LEFT JOIN location_min_levels lml
+      ON lml.medication_id = t.m_id AND lml.location_id = t.l_id
+  `, [medIds, locIds]);
+
+  const currentLevels = {};
+  for (const row of result.rows) {
+    currentLevels[`${row.medication_id}-${row.location_id}`] = Number(row.current_min_level);
+  }
+
+  // Keep only adjustments where the DB still matches the snapshot's currentMinLevel
+  // (meaning the adjustment hasn't been applied yet)
+  return adjustments.filter(adj => {
+    const dbLevel = currentLevels[`${adj.medicationId}-${adj.locationId}`];
+    return dbLevel !== undefined && dbLevel === adj.currentMinLevel;
+  });
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'GET') return db.methodNotAllowed();
 
   try {
     const params = event.queryStringParameters || {};
     const locationId = params.location_id || null;
+    const forceRegenerate = params.force === 'true';
+    const saveSnapshot = params.nosave !== 'true'; // Skip snapshot save for Step 1 internal regeneration
+
+    // For org-wide requests (no locationId), check for cached pipeline snapshot
+    if (!locationId && !forceRegenerate) {
+      try {
+        await ensureSnapshotsTable();
+        const cached = await db.query(
+          `SELECT snapshot, generated_at FROM pipeline_snapshots
+           WHERE generated_at > NOW() - INTERVAL '7 days'
+           ORDER BY generated_at DESC LIMIT 1`
+        );
+        if (cached.rows.length > 0) {
+          const row = cached.rows[0];
+          const snapshot = row.snapshot;
+
+          // Reconcile adjustments against current DB state — filter out
+          // adjustments that have already been applied since the snapshot was generated
+          if (snapshot.pipeline && snapshot.pipeline.adjustments) {
+            snapshot.pipeline.adjustments = await reconcileAdjustments(snapshot.pipeline.adjustments);
+            if (snapshot.pipeline.summary) {
+              snapshot.pipeline.summary.totalAdjustments = snapshot.pipeline.adjustments.length;
+            }
+          }
+
+          return db.json(200, {
+            success: true,
+            ...snapshot,
+            lastPipelineRun: row.generated_at.toISOString(),
+            fromCache: true
+          });
+        }
+      } catch (_) {
+        // Table may not exist yet — fall through to generate
+      }
+    }
 
     // 1. Get maturity info
     const { goLiveDate, weeksOfData, maturityLevel } = await getMaturityInfo();
@@ -80,6 +164,7 @@ exports.handler = async (event) => {
     // 7. For "All Locations" — add aggregated min level data and run pipeline
     let aggregated = null;
     let pipeline = null;
+    let lastPipelineRun = null;
     if (!locationId) {
       const medGroups = {};
       for (const med of medications) {
@@ -120,6 +205,35 @@ exports.handler = async (event) => {
       // Run optimisation pipeline (redistribute → order → adjust)
       const batchInventory = await getBatchInventory();
       pipeline = runOptimisationPipeline(medications, batchInventory, pendingOrderMap);
+
+      // Save pipeline snapshot to database for cross-device access
+      // Skip save for internal regenerations (Step 1 advancement) — only save for
+      // initial generation (cooldown expired) or explicit admin "Force Regenerate"
+      const snapshotData = { goLiveDate, weeksOfData, maturityLevel, medications, aggregated, pipeline };
+      lastPipelineRun = new Date().toISOString();
+      if (saveSnapshot) {
+        try {
+          await ensureSnapshotsTable();
+          await db.query(
+            `INSERT INTO pipeline_snapshots (snapshot, generated_at)
+             VALUES ($1, $2)`,
+            [JSON.stringify(snapshotData), lastPipelineRun]
+          );
+          // Also update intelligence_config for backward compatibility
+          await db.query(
+            `INSERT INTO intelligence_config (key, value, updated_at)
+             VALUES ('last_pipeline_run', $1, NOW())
+             ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+            [lastPipelineRun]
+          );
+        } catch (_) { /* non-critical */ }
+      }
+    } else {
+      // For location-specific reports, fetch last pipeline run timestamp
+      try {
+        const lpResult = await db.query("SELECT value FROM intelligence_config WHERE key = 'last_pipeline_run'");
+        if (lpResult.rows.length > 0) lastPipelineRun = lpResult.rows[0].value;
+      } catch (_) {}
     }
 
     return db.json(200, {
@@ -129,7 +243,8 @@ exports.handler = async (event) => {
       maturityLevel,
       medications,
       aggregated,
-      pipeline
+      pipeline,
+      lastPipelineRun
     });
   } catch (e) {
     return db.serverError('intelligence-report', e);
