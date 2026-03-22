@@ -532,7 +532,7 @@ async function seed(clean) {
               const ts = weekdayTs(weekStart, randomInt(1, 3));
               actRows.push([
                 actUserId, 'stock_transfer', 'medication', med.id, locId,
-                JSON.stringify({ medicationName: med.name, batchId, delta: transferItems, fromLocation: 'Pharmacy', toLocation: locName }),
+                JSON.stringify({ medicationName: med.name, batchId, delta: transferItems, sourceLocationName: 'Pharmacy', targetLocationName: locName }),
                 ts
               ]);
             }

@@ -5241,7 +5241,7 @@ Medicana Stock Management System`;
                       if (at === 'stock_transfer') {
                         return (
                           <div className="text-sm text-txt-tertiary">
-                            <p><span className="font-medium">From:</span> {d.sourceLocationName || 'Unknown'} <span className="font-medium ml-2">To:</span> {d.targetLocationName || 'Unknown'}</p>
+                            <p><span className="font-medium">From:</span> {d.sourceLocationName || d.fromLocation || entry.locationName || 'Unknown'} <span className="font-medium ml-2">To:</span> {d.targetLocationName || d.toLocation || 'Unknown'}</p>
                             <p><span className="font-medium">Quantity:</span> {d.delta || 0} items</p>
                             {d.batchCode && <p><span className="font-medium">Batch:</span> {d.batchCode}</p>}
                           </div>
@@ -5281,6 +5281,7 @@ Medicana Stock Management System`;
                       if (at === 'min_level_changed') {
                         return (
                           <div className="text-sm text-txt-tertiary">
+                            {(d.locationName || entry.locationName) && <p><span className="font-medium">Location:</span> {d.locationName || entry.locationName}</p>}
                             <p>Minimum level changed from <span className="font-medium">{d.oldMinLevel ?? '?'} boxes</span> to <span className="font-medium">{d.newMinLevel ?? '?'} boxes</span></p>
                           </div>
                         );
