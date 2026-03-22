@@ -5786,15 +5786,19 @@ Medicana Stock Management System`;
                           const appliedCount = appliedMinLevels.size;
                           return (
                           <div className="p-4">
-                            {minLevelRefreshDone && pendingAdjs.length === 0 ? (
+                            {minLevelRefreshDone ? (
                               <div className="bg-status-ok-bg border-l-4 border-status-ok-text p-4 mb-4 rounded-r">
                                 <div className="flex items-center justify-between flex-wrap gap-2">
                                   <div>
                                     <h3 className="text-base font-bold text-status-ok-text flex items-center">
                                       <span className="bg-status-ok-text text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-2">&#10003;</span>
-                                      Step 1 Complete — All minimum levels updated
+                                      Step 1 Complete — Minimum levels updated
                                     </h3>
-                                    <p className="text-sm text-status-ok-text mt-1">Minimum stock levels have been aligned with usage patterns. Continue to review redistributions.</p>
+                                    <p className="text-sm text-status-ok-text mt-1">
+                                      {pendingAdjs.length > 0
+                                        ? `${pendingAdjs.length} new suggestion${pendingAdjs.length !== 1 ? 's' : ''} appeared after recalculation. You can apply these or continue to Step 2.`
+                                        : 'Minimum stock levels have been aligned with usage patterns. Continue to review redistributions.'}
+                                    </p>
                                   </div>
                                 </div>
                               </div>
@@ -5834,7 +5838,9 @@ Medicana Stock Management System`;
                                           pendingAdjs.forEach(adj => next.add(`${adj.medicationId}-${adj.locationId}`));
                                           return next;
                                         });
-                                        doMinLevelRefresh(true);
+                                        if (!minLevelRefreshDone) {
+                                          doMinLevelRefresh(true);
+                                        }
                                       } catch (err) {
                                         alert('Failed to apply: ' + (err.message || 'Unknown error'));
                                       } finally {
@@ -5941,12 +5947,14 @@ Medicana Stock Management System`;
                                                   });
                                                   setAppliedMinLevels(prev => {
                                                     const next = new Set(prev).add(overrideKey);
-                                                    // Check actual remaining items (not cumulative count)
-                                                    const remainingAfter = pp.adjustments.filter(a => !next.has(`${a.medicationId}-${a.locationId}`)).length;
-                                                    const allApplied = remainingAfter === 0;
-                                                    const batchHit = next.size > 0 && next.size % 10 === 0;
-                                                    if (allApplied || batchHit) {
-                                                      doMinLevelRefresh(allApplied);
+                                                    // Only auto-refresh before final refresh is done; after that, new items are optional
+                                                    if (!minLevelRefreshDone) {
+                                                      const remainingAfter = pp.adjustments.filter(a => !next.has(`${a.medicationId}-${a.locationId}`)).length;
+                                                      const allApplied = remainingAfter === 0;
+                                                      const batchHit = next.size > 0 && next.size % 10 === 0;
+                                                      if (allApplied || batchHit) {
+                                                        doMinLevelRefresh(allApplied);
+                                                      }
                                                     }
                                                     return next;
                                                   });

@@ -42,6 +42,7 @@ exports.handler = async (event) => {
       actionType: 'min_level_changed',
       entityType: 'medication',
       entityId: medicationId,
+      locationId: locationId || null,
       details: {
         medicationName: medicationName || null,
         oldMinLevel: oldMinLevel != null ? oldMinLevel : null,
