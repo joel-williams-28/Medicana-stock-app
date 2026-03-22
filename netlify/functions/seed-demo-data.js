@@ -17,7 +17,8 @@ exports.handler = async (event) => {
     const result = await seed(clean);
     return db.ok(result);
   } catch (err) {
-    return db.serverError('seed-demo-data', err);
+    console.error('seed-demo-data error:', err);
+    return db.fail(500, err.message || 'Seed failed');
   }
 };
 
