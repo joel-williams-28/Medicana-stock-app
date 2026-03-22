@@ -612,7 +612,10 @@ function runOptimisationPipeline(medications, batchInventory, pendingOrderMap = 
           quantityBoxes: supplyBoxes,
           expiryDate: batch.expiryDate,
           itemsPerBox: ipb,
-          type: 'pharmacy_supply'
+          type: 'pharmacy_supply',
+          sourceStockBoxes: simulatedBoxes[pharmacyKey],
+          sourceMinLevel: 1,
+          batchOnHand: batch.onHand
         });
 
         // Update simulated inventory

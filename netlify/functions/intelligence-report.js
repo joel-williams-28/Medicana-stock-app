@@ -120,7 +120,24 @@ exports.handler = async (event) => {
       // Run optimisation pipeline (redistribute → order → adjust)
       const batchInventory = await getBatchInventory();
       pipeline = runOptimisationPipeline(medications, batchInventory, pendingOrderMap);
+
+      // Record pipeline generation timestamp for cooldown tracking
+      try {
+        await db.query(
+          `INSERT INTO intelligence_config (key, value, updated_at)
+           VALUES ('last_pipeline_run', $1, NOW())
+           ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+          [new Date().toISOString()]
+        );
+      } catch (_) { /* non-critical */ }
     }
+
+    // Fetch last pipeline run timestamp
+    let lastPipelineRun = null;
+    try {
+      const lpResult = await db.query("SELECT value FROM intelligence_config WHERE key = 'last_pipeline_run'");
+      if (lpResult.rows.length > 0) lastPipelineRun = lpResult.rows[0].value;
+    } catch (_) {}
 
     return db.json(200, {
       success: true,
@@ -129,7 +146,8 @@ exports.handler = async (event) => {
       maturityLevel,
       medications,
       aggregated,
-      pipeline
+      pipeline,
+      lastPipelineRun
     });
   } catch (e) {
     return db.serverError('intelligence-report', e);

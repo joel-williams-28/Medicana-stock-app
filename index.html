@@ -4068,7 +4068,49 @@ Medicana Stock Management System`;
       // =============================================
       // PIPELINE-BASED REVIEW & ORDER HANDLERS
       // =============================================
-      const loadReviewPipeline = async (preserveWizardStep = false) => {
+      const loadReviewPipeline = async (preserveWizardStep = false, forceRegenerate = false) => {
+        // Check for cached pipeline in localStorage (cooldown: 7 days)
+        if (!preserveWizardStep && !forceRegenerate) {
+          const cached = storage.load('medicana_pipeline_snapshot');
+          if (cached?.data?.pipeline && cached.generatedAt) {
+            const daysSinceGeneration = (Date.now() - new Date(cached.generatedAt).getTime()) / (1000 * 60 * 60 * 24);
+            if (daysSinceGeneration < 7) {
+              // Use cached pipeline — within cooldown period
+              setReviewPipeline({ loading: false, data: cached.data, error: null });
+              setMinLevelOverrides({});
+              setAppliedMinLevels(new Set());
+              const pp = cached.data.pipeline;
+              if (pp) {
+                const totals = {
+                  adjustments: (pp.adjustments || []).length,
+                  redistribute: (pp.transfers || []).length,
+                  pharmacy_supply: (pp.pharmacySupplies || []).length,
+                  order: pp.orders ? pp.orders.filter(o => o.orderQuantityBoxes > 0).length : 0,
+                };
+                let firstStepWithItems = 0;
+                for (let i = 0; i < WIZARD_STEPS.length; i++) {
+                  if (totals[WIZARD_STEPS[i].key] > 0) { firstStepWithItems = i; break; }
+                }
+                setWizardState({
+                  currentStep: firstStepWithItems,
+                  stepStatus: {
+                    adjustments:     { reviewed: totals.adjustments === 0, total: totals.adjustments },
+                    redistribute:    { reviewed: totals.redistribute === 0, total: totals.redistribute },
+                    pharmacy_supply: { reviewed: totals.pharmacy_supply === 0, total: totals.pharmacy_supply },
+                    order:           { reviewed: totals.order === 0, total: totals.order },
+                  },
+                });
+                setReviewPipelineTab(WIZARD_STEPS[firstStepWithItems].key);
+              }
+              const orders = cached.data.pipeline?.orders || [];
+              setPipelineOrderSelections(new Set(orders.map((o, i) => o.orderQuantityBoxes > 0 ? i : null).filter(i => i !== null)));
+              setPipelineOrderAdjustments({});
+              setPharmacySupplyAdjustments({});
+              return;
+            }
+          }
+        }
+
         setReviewPipeline({ loading: true, data: null, error: null });
         setMinLevelOverrides({});
         setAppliedMinLevels(new Set());
@@ -4079,6 +4121,10 @@ Medicana Stock Management System`;
         try {
           const data = await window.api.fetchIntelligenceReport(null); // Always org-wide for pipeline
           setReviewPipeline({ loading: false, data, error: null });
+          // Cache the pipeline snapshot to localStorage
+          if (data.pipeline) {
+            storage.save('medicana_pipeline_snapshot', { data, generatedAt: data.lastPipelineRun || new Date().toISOString() });
+          }
           // Pre-select order items that still need ordering (skip those fully covered by pending orders)
           const orders = data.pipeline?.orders || [];
           setPipelineOrderSelections(new Set(orders.map((o, i) => o.orderQuantityBoxes > 0 ? i : null).filter(i => i !== null)));
@@ -4131,6 +4177,42 @@ Medicana Stock Management System`;
         } catch (err) {
           setReviewPipeline({ loading: false, data: null, error: err.message });
         }
+      };
+
+      // Remove executed item(s) from the pipeline without regenerating
+      // Used after executing transfers/pharmacy supplies in Steps 2-4
+      const removeFromPipeline = (type, indexOrIndices) => {
+        let updatedPipeline;
+        setReviewPipeline(prev => {
+          if (!prev.data?.pipeline) return prev;
+          const pipeline = { ...prev.data.pipeline };
+          const arr = [...(pipeline[type] || [])];
+          if (Array.isArray(indexOrIndices)) {
+            [...indexOrIndices].sort((a, b) => b - a).forEach(idx => arr.splice(idx, 1));
+          } else {
+            arr.splice(indexOrIndices, 1);
+          }
+          pipeline[type] = arr;
+          pipeline.summary = {
+            ...pipeline.summary,
+            totalTransfers: pipeline.transfers.length,
+            totalPharmacySupplies: pipeline.pharmacySupplies.length,
+            totalBoxesRedistributed: pipeline.transfers.reduce((s, t) => s + t.quantityBoxes, 0),
+            totalBoxesFromPharmacy: pipeline.pharmacySupplies.reduce((s, t) => s + t.quantityBoxes, 0)
+          };
+          updatedPipeline = pipeline;
+          const newData = { ...prev.data, pipeline };
+          storage.save('medicana_pipeline_snapshot', { data: newData, generatedAt: newData.lastPipelineRun || new Date().toISOString() });
+          return { ...prev, data: newData };
+        });
+        setWizardState(prev => ({
+          ...prev,
+          stepStatus: {
+            ...prev.stepStatus,
+            redistribute: { ...prev.stepStatus.redistribute, total: updatedPipeline ? updatedPipeline.transfers.length : prev.stepStatus.redistribute.total },
+            pharmacy_supply: { ...prev.stepStatus.pharmacy_supply, total: updatedPipeline ? updatedPipeline.pharmacySupplies.length : prev.stepStatus.pharmacy_supply.total }
+          }
+        }));
       };
 
       // Refresh data + pipeline after min level applies (batch or final)
@@ -5846,6 +5928,37 @@ Medicana Stock Management System`;
                           </div>
                         </div>
 
+                        {/* Pipeline generation info + cooldown */}
+                        {(() => {
+                          const cached = storage.load('medicana_pipeline_snapshot');
+                          const genAt = cached?.generatedAt || pData?.lastPipelineRun;
+                          if (!genAt) return null;
+                          const daysSince = Math.floor((Date.now() - new Date(genAt).getTime()) / (1000 * 60 * 60 * 24));
+                          const daysRemaining = Math.max(0, 7 - daysSince);
+                          return (
+                            <div className="px-4 py-2 bg-status-ordered-bg border-b border-bdr-default flex items-center justify-between">
+                              <p className="text-xs text-status-ordered-text">
+                                Pipeline generated {daysSince === 0 ? 'today' : `${daysSince} day${daysSince !== 1 ? 's' : ''} ago`}.
+                                {daysRemaining > 0 ? ` Next generation available in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}.` : ' Ready to regenerate.'}
+                              </p>
+                              {(getCurrentUserInfo()?.role === 'Administrator' || getCurrentUserInfo()?.role === 'Pharmacist') && (
+                                <button
+                                  onClick={() => {
+                                    if (daysRemaining > 0) {
+                                      if (!confirm(`Pipeline was generated ${daysSince} day${daysSince !== 1 ? 's' : ''} ago. Regenerating early may not have enough new data for accurate recommendations.\n\nForce regenerate?`)) return;
+                                    }
+                                    storage.remove('medicana_pipeline_snapshot');
+                                    loadReviewPipeline(false, true);
+                                  }}
+                                  className="text-xs text-status-ordered-text underline hover:text-brand-dark font-medium ml-2 whitespace-nowrap"
+                                >
+                                  {daysRemaining > 0 ? 'Force Regenerate' : 'Regenerate'}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
+
                         {/* Pipeline wizard stepper navigation */}
                         <div className="border-b border-bdr-default bg-off-white px-4 py-3">
                           <div className="flex items-center gap-2 overflow-x-auto">
@@ -6221,6 +6334,8 @@ Medicana Stock Management System`;
                                     onClick={async () => {
                                       if (!confirm(`Execute all ${pp.transfers.length} recommended transfers?`)) return;
                                       const currentUser = getCurrentUserInfo();
+                                      let succeeded = 0;
+                                      const failures = [];
                                       for (const t of pp.transfers) {
                                         try {
                                           await window.api.transferStock({
@@ -6233,16 +6348,24 @@ Medicana Stock Management System`;
                                             medicationName: t.medicationName,
                                             batchCode: t.batchCode
                                           });
+                                          succeeded++;
                                         } catch (err) {
-                                          alert(`Transfer failed for ${t.medicationName}: ${err.message}`);
-                                          break;
+                                          failures.push(`${t.medicationName}: ${err.message}`);
                                         }
+                                      }
+                                      if (failures.length > 0) {
+                                        alert(`${succeeded} of ${pp.transfers.length} transfers executed.\n\nFailed (${failures.length}):\n${failures.join('\n')}`);
                                       }
                                       const data = await window.api.fetchAllData();
                                       setMedications(data.medications || []);
                                       setTransactions(data.transactions || []);
                                       setLocations(data.locations || []);
-                                      loadReviewPipeline(true);
+                                      // Remove all successfully executed transfers from local pipeline state
+                                      const successIndices = [];
+                                      for (let ti = 0; ti < pp.transfers.length; ti++) {
+                                        if (!failures.some(f => f.startsWith(pp.transfers[ti].medicationName + ':'))) successIndices.push(ti);
+                                      }
+                                      removeFromPipeline('transfers', successIndices);
                                     }}
                                     className="px-4 py-1.5 bg-status-ok-text text-white text-sm font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
                                   >
@@ -6302,7 +6425,7 @@ Medicana Stock Management System`;
                                                   setMedications(data.medications || []);
                                                   setTransactions(data.transactions || []);
                                                   setLocations(data.locations || []);
-                                                  loadReviewPipeline(true);
+                                                  removeFromPipeline('transfers', i);
                                                 } catch (err) {
                                                   alert(`Transfer failed: ${err.message}`);
                                                 }
@@ -6356,11 +6479,14 @@ Medicana Stock Management System`;
                                     onClick={async () => {
                                       if (!confirm(`Execute all ${pp.pharmacySupplies.length} pharmacy supply actions?`)) return;
                                       const currentUser = getCurrentUserInfo();
+                                      let succeeded = 0;
+                                      const failures = [];
+                                      const successIndices = [];
                                       for (let si = 0; si < pp.pharmacySupplies.length; si++) {
                                         const s = pp.pharmacySupplies[si];
                                         const adjBoxes = pharmacySupplyAdjustments[si] != null ? Number(pharmacySupplyAdjustments[si]) : s.quantityBoxes;
                                         const adjItems = adjBoxes * (s.itemsPerBox || 1);
-                                        if (adjBoxes <= 0) continue;
+                                        if (adjBoxes <= 0) { successIndices.push(si); continue; }
                                         try {
                                           await window.api.transferStock({
                                             userId: currentUser?.id,
@@ -6372,16 +6498,20 @@ Medicana Stock Management System`;
                                             medicationName: s.medicationName,
                                             batchCode: s.batchCode
                                           });
+                                          succeeded++;
+                                          successIndices.push(si);
                                         } catch (err) {
-                                          alert(`Pharmacy supply failed for ${s.medicationName}: ${err.message}`);
-                                          break;
+                                          failures.push(`${s.medicationName}: ${err.message}`);
                                         }
+                                      }
+                                      if (failures.length > 0) {
+                                        alert(`${succeeded} of ${pp.pharmacySupplies.length} supplies executed.\n\nFailed (${failures.length}):\n${failures.join('\n')}`);
                                       }
                                       const data = await window.api.fetchAllData();
                                       setMedications(data.medications || []);
                                       setTransactions(data.transactions || []);
                                       setLocations(data.locations || []);
-                                      loadReviewPipeline(true);
+                                      removeFromPipeline('pharmacySupplies', successIndices);
                                     }}
                                     className="px-4 py-1.5 bg-brand-mid text-white text-sm font-medium rounded hover:bg-brand-dark transition-colors whitespace-nowrap"
                                   >
@@ -6396,6 +6526,7 @@ Medicana Stock Management System`;
                                   <thead className="bg-off-white">
                                     <tr>
                                       <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Medication</th>
+                                      <th className="px-4 py-3 text-left font-semibold text-txt-secondary">From</th>
                                       <th className="px-4 py-3 text-left font-semibold text-txt-secondary">To</th>
                                       <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Batch Expiry</th>
                                       <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Qty</th>
@@ -6406,6 +6537,7 @@ Medicana Stock Management System`;
                                     {pp.pharmacySupplies.map((s, i) => (
                                       <tr key={`pharm-${s.batchId}-${s.targetLoc}-${i}`} className="hover:bg-off-white">
                                         <td className="px-4 py-3 font-medium text-near-black">{s.medicationName}</td>
+                                        <td className="px-4 py-3"><span className="text-txt-secondary">{s.sourceLocName}</span>{s.sourceStockBoxes != null && <span className="block text-xs text-txt-tertiary">{s.sourceStockBoxes} boxes</span>}</td>
                                         <td className="px-4 py-3 text-txt-secondary">{s.targetLocName}</td>
                                         <td className="px-4 py-3 text-center">
                                           {s.expiryDate ? (
@@ -6457,7 +6589,7 @@ Medicana Stock Management System`;
                                                   setMedications(data.medications || []);
                                                   setTransactions(data.transactions || []);
                                                   setLocations(data.locations || []);
-                                                  loadReviewPipeline(true);
+                                                  removeFromPipeline('pharmacySupplies', i);
                                                 } catch (err) {
                                                   alert(`Pharmacy supply failed: ${err.message}`);
                                                 }
@@ -9511,6 +9643,7 @@ Medicana Stock Management System`;
                                     <thead className="bg-off-white">
                                       <tr>
                                         <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Medication</th>
+                                        <th className="px-4 py-3 text-left font-semibold text-txt-secondary">From</th>
                                         <th className="px-4 py-3 text-left font-semibold text-txt-secondary">To</th>
                                         <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Batch Expiry</th>
                                         <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Qty</th>
@@ -9520,6 +9653,7 @@ Medicana Stock Management System`;
                                       {report.pipeline.pharmacySupplies.map((s, i) => (
                                         <tr key={`pharm-${s.batchId}-${s.targetLoc}-${i}`} className="hover:bg-off-white">
                                           <td className="px-4 py-3 font-medium text-near-black">{s.medicationName}</td>
+                                          <td className="px-4 py-3"><span className="text-txt-secondary">{s.sourceLocName}</span>{s.sourceStockBoxes != null && <span className="block text-xs text-txt-tertiary">{s.sourceStockBoxes} boxes</span>}</td>
                                           <td className="px-4 py-3 text-txt-secondary">{s.targetLocName}</td>
                                           <td className="px-4 py-3 text-center">
                                             {s.expiryDate ? (
