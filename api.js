@@ -130,6 +130,7 @@ window.api = (function () {
     seedDemoData:         (payload)  => postJSON('/.netlify/functions/seed-demo-data', payload || {}),
     fetchIntelligenceReport,
     getIntelligenceConfig,
+    postActivityLog:      (payload)  => postJSON('/.netlify/functions/activity-log', payload),
     fetchActivityLog,
     loginUser,
     startPolling,

@@ -30,10 +30,17 @@ exports.handler = async (event) => {
       }
 
       const result = await db.query(
-        `UPDATE draft_orders
-         SET status = 'rejected', rejected_at = NOW(), approved_by = $1
-         WHERE id = ANY($2) AND status = 'pending_review'
-         RETURNING id, medication_id`,
+        `WITH rejected AS (
+           UPDATE draft_orders
+           SET status = 'rejected', rejected_at = NOW(), approved_by = $1
+           WHERE id = ANY($2) AND status = 'pending_review'
+           RETURNING id, medication_id
+         )
+         SELECT r.id, r.medication_id,
+           CASE WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
+                ELSE m.name || ' ' || m.strength END AS medication_name
+         FROM rejected r
+         LEFT JOIN medications m ON m.id = r.medication_id`,
         [userId || null, draftIds]
       );
 
@@ -43,7 +50,7 @@ exports.handler = async (event) => {
           actionType: 'draft_rejected',
           entityType: 'draft_order',
           entityId: row.id,
-          details: { draftId: row.id, medicationId: row.medication_id }
+          details: { draftId: row.id, medicationId: row.medication_id, medicationName: row.medication_name }
         });
       }
 

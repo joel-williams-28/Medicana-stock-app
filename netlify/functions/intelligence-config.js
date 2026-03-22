@@ -1,6 +1,7 @@
 // netlify/functions/intelligence-config.js
 // GET/POST for intelligence configuration (primarily go-live date)
 const db = require('./_db');
+const { logActivity } = require('./_activity-log');
 
 exports.handler = async (event) => {
   try {
@@ -20,7 +21,7 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === 'POST') {
-      const { key, value } = JSON.parse(event.body || '{}');
+      const { key, value, userId } = JSON.parse(event.body || '{}');
 
       if (!key) {
         return db.fail(400, 'Missing required field: key');
@@ -32,6 +33,13 @@ exports.handler = async (event) => {
         return db.fail(400, `Unknown config key: ${key}`);
       }
 
+      // Fetch current value for audit trail
+      let oldValue = null;
+      try {
+        const current = await db.query('SELECT value FROM intelligence_config WHERE key = $1', [key]);
+        if (current.rows.length > 0) oldValue = current.rows[0].value;
+      } catch (_) { /* table may not exist yet */ }
+
       await db.query(
         `INSERT INTO intelligence_config (key, value, updated_at)
          VALUES ($1, $2, NOW())
@@ -39,6 +47,14 @@ exports.handler = async (event) => {
          DO UPDATE SET value = $2, updated_at = NOW()`,
         [key, value || '']
       );
+
+      await logActivity({
+        userId: userId || null,
+        actionType: 'config_changed',
+        entityType: 'config',
+        entityId: key,
+        details: { key, oldValue, newValue: value || '' }
+      });
 
       return db.ok({ key, value });
     }

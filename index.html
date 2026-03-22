@@ -198,13 +198,15 @@
       { id: 'order_placed',       label: 'Orders Placed',     color: 'bg-urgent-ghost-bg text-urgent-ghost-text border-urgent' },
       { id: 'order_fulfilled',    label: 'Orders Fulfilled',  color: 'bg-status-fulfilled-bg text-status-fulfilled-text border-brand-light' },
       { id: 'medication_created', label: 'Meds Added',        color: 'bg-status-fulfilled-bg text-status-fulfilled-text border-brand-light' },
-      { id: 'medication_deleted', label: 'Meds Deleted',      color: 'bg-status-critical-bg text-status-critical-text border-status-critical-text' },
+      { id: 'medication_deleted', label: 'Meds Status',        color: 'bg-status-critical-bg text-status-critical-text border-status-critical-text' },
       { id: 'batch_removed',      label: 'Batch Removals',    color: 'bg-status-expired-bg text-status-expired-text border-status-expired-text' },
       { id: 'min_level_changed',  label: 'Min Level Changes', color: 'bg-status-low-bg text-status-low-text border-status-low-text' },
       { id: 'drafts_generated',   label: 'Drafts Generated',  color: 'bg-status-ordered-bg text-status-ordered-text border-status-ordered-text' },
       { id: 'draft_approved',     label: 'Drafts Approved',   color: 'bg-status-ok-bg text-status-ok-text border-status-ok-text' },
       { id: 'draft_rejected',     label: 'Drafts Rejected',   color: 'bg-status-critical-bg text-status-critical-text border-status-critical-text' },
-      { id: 'bulk_order_approved', label: 'Bulk Orders',      color: 'bg-status-fulfilled-bg text-status-fulfilled-text border-brand-light' }
+      { id: 'bulk_order_approved', label: 'Bulk Orders',      color: 'bg-status-fulfilled-bg text-status-fulfilled-text border-brand-light' },
+      { id: 'logout',              label: 'Logouts',           color: 'bg-status-expired-bg text-status-expired-text border-status-expired-text' },
+      { id: 'config_changed',      label: 'Config Changes',    color: 'bg-status-low-bg text-status-low-text border-status-low-text' }
     ];
 
     const formatExpiry = (expiryDate, format = 'short') => {
@@ -763,6 +765,7 @@
       const [activityUserFilter, setActivityUserFilter] = useState('');
       const [activityUsers, setActivityUsers] = useState([]);
       const [collapsedDates, setCollapsedDates] = useState([]);
+      const activityLoadRef = useRef(0);
         const [changePasswordForm, setChangePasswordForm] = useState({
           currentPassword: '',
           newPassword: '',
@@ -1061,7 +1064,19 @@
               // We calculate based on INACTIVITY_TIMEOUT + WARNING_DURATION from lastActivity
               const totalTimeout = INACTIVITY_TIMEOUT + WARNING_DURATION;
               if (elapsed >= totalTimeout) {
-                // Auto logout
+                // Auto logout — log before clearing
+                try {
+                  const user = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+                  if (user.id) {
+                    window.api.postActivityLog({
+                      userId: user.id,
+                      actionType: 'logout',
+                      entityType: 'user',
+                      entityId: String(user.id),
+                      details: { username: user.username, fullName: user.full_name || user.fullName, method: 'auto_timeout' }
+                    }).catch(() => {});
+                  }
+                } catch (_) {}
                 warningShownRef.current = false;
                 window.api.stopPolling();
                 storage.remove('medicana_auth');
@@ -2309,16 +2324,21 @@
       };
 
       const loadActivityLog = async (reset = false) => {
-        if (activityLogLoading) return;
         if (activityLogFilters.length === 0) {
           setActivityLog([]);
           setActivityLogHasMore(false);
           return;
         }
+        const loadId = ++activityLoadRef.current;
         setActivityLogLoading(true);
         try {
+          // Expand filter aliases: medication_deleted also covers medication_restored
+          const expandedFilters = [...activityLogFilters];
+          if (expandedFilters.includes('medication_deleted') && !expandedFilters.includes('medication_restored')) {
+            expandedFilters.push('medication_restored');
+          }
           const params = {
-            actionTypes: activityLogFilters,
+            actionTypes: expandedFilters,
             limit: 50
           };
           if (activityUserFilter) params.userId = activityUserFilter;
@@ -2326,6 +2346,7 @@
             params.beforeId = activityLog[activityLog.length - 1].id;
           }
           const data = await window.api.fetchActivityLog(params);
+          if (loadId !== activityLoadRef.current) return; // stale response
           if (reset) {
             setActivityLog(data.entries || []);
           } else {
@@ -2333,9 +2354,12 @@
           }
           setActivityLogHasMore(data.hasMore || false);
         } catch (err) {
+          if (loadId !== activityLoadRef.current) return; // stale
           console.error('Failed to load activity log:', err);
         } finally {
-          setActivityLogLoading(false);
+          if (loadId === activityLoadRef.current) {
+            setActivityLogLoading(false);
+          }
         }
       };
 
@@ -2461,6 +2485,19 @@
         }
       };
       const handleLogout = () => {
+        // Log logout before clearing auth
+        try {
+          const user = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+          if (user.id) {
+            window.api.postActivityLog({
+              userId: user.id,
+              actionType: 'logout',
+              entityType: 'user',
+              entityId: String(user.id),
+              details: { username: user.username, fullName: user.full_name || user.fullName, method: 'manual' }
+            }).catch(() => {}); // Fire and forget
+          }
+        } catch (_) {}
         window.api.stopPolling();
         setAuth({ currentUser: '', password: '', isLoggedIn: false, error: '' });
           storage.remove('medicana_auth');
@@ -5157,7 +5194,14 @@ Medicana Stock Management System`;
                       medication_created: { label: 'NEW MED',     css: 'bg-status-fulfilled-bg text-status-fulfilled-text', icon: Plus },
                       medication_deleted: { label: 'DELETED',     css: 'bg-status-critical-bg text-status-critical-text', icon: AlertTriangle },
                       batch_removed:      { label: 'REMOVED',     css: 'bg-status-expired-bg text-status-expired-text', icon: AlertTriangle },
-                      min_level_changed:  { label: 'MIN LEVEL',   css: 'bg-status-low-bg text-status-low-text', icon: null }
+                      min_level_changed:  { label: 'MIN LEVEL',   css: 'bg-status-low-bg text-status-low-text', icon: null },
+                      logout:             { label: 'LOGOUT',      css: 'bg-status-expired-bg text-status-expired-text', icon: null },
+                      config_changed:     { label: 'CONFIG',      css: 'bg-status-low-bg text-status-low-text', icon: null },
+                      medication_restored:{ label: 'RESTORED',    css: 'bg-status-fulfilled-bg text-status-fulfilled-text', icon: Plus },
+                      drafts_generated:   { label: 'DRAFTS',      css: 'bg-status-ordered-bg text-status-ordered-text', icon: Download },
+                      draft_approved:     { label: 'APPROVED',    css: 'bg-status-ok-bg text-status-ok-text', icon: null },
+                      draft_rejected:     { label: 'REJECTED',    css: 'bg-status-critical-bg text-status-critical-text', icon: AlertTriangle },
+                      bulk_order_approved:{ label: 'BULK ORDER',  css: 'bg-status-fulfilled-bg text-status-fulfilled-text', icon: Download }
                     };
 
                     const renderEntryDetails = (entry) => {
@@ -5257,6 +5301,68 @@ Medicana Stock Management System`;
                           <div className="text-sm text-txt-tertiary">
                             <p>Order #{d.orderId || '?'} {d.autoFulfilled ? 'auto-fulfilled by delivery' : 'marked as fulfilled'}</p>
                             {d.quantityDelivered && <p>Delivered: {d.quantityDelivered} units{d.partial ? ` (${d.quantityFulfilled}/${d.quantityOrdered} total)` : ' — order complete'}</p>}
+                          </div>
+                        );
+                      }
+
+                      if (at === 'logout') {
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <p><span className="font-medium">User Logout</span> — {d.fullName || d.username || entry.userFullName || 'Unknown'} logged out{d.method === 'auto_timeout' ? ' (session timeout)' : ''}</p>
+                          </div>
+                        );
+                      }
+
+                      if (at === 'config_changed') {
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <p><span className="font-medium">Setting:</span> {d.key || entry.entityId || 'Unknown'}</p>
+                            {d.oldValue != null && <p><span className="font-medium">Previous:</span> {d.oldValue || '(empty)'}</p>}
+                            <p><span className="font-medium">New value:</span> {d.newValue || '(empty)'}</p>
+                          </div>
+                        );
+                      }
+
+                      if (at === 'medication_restored') {
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <p>Medication reactivated in the system</p>
+                          </div>
+                        );
+                      }
+
+                      if (at === 'drafts_generated') {
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <p><span className="font-medium">{d.count || '?'}</span> draft order{(d.count || 0) !== 1 ? 's' : ''} generated</p>
+                            {d.locationId && <p><span className="font-medium">Location:</span> {entry.locationName || d.locationId}</p>}
+                            {d.batchRef && <p><span className="font-medium">Batch ref:</span> {String(d.batchRef).slice(0, 8)}</p>}
+                          </div>
+                        );
+                      }
+
+                      if (at === 'draft_approved') {
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <p>Draft #{d.draftId || '?'} approved — <span className="font-medium">{d.approvedQuantity || '?'} boxes</span>{d.suggestedQuantity ? ` (suggested: ${d.suggestedQuantity})` : ''}</p>
+                            {d.orderId && <p><span className="font-medium">Order:</span> #{d.orderId}</p>}
+                          </div>
+                        );
+                      }
+
+                      if (at === 'draft_rejected') {
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <p>Draft #{d.draftId || '?'} rejected{d.medicationName ? ` — ${d.medicationName}` : ''}</p>
+                          </div>
+                        );
+                      }
+
+                      if (at === 'bulk_order_approved') {
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <p><span className="font-medium">{d.count || '?'}</span> order{(d.count || 0) !== 1 ? 's' : ''} created — <span className="font-medium">{d.totalBoxes || '?'} boxes</span> total</p>
+                            {d.pharmacistEmail && <p><span className="font-medium">Sent to:</span> {d.pharmacistEmail}</p>}
                           </div>
                         );
                       }
@@ -8793,7 +8899,7 @@ Medicana Stock Management System`;
                                         report.goLiveDate || new Date().toISOString().slice(0, 10)
                                       );
                                       if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-                                        window.api.setIntelligenceConfig({ key: 'go_live_date', value: dateStr })
+                                        window.api.setIntelligenceConfig({ key: 'go_live_date', value: dateStr, userId: getCurrentUserInfo()?.id })
                                           .then(() => {
                                             // Find current location ID for refresh
                                             const currentLocId = (() => {
