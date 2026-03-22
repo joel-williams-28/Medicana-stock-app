@@ -101,9 +101,25 @@ exports.handler = async (event) => {
       }
       aggregated = Object.values(medGroups);
 
+      // Fetch pending orders BEFORE running the pipeline so it can subtract already-ordered quantities
+      let pendingOrderMap = {};
+      const pendingResult = await db.query(
+        `SELECT o.medication_id, COUNT(*)::int AS order_count, SUM(o.quantity)::int AS total_quantity_items
+         FROM orders o WHERE o.status = 'pending'
+         GROUP BY o.medication_id`
+      );
+      for (const row of pendingResult.rows) {
+        const ipb = itemsPerBoxByMed[row.medication_id] || 1;
+        pendingOrderMap[row.medication_id] = {
+          count: row.order_count,
+          totalQuantityItems: row.total_quantity_items,
+          totalQuantityBoxes: Math.floor(row.total_quantity_items / ipb)
+        };
+      }
+
       // Run optimisation pipeline (redistribute → order → adjust)
       const batchInventory = await getBatchInventory();
-      pipeline = runOptimisationPipeline(medications, batchInventory);
+      pipeline = runOptimisationPipeline(medications, batchInventory, pendingOrderMap);
     }
 
     return db.json(200, {

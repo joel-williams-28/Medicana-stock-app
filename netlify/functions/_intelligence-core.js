@@ -2,6 +2,9 @@
 // Shared intelligence logic used by both intelligence-report.js and draft-orders-generate.js
 const db = require('./_db');
 
+const PHARMACY_LOCATION_ID = 'pharmacy';
+const PHARMACY_BUFFER_MULTIPLIER = 1.5;
+
 /**
  * Get go-live date and maturity info from intelligence_config
  */
@@ -84,6 +87,7 @@ async function getStockLevels(locationId) {
        JOIN locations l ON l.id = i.location_id
        LEFT JOIN location_min_levels lml ON lml.medication_id = m.id AND lml.location_id = i.location_id
        WHERE m.is_active = true AND i.on_hand > 0
+         AND l.display_name NOT IN (SELECT DISTINCT group_name FROM locations WHERE group_name IS NOT NULL)
        GROUP BY m.id, m.name, m.strength, m.form, m.min_level_boxes, l.id, l.display_name, lml.min_level_boxes
        ORDER BY m.name, l.display_name`;
 
@@ -351,18 +355,21 @@ async function getBatchInventory() {
     JOIN locations l ON l.id = i.location_id
     JOIN medications m ON m.id = b.medication_id
     WHERE m.is_active = true AND i.on_hand > 0
+      AND l.display_name NOT IN (SELECT DISTINCT group_name FROM locations WHERE group_name IS NOT NULL)
     ORDER BY b.medication_id, i.location_id, b.expiry_date ASC
   `);
   return result.rows;
 }
 
 /**
- * Run the 3-step stock optimisation pipeline:
- * 1. Recalculate optimal min levels
- * 2. Redistribute stock (FEFO) from surplus to deficit locations
- * 3. Order remaining shortfall
+ * Run the 5-stage pharmacy-centric stock optimisation pipeline:
+ * 1. Build min level map (tag pharmacy entries)
+ * 2. Redistribute stock (FEFO) between non-pharmacy locations
+ * 3. Pharmacy supplies remaining deficits (down to 1 box buffer)
+ * 4. Calculate pharmacy's derived min level (1.5× hospital-wide mins)
+ * 5. External orders for pharmacy only (with supply destination projections)
  */
-function runOptimisationPipeline(medications, batchInventory) {
+function runOptimisationPipeline(medications, batchInventory, pendingOrderMap = {}) {
   // Step 1: Build min level map from already-analyzed medications
   const minLevelMap = {};
   for (const med of medications) {
@@ -376,7 +383,8 @@ function runOptimisationPipeline(medications, batchInventory) {
       currentMinLevel: med.currentMinLevel,
       suggestedMinLevel: med.recommendation.suggestedMinLevel,
       avgWeeklyUsage: med.avgWeeklyUsage,
-      itemsPerBox: med.itemsPerBox
+      itemsPerBox: med.itemsPerBox,
+      isPharmacy: med.locationId === PHARMACY_LOCATION_ID
     };
   }
 
@@ -411,7 +419,8 @@ function runOptimisationPipeline(medications, batchInventory) {
   const medicationIds = [...new Set(medications.map(m => m.medicationId))];
 
   for (const medId of medicationIds) {
-    const medLocations = medications.filter(m => m.medicationId === medId);
+    // Exclude pharmacy from peer-to-peer redistribution — pharmacy supplies separately in Stage 3
+    const medLocations = medications.filter(m => m.medicationId === medId && m.locationId !== PHARMACY_LOCATION_ID);
     if (medLocations.length < 2) continue; // Need at least 2 locations to redistribute
 
     // Identify surplus and deficit locations using suggested min levels
@@ -504,31 +513,167 @@ function runOptimisationPipeline(medications, batchInventory) {
     }
   }
 
-  // Step 3: Order remaining shortfall (after simulated redistribution)
-  const orders = [];
-  for (const key in minLevelMap) {
-    const entry = minLevelMap[key];
-    const simulated = simulatedBoxes[key];
-    const suggested = entry.suggestedMinLevel;
-    if (simulated < suggested && suggested > 0) {
-      const shortfall = suggested - simulated;
-      orders.push({
-        medicationId: entry.medicationId,
-        medicationName: entry.medicationName,
-        locationId: entry.locationId,
-        locationName: entry.locationName,
-        orderQuantityBoxes: shortfall,
-        urgency: simulated === 0 || simulated <= suggested * 0.5 ? 'urgent' : 'routine',
-        currentSimulatedBoxes: simulated,
-        suggestedMinLevel: suggested
-      });
+  // Stage 3: Pharmacy supplies remaining deficits
+  // After peer-to-peer redistribution, pharmacy dispenses to locations still below suggested min
+  const pharmacySupplies = [];
+
+  for (const medId of medicationIds) {
+    const pharmacyKey = `${medId}|${PHARMACY_LOCATION_ID}`;
+    const pharmacyBatches = batchesByMedLoc[medId]?.[PHARMACY_LOCATION_ID] || [];
+    if (pharmacyBatches.length === 0) continue;
+
+    // Find non-pharmacy locations still in deficit after redistribution
+    const nonPharmacyDeficits = [];
+    for (const key in minLevelMap) {
+      const entry = minLevelMap[key];
+      if (entry.isPharmacy) continue;
+      if (entry.medicationId !== medId) continue;
+      const simulated = simulatedBoxes[key];
+      const suggested = entry.suggestedMinLevel;
+      if (simulated < suggested && suggested > 0) {
+        nonPharmacyDeficits.push({ ...entry, key, shortfall: suggested - simulated });
+      }
+    }
+
+    if (nonPharmacyDeficits.length === 0) continue;
+
+    // Sort deficit by highest usage first
+    nonPharmacyDeficits.sort((a, b) => b.avgWeeklyUsage - a.avgWeeklyUsage);
+
+    for (const deficit of nonPharmacyDeficits) {
+      let remaining = deficit.shortfall;
+      if (remaining <= 0) continue;
+
+      // Collect pharmacy batches sorted by expiry ASC (FEFO)
+      const availablePharmBatches = pharmacyBatches
+        .filter(b => b.onHand > 0)
+        .sort((a, b) => {
+          if (!a.expiryDate && !b.expiryDate) return 0;
+          if (!a.expiryDate) return 1;
+          if (!b.expiryDate) return -1;
+          return a.expiryDate.localeCompare(b.expiryDate);
+        });
+
+      for (const batch of availablePharmBatches) {
+        if (remaining <= 0) break;
+
+        // Don't reduce pharmacy below 1 box for this medication (keep a buffer)
+        const pharmacySimulated = simulatedBoxes[pharmacyKey] || 0;
+        if (pharmacySimulated <= 1) break;
+
+        const ipb = batch.itemsPerBox || 1;
+        const batchBoxes = Math.floor(batch.onHand / ipb);
+        // Max we can take: leave pharmacy with at least 1 box total for this med
+        const maxFromPharmacy = pharmacySimulated - 1;
+        const supplyBoxes = Math.min(batchBoxes, remaining, maxFromPharmacy);
+        if (supplyBoxes <= 0) continue;
+
+        const supplyItems = supplyBoxes * ipb;
+
+        pharmacySupplies.push({
+          medicationId: medId,
+          medicationName: batch.medicationName,
+          sourceLoc: PHARMACY_LOCATION_ID,
+          sourceLocName: 'Pharmacy',
+          targetLoc: deficit.locationId,
+          targetLocName: deficit.locationName,
+          batchId: batch.batchId,
+          batchCode: batch.batchCode,
+          quantity: supplyItems,
+          quantityBoxes: supplyBoxes,
+          expiryDate: batch.expiryDate,
+          itemsPerBox: ipb,
+          type: 'pharmacy_supply'
+        });
+
+        // Update simulated inventory
+        batch.onHand -= supplyItems;
+        simulatedBoxes[pharmacyKey] -= supplyBoxes;
+        simulatedBoxes[deficit.key] = (simulatedBoxes[deficit.key] || 0) + supplyBoxes;
+        remaining -= supplyBoxes;
+      }
     }
   }
 
-  // Step 4: Min level adjustments
+  // Stage 4: Calculate pharmacy's derived minimum level
+  // Pharmacy min = ceil(sum of all non-pharmacy suggested min levels × buffer multiplier)
+  const hospitalWideMinByMed = {};
+  for (const key in minLevelMap) {
+    const entry = minLevelMap[key];
+    if (entry.isPharmacy) continue;
+    if (!hospitalWideMinByMed[entry.medicationId]) {
+      hospitalWideMinByMed[entry.medicationId] = { totalMin: 0, medicationName: entry.medicationName };
+    }
+    hospitalWideMinByMed[entry.medicationId].totalMin += entry.suggestedMinLevel;
+  }
+
+  const pharmacyNeeds = {};
+  for (const medId in hospitalWideMinByMed) {
+    const pharmacyKey = `${medId}|${PHARMACY_LOCATION_ID}`;
+    const derivedMin = Math.ceil(hospitalWideMinByMed[medId].totalMin * PHARMACY_BUFFER_MULTIPLIER);
+    const pharmacySimulated = simulatedBoxes[pharmacyKey] || 0;
+    pharmacyNeeds[medId] = {
+      medicationName: hospitalWideMinByMed[medId].medicationName,
+      hospitalWideMin: hospitalWideMinByMed[medId].totalMin,
+      derivedMin,
+      currentSimulatedBoxes: pharmacySimulated,
+      shortfall: Math.max(0, derivedMin - pharmacySimulated)
+    };
+  }
+
+  // Stage 5: External orders — pharmacy only
+  // Orders are placed for pharmacy to restock itself to meet its derived minimum
+  // Subtract any already-pending orders to avoid double-ordering
+  const orders = [];
+  for (const medId in pharmacyNeeds) {
+    const need = pharmacyNeeds[medId];
+    if (need.shortfall <= 0) continue;
+
+    // Build supply destination projection from usage data
+    const supplyDestinations = [];
+    for (const key in minLevelMap) {
+      const entry = minLevelMap[key];
+      if (entry.isPharmacy) continue;
+      if (entry.medicationId !== medId) continue;
+      if (entry.avgWeeklyUsage > 0) {
+        supplyDestinations.push({
+          locationId: entry.locationId,
+          locationName: entry.locationName,
+          avgWeeklyUsage: entry.avgWeeklyUsage,
+          suggestedMinLevel: entry.suggestedMinLevel
+        });
+      }
+    }
+    // Sort by highest usage first
+    supplyDestinations.sort((a, b) => b.avgWeeklyUsage - a.avgWeeklyUsage);
+
+    // Check for existing pending orders and subtract from shortfall
+    const pending = pendingOrderMap[medId] || null;
+    const alreadyOrderedBoxes = pending ? pending.totalQuantityBoxes : 0;
+    const adjustedShortfall = Math.max(0, need.shortfall - alreadyOrderedBoxes);
+
+    orders.push({
+      medicationId: medId,
+      medicationName: need.medicationName,
+      locationId: PHARMACY_LOCATION_ID,
+      locationName: 'Pharmacy',
+      totalShortfallBoxes: need.shortfall,
+      alreadyOrderedBoxes,
+      orderQuantityBoxes: adjustedShortfall,
+      existingPendingOrder: pending,
+      urgency: need.currentSimulatedBoxes === 0 || need.currentSimulatedBoxes <= need.derivedMin * 0.5 ? 'urgent' : 'routine',
+      currentSimulatedBoxes: need.currentSimulatedBoxes,
+      pharmacyDerivedMin: need.derivedMin,
+      hospitalWideMin: need.hospitalWideMin,
+      supplyDestinations
+    });
+  }
+
+  // Min level adjustments (exclude pharmacy — its min is derived, not user-adjustable)
   const adjustments = [];
   for (const key in minLevelMap) {
     const entry = minLevelMap[key];
+    if (entry.isPharmacy) continue;
     if (entry.suggestedMinLevel !== entry.currentMinLevel) {
       adjustments.push({
         medicationId: entry.medicationId,
@@ -545,14 +690,20 @@ function runOptimisationPipeline(medications, batchInventory) {
 
   return {
     transfers,
+    pharmacySupplies,
+    pharmacyNeeds,
     orders,
     adjustments,
     summary: {
       totalTransfers: transfers.length,
+      totalPharmacySupplies: pharmacySupplies.length,
       totalOrderLines: orders.length,
       totalAdjustments: adjustments.length,
       totalBoxesRedistributed: transfers.reduce((sum, t) => sum + t.quantityBoxes, 0),
-      totalBoxesToOrder: orders.reduce((sum, o) => sum + o.orderQuantityBoxes, 0)
+      totalBoxesFromPharmacy: pharmacySupplies.reduce((sum, s) => sum + s.quantityBoxes, 0),
+      totalBoxesToOrder: orders.reduce((sum, o) => sum + o.orderQuantityBoxes, 0),
+      totalBoxesAlreadyOrdered: orders.reduce((sum, o) => sum + o.alreadyOrderedBoxes, 0),
+      totalShortfallBoxes: orders.reduce((sum, o) => sum + o.totalShortfallBoxes, 0)
     }
   };
 }

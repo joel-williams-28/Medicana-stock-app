@@ -107,6 +107,12 @@ window.api = (function () {
     setMedicationActive:  (payload)  => postJSON('/.netlify/functions/medication-set-active', payload),
     medicationUpsert:     (payload)  => postJSON('/.netlify/functions/medication-upsert', payload),
     setMedicationMinLevel:(payload)  => postJSON('/.netlify/functions/medication-minlevel-set', payload),
+    fetchUsers: async () => {
+      const res = await fetch('/.netlify/functions/users-list');
+      const out = await res.json();
+      if (!res.ok || !out.success) throw new Error(out.message || 'Failed to fetch users');
+      return out.users;
+    },
     setIntelligenceConfig:(payload)  => postJSON('/.netlify/functions/intelligence-config', payload),
     placeOrder:           (payload)  => postJSON('/.netlify/functions/order-place', payload),
     fulfillOrder:         (payload)  => postJSON('/.netlify/functions/order-fulfill', payload),
@@ -120,6 +126,7 @@ window.api = (function () {
       return out;
     },
     actionDraftOrders:    (payload)  => postJSON('/.netlify/functions/draft-orders-action', payload),
+    createIntelligenceOrders: (payload) => postJSON('/.netlify/functions/intelligence-orders-create', payload),
     seedDemoData:         (payload)  => postJSON('/.netlify/functions/seed-demo-data', payload || {}),
     fetchIntelligenceReport,
     getIntelligenceConfig,
