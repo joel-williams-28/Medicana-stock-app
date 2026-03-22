@@ -28,7 +28,7 @@ exports.handler = async (event) => {
       }
 
       // Only allow known config keys
-      const allowedKeys = ['go_live_date', 'last_pipeline_run'];
+      const allowedKeys = ['go_live_date', 'last_pipeline_run', 'pipeline_lock_until'];
       if (!allowedKeys.includes(key)) {
         return db.fail(400, `Unknown config key: ${key}`);
       }

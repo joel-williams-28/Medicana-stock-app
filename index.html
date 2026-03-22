@@ -4135,8 +4135,10 @@ Medicana Stock Management System`;
               setReviewPipelineTab(WIZARD_STEPS[firstStepWithItems].key);
             }
           }
+          return data;
         } catch (err) {
           setReviewPipeline({ loading: false, data: null, error: err.message });
+          return null;
         }
       };
 
@@ -4185,7 +4187,7 @@ Medicana Stock Management System`;
           setOrders(data.orders || []);
           // Regenerate pipeline using actual DB min levels (useCurrentMins=true)
           // so Steps 2-4 honour the levels the user applied in Step 1
-          await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
+          const freshData = await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
           if (isFinal) {
             setMinLevelRefreshDone(true);
             // Ensure step 1 is marked reviewed so user can advance without password
@@ -4196,6 +4198,12 @@ Medicana Stock Management System`;
                 adjustments: { ...prev.stepStatus.adjustments, reviewed: true }
               }
             }));
+            // Auto-advance to Step 2 only if no new adjustment suggestions appeared
+            // (if new suggestions appeared after recalculation, let user review them first)
+            const newAdjs = freshData?.pipeline?.adjustments || [];
+            if (newAdjs.length === 0) {
+              setTimeout(() => advanceWizardStep(1), 500);
+            }
           }
           // Refresh activity log so newly created min_level_changed entries appear
           loadActivityLog(true);
@@ -4406,6 +4414,11 @@ Medicana Stock Management System`;
           });
           // Reuse existing email preview UI via draftOrders.approvalResult
           setDraftOrders(prev => ({ ...prev, approvalResult: result }));
+          // Mark step 4 as reviewed (pipeline complete)
+          setWizardState(prev => ({
+            ...prev,
+            stepStatus: { ...prev.stepStatus, order: { ...prev.stepStatus.order, reviewed: true } }
+          }));
           // Refresh main data
           const data = await window.api.fetchAllData();
           setMedications(data.medications || []);
@@ -6408,6 +6421,20 @@ Medicana Stock Management System`;
                                       setMedications(data.medications || []);
                                       setTransactions(data.transactions || []);
                                       setLocations(data.locations || []);
+                                      // Log bulk summary
+                                      try {
+                                        await window.api.postActivityLog({
+                                          userId: currentUser?.id,
+                                          actionType: 'bulk_transfers_executed',
+                                          entityType: 'pipeline',
+                                          details: {
+                                            totalTransfers: succeeded,
+                                            totalFailed: failures.length,
+                                            totalBoxesMoved: pp.transfers.reduce((sum, t) => sum + t.quantityBoxes, 0),
+                                            source: 'intelligence_pipeline'
+                                          }
+                                        });
+                                      } catch (_) {}
                                       // Regenerate pipeline server-side to recalculate Steps 3-4
                                       // with current inventory (post-transfer)
                                       await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
@@ -6581,6 +6608,20 @@ Medicana Stock Management System`;
                                       setMedications(data.medications || []);
                                       setTransactions(data.transactions || []);
                                       setLocations(data.locations || []);
+                                      // Log bulk summary
+                                      try {
+                                        await window.api.postActivityLog({
+                                          userId: currentUser?.id,
+                                          actionType: 'bulk_pharmacy_supplies_executed',
+                                          entityType: 'pipeline',
+                                          details: {
+                                            totalSupplies: succeeded,
+                                            totalFailed: failures.length,
+                                            totalBoxesSupplied: pp.pharmacySupplies.reduce((sum, s) => sum + s.quantityBoxes, 0),
+                                            source: 'intelligence_pipeline'
+                                          }
+                                        });
+                                      } catch (_) {}
                                       // Regenerate pipeline server-side to recalculate Step 4
                                       // with current inventory (post-pharmacy-supply)
                                       await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
