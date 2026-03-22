@@ -4069,48 +4069,6 @@ Medicana Stock Management System`;
       // PIPELINE-BASED REVIEW & ORDER HANDLERS
       // =============================================
       const loadReviewPipeline = async (preserveWizardStep = false, forceRegenerate = false) => {
-        // Check for cached pipeline in localStorage (cooldown: 7 days)
-        if (!preserveWizardStep && !forceRegenerate) {
-          const cached = storage.load('medicana_pipeline_snapshot');
-          if (cached?.data?.pipeline && cached.generatedAt) {
-            const daysSinceGeneration = (Date.now() - new Date(cached.generatedAt).getTime()) / (1000 * 60 * 60 * 24);
-            if (daysSinceGeneration < 7) {
-              // Use cached pipeline — within cooldown period
-              setReviewPipeline({ loading: false, data: cached.data, error: null });
-              setMinLevelOverrides({});
-              setAppliedMinLevels(new Set());
-              const pp = cached.data.pipeline;
-              if (pp) {
-                const totals = {
-                  adjustments: (pp.adjustments || []).length,
-                  redistribute: (pp.transfers || []).length,
-                  pharmacy_supply: (pp.pharmacySupplies || []).length,
-                  order: pp.orders ? pp.orders.filter(o => o.orderQuantityBoxes > 0).length : 0,
-                };
-                let firstStepWithItems = 0;
-                for (let i = 0; i < WIZARD_STEPS.length; i++) {
-                  if (totals[WIZARD_STEPS[i].key] > 0) { firstStepWithItems = i; break; }
-                }
-                setWizardState({
-                  currentStep: firstStepWithItems,
-                  stepStatus: {
-                    adjustments:     { reviewed: totals.adjustments === 0, total: totals.adjustments },
-                    redistribute:    { reviewed: totals.redistribute === 0, total: totals.redistribute },
-                    pharmacy_supply: { reviewed: totals.pharmacy_supply === 0, total: totals.pharmacy_supply },
-                    order:           { reviewed: totals.order === 0, total: totals.order },
-                  },
-                });
-                setReviewPipelineTab(WIZARD_STEPS[firstStepWithItems].key);
-              }
-              const orders = cached.data.pipeline?.orders || [];
-              setPipelineOrderSelections(new Set(orders.map((o, i) => o.orderQuantityBoxes > 0 ? i : null).filter(i => i !== null)));
-              setPipelineOrderAdjustments({});
-              setPharmacySupplyAdjustments({});
-              return;
-            }
-          }
-        }
-
         setReviewPipeline({ loading: true, data: null, error: null });
         setMinLevelOverrides({});
         setAppliedMinLevels(new Set());
@@ -4119,12 +4077,10 @@ Medicana Stock Management System`;
           setReviewPipelineTab('adjustments');
         }
         try {
-          const data = await window.api.fetchIntelligenceReport(null); // Always org-wide for pipeline
+          // Server handles 7-day cooldown: returns cached snapshot if within cooldown,
+          // or generates fresh pipeline if expired or force=true
+          const data = await window.api.fetchIntelligenceReport(null, forceRegenerate);
           setReviewPipeline({ loading: false, data, error: null });
-          // Cache the pipeline snapshot to localStorage
-          if (data.pipeline) {
-            storage.save('medicana_pipeline_snapshot', { data, generatedAt: data.lastPipelineRun || new Date().toISOString() });
-          }
           // Pre-select order items that still need ordering (skip those fully covered by pending orders)
           const orders = data.pipeline?.orders || [];
           setPipelineOrderSelections(new Set(orders.map((o, i) => o.orderQuantityBoxes > 0 ? i : null).filter(i => i !== null)));
@@ -4202,7 +4158,6 @@ Medicana Stock Management System`;
           };
           updatedPipeline = pipeline;
           const newData = { ...prev.data, pipeline };
-          storage.save('medicana_pipeline_snapshot', { data: newData, generatedAt: newData.lastPipelineRun || new Date().toISOString() });
           return { ...prev, data: newData };
         });
         setWizardState(prev => ({
@@ -4223,7 +4178,7 @@ Medicana Stock Management System`;
           setTransactions(data.transactions || []);
           setLocations(data.locations || []);
           setOrders(data.orders || []);
-          await loadReviewPipeline(true); // resets appliedMinLevels so counter restarts from 0
+          await loadReviewPipeline(true, true); // resets appliedMinLevels so counter restarts from 0
           if (isFinal) {
             setMinLevelRefreshDone(true);
             // Ensure step 1 is marked reviewed so user can advance without password
@@ -4281,7 +4236,7 @@ Medicana Stock Management System`;
                 setLocations(data.locations || []);
                 setOrders(data.orders || []);
               });
-              loadReviewPipeline(true);
+              loadReviewPipeline(true, true);
             }
           } else {
             setWizardState(prev => ({ ...prev, currentStep: targetIndex }));
@@ -4321,7 +4276,7 @@ Medicana Stock Management System`;
           setSkipConfirm({ show: false, password: '', error: '', targetStep: null, loading: false });
           // If we skipped past step 1, trigger recalculation
           if (wizardState.currentStep === 0 && targetIndex > 0) {
-            loadReviewPipeline(true);
+            loadReviewPipeline(true, true);
           }
         } catch (err) {
           setSkipConfirm(prev => ({ ...prev, loading: false, error: 'Network error. Please try again.' }));
@@ -5930,15 +5885,15 @@ Medicana Stock Management System`;
 
                         {/* Pipeline generation info + cooldown */}
                         {(() => {
-                          const cached = storage.load('medicana_pipeline_snapshot');
-                          const genAt = cached?.generatedAt || pData?.lastPipelineRun;
+                          const genAt = pData?.lastPipelineRun;
                           if (!genAt) return null;
                           const daysSince = Math.floor((Date.now() - new Date(genAt).getTime()) / (1000 * 60 * 60 * 24));
                           const daysRemaining = Math.max(0, 7 - daysSince);
+                          const isCached = pData?.fromCache;
                           return (
                             <div className="px-4 py-2 bg-status-ordered-bg border-b border-bdr-default flex items-center justify-between">
                               <p className="text-xs text-status-ordered-text">
-                                Pipeline generated {daysSince === 0 ? 'today' : `${daysSince} day${daysSince !== 1 ? 's' : ''} ago`}.
+                                Pipeline generated {daysSince === 0 ? 'today' : `${daysSince} day${daysSince !== 1 ? 's' : ''} ago`}{isCached ? ' (cached)' : ''}.
                                 {daysRemaining > 0 ? ` Next generation available in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}.` : ' Ready to regenerate.'}
                               </p>
                               {(getCurrentUserInfo()?.role === 'Administrator' || getCurrentUserInfo()?.role === 'Pharmacist') && (
@@ -5947,7 +5902,6 @@ Medicana Stock Management System`;
                                     if (daysRemaining > 0) {
                                       if (!confirm(`Pipeline was generated ${daysSince} day${daysSince !== 1 ? 's' : ''} ago. Regenerating early may not have enough new data for accurate recommendations.\n\nForce regenerate?`)) return;
                                     }
-                                    storage.remove('medicana_pipeline_snapshot');
                                     loadReviewPipeline(false, true);
                                   }}
                                   className="text-xs text-status-ordered-text underline hover:text-brand-dark font-medium ml-2 whitespace-nowrap"

@@ -1,5 +1,6 @@
 // netlify/functions/intelligence-report.js
 // Server-side intelligence report generation with full transaction history access
+// Supports pipeline snapshot caching with 7-day cooldown
 const db = require('./_db');
 const {
   getMaturityInfo,
@@ -17,6 +18,29 @@ exports.handler = async (event) => {
   try {
     const params = event.queryStringParameters || {};
     const locationId = params.location_id || null;
+    const forceRegenerate = params.force === 'true';
+
+    // For org-wide requests (no locationId), check for cached pipeline snapshot
+    if (!locationId && !forceRegenerate) {
+      try {
+        const cached = await db.query(
+          `SELECT snapshot, generated_at FROM pipeline_snapshots
+           WHERE generated_at > NOW() - INTERVAL '7 days'
+           ORDER BY generated_at DESC LIMIT 1`
+        );
+        if (cached.rows.length > 0) {
+          const row = cached.rows[0];
+          return db.json(200, {
+            success: true,
+            ...row.snapshot,
+            lastPipelineRun: row.generated_at.toISOString(),
+            fromCache: true
+          });
+        }
+      } catch (_) {
+        // Table may not exist yet — fall through to generate
+      }
+    }
 
     // 1. Get maturity info
     const { goLiveDate, weeksOfData, maturityLevel } = await getMaturityInfo();
@@ -80,6 +104,7 @@ exports.handler = async (event) => {
     // 7. For "All Locations" — add aggregated min level data and run pipeline
     let aggregated = null;
     let pipeline = null;
+    let lastPipelineRun = null;
     if (!locationId) {
       const medGroups = {};
       for (const med of medications) {
@@ -121,23 +146,30 @@ exports.handler = async (event) => {
       const batchInventory = await getBatchInventory();
       pipeline = runOptimisationPipeline(medications, batchInventory, pendingOrderMap);
 
-      // Record pipeline generation timestamp for cooldown tracking
+      // Save pipeline snapshot to database for cross-device access
+      const snapshotData = { goLiveDate, weeksOfData, maturityLevel, medications, aggregated, pipeline };
+      lastPipelineRun = new Date().toISOString();
       try {
+        await db.query(
+          `INSERT INTO pipeline_snapshots (snapshot, generated_at)
+           VALUES ($1, $2)`,
+          [JSON.stringify(snapshotData), lastPipelineRun]
+        );
+        // Also update intelligence_config for backward compatibility
         await db.query(
           `INSERT INTO intelligence_config (key, value, updated_at)
            VALUES ('last_pipeline_run', $1, NOW())
            ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
-          [new Date().toISOString()]
+          [lastPipelineRun]
         );
       } catch (_) { /* non-critical */ }
+    } else {
+      // For location-specific reports, fetch last pipeline run timestamp
+      try {
+        const lpResult = await db.query("SELECT value FROM intelligence_config WHERE key = 'last_pipeline_run'");
+        if (lpResult.rows.length > 0) lastPipelineRun = lpResult.rows[0].value;
+      } catch (_) {}
     }
-
-    // Fetch last pipeline run timestamp
-    let lastPipelineRun = null;
-    try {
-      const lpResult = await db.query("SELECT value FROM intelligence_config WHERE key = 'last_pipeline_run'");
-      if (lpResult.rows.length > 0) lastPipelineRun = lpResult.rows[0].value;
-    } catch (_) {}
 
     return db.json(200, {
       success: true,

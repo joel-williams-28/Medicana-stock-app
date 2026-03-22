@@ -81,9 +81,10 @@ window.api = (function () {
     return out;
   }
 
-  async function fetchIntelligenceReport(locationId) {
-    const params = locationId ? `?location_id=${locationId}` : '';
-    const res = await fetch(`/.netlify/functions/intelligence-report${params}`);
+  async function fetchIntelligenceReport(locationId, force = false) {
+    let qs = locationId ? `?location_id=${locationId}` : '';
+    if (force) qs += (qs ? '&' : '?') + 'force=true';
+    const res = await fetch(`/.netlify/functions/intelligence-report${qs}`);
     const out = await res.json();
     if (!res.ok || !out.success) throw new Error(out.message || 'Failed to fetch intelligence report');
     return out;
