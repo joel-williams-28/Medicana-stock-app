@@ -720,6 +720,7 @@
       const [applyingMinLevels, setApplyingMinLevels] = useState(false);
       const [minLevelOverrides, setMinLevelOverrides] = useState({});
       const [appliedMinLevels, setAppliedMinLevels] = useState(new Set());
+      const [minLevelRefreshDone, setMinLevelRefreshDone] = useState(false);
       const [pipelineOrderSelections, setPipelineOrderSelections] = useState(new Set());
       const [pipelineOrderAdjustments, setPipelineOrderAdjustments] = useState({});
       const [pharmacySupplyAdjustments, setPharmacySupplyAdjustments] = useState({});
@@ -4013,10 +4014,13 @@ Medicana Stock Management System`;
       // =============================================
       // PIPELINE-BASED REVIEW & ORDER HANDLERS
       // =============================================
-      const loadReviewPipeline = async (preserveWizardStep = false) => {
+      const loadReviewPipeline = async (preserveWizardStep = false, keepAppliedState = false) => {
         setReviewPipeline({ loading: true, data: null, error: null });
-        setMinLevelOverrides({});
-        setAppliedMinLevels(new Set());
+        if (!keepAppliedState) {
+          setMinLevelOverrides({});
+          setAppliedMinLevels(new Set());
+          setMinLevelRefreshDone(false);
+        }
         if (!preserveWizardStep) {
           setReviewPipelineTab('adjustments');
         }
@@ -4077,6 +4081,23 @@ Medicana Stock Management System`;
         }
       };
 
+      // Refresh data + pipeline after min level applies (batch or final)
+      const doMinLevelRefresh = async (isFinal) => {
+        try {
+          const data = await window.api.fetchAllData();
+          setMedications(data.medications || []);
+          setTransactions(data.transactions || []);
+          setLocations(data.locations || []);
+          setOrders(data.orders || []);
+          await loadReviewPipeline(true, true); // preserve wizard step AND applied state
+          if (isFinal) {
+            setMinLevelRefreshDone(true);
+          }
+        } catch (err) {
+          console.error('Min level refresh failed:', err);
+        }
+      };
+
       // Wizard navigation helpers
       const canAdvanceToStep = (targetIndex) => {
         // Can always go backwards or stay
@@ -4099,7 +4120,7 @@ Medicana Stock Management System`;
         }
         // Check if we can advance freely
         if (canAdvanceToStep(targetIndex)) {
-          // If advancing FROM step 1 (adjustments), refresh data and recalculate pipeline
+          // If advancing FROM step 1 (adjustments), recalculate pipeline
           if (wizardState.currentStep === 0 && targetIndex > 0) {
             // Mark step 1 as reviewed before reloading
             setWizardState(prev => ({
@@ -4108,14 +4129,16 @@ Medicana Stock Management System`;
               stepStatus: { ...prev.stepStatus, adjustments: { ...prev.stepStatus.adjustments, reviewed: true } }
             }));
             setReviewPipelineTab(WIZARD_STEPS[targetIndex].key);
-            // Refresh main data (min levels changed) then recalculate pipeline
-            window.api.fetchAllData().then(data => {
-              setMedications(data.medications || []);
-              setTransactions(data.transactions || []);
-              setLocations(data.locations || []);
-              setOrders(data.orders || []);
-            });
-            loadReviewPipeline(true);
+            // Skip refresh if already done after applying all min levels
+            if (!minLevelRefreshDone) {
+              window.api.fetchAllData().then(data => {
+                setMedications(data.medications || []);
+                setTransactions(data.transactions || []);
+                setLocations(data.locations || []);
+                setOrders(data.orders || []);
+              });
+              loadReviewPipeline(true);
+            }
           } else {
             setWizardState(prev => ({ ...prev, currentStep: targetIndex }));
             setReviewPipelineTab(WIZARD_STEPS[targetIndex].key);
@@ -5760,11 +5783,24 @@ Medicana Stock Management System`;
                         )}
 
                         {/* Pipeline Step 1: Adjust Min Levels (was step 4) */}
-                        {(reviewPipelineTab === 'all' || reviewPipelineTab === 'adjustments') && pp.adjustments.length > 0 && (() => {
+                        {(reviewPipelineTab === 'all' || reviewPipelineTab === 'adjustments') && (pp.adjustments.length > 0 || minLevelRefreshDone) && (() => {
                           const pendingAdjs = pp.adjustments.filter(adj => !appliedMinLevels.has(`${adj.medicationId}-${adj.locationId}`));
                           const appliedCount = appliedMinLevels.size;
                           return (
                           <div className="p-4">
+                            {minLevelRefreshDone && pendingAdjs.length === 0 ? (
+                              <div className="bg-status-ok-bg border-l-4 border-status-ok-text p-4 mb-4 rounded-r">
+                                <div className="flex items-center justify-between flex-wrap gap-2">
+                                  <div>
+                                    <h3 className="text-base font-bold text-status-ok-text flex items-center">
+                                      <span className="bg-status-ok-text text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-2">&#10003;</span>
+                                      Step 1 Complete — All minimum levels updated
+                                    </h3>
+                                    <p className="text-sm text-status-ok-text mt-1">Minimum stock levels have been aligned with usage patterns. Continue to review redistributions.</p>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
                             <div className="bg-status-low-bg border-l-4 border-status-low-text p-4 mb-4 rounded-r">
                               <div className="flex items-center justify-between flex-wrap gap-2">
                                 <div>
@@ -5800,6 +5836,7 @@ Medicana Stock Management System`;
                                           pendingAdjs.forEach(adj => next.add(`${adj.medicationId}-${adj.locationId}`));
                                           return next;
                                         });
+                                        doMinLevelRefresh(true);
                                       } catch (err) {
                                         alert('Failed to apply: ' + (err.message || 'Unknown error'));
                                       } finally {
@@ -5815,12 +5852,13 @@ Medicana Stock Management System`;
                                 )}
                               </div>
                             </div>
-                            {pendingAdjs.length === 0 && appliedCount > 0 ? (
-                              <div className="bg-status-ok-bg border border-status-ok-text rounded-lg p-4 text-center">
-                                <p className="text-status-ok-text font-semibold">All {appliedCount} min level changes applied</p>
-                                <p className="text-sm text-txt-secondary mt-1">Continue to Step 2 to review redistributions based on the updated levels.</p>
+                            )}
+                            {pendingAdjs.length === 0 && appliedCount > 0 && !minLevelRefreshDone ? (
+                              <div className="bg-brand-pale border border-brand-mid rounded-lg p-4 text-center">
+                                <div className="inline-block animate-spin rounded-full h-5 w-5 border-2 border-brand-mid border-t-transparent mr-2 align-middle"></div>
+                                <span className="text-brand-dark font-medium align-middle">Refreshing data with updated levels...</span>
                               </div>
-                            ) : (
+                            ) : pendingAdjs.length > 0 ? (
                             <div className="bg-white rounded-lg border border-bdr-default overflow-hidden">
                               <div className="overflow-x-auto">
                                 <table className="w-full text-sm">
@@ -5903,7 +5941,16 @@ Medicana Stock Management System`;
                                                     oldMinLevel: adj.currentMinLevel,
                                                     locationName: adj.locationName
                                                   });
-                                                  setAppliedMinLevels(prev => new Set(prev).add(overrideKey));
+                                                  const totalAdjs = pp.adjustments.length;
+                                                  setAppliedMinLevels(prev => {
+                                                    const next = new Set(prev).add(overrideKey);
+                                                    const allApplied = next.size >= totalAdjs;
+                                                    const batchHit = next.size % 10 === 0;
+                                                    if (allApplied || batchHit) {
+                                                      doMinLevelRefresh(allApplied);
+                                                    }
+                                                    return next;
+                                                  });
                                                 } catch (err) {
                                                   alert('Failed to apply: ' + (err.message || 'Unknown error'));
                                                 } finally {
@@ -5925,15 +5972,18 @@ Medicana Stock Management System`;
                                 </table>
                               </div>
                             </div>
-                            )}
+                            ) : null}
                             {/* Step navigation */}
                             {reviewPipelineTab !== 'all' && (
                               <div className="flex justify-end mt-4">
                                 <button
+                                  disabled={!minLevelRefreshDone}
                                   onClick={() => advanceWizardStep(1)}
-                                  className="px-4 py-2 bg-brand-mid text-white text-sm font-medium rounded hover:bg-brand-dark transition-colors"
+                                  className={`px-4 py-2 text-white text-sm font-medium rounded transition-colors ${
+                                    minLevelRefreshDone ? 'bg-brand-mid hover:bg-brand-dark' : 'bg-gray-400 cursor-not-allowed'
+                                  }`}
                                 >
-                                  Continue to Step 2: Redistribute →
+                                  {minLevelRefreshDone ? 'Continue to Step 2: Redistribute →' : 'Apply all changes to continue'}
                                 </button>
                               </div>
                             )}
