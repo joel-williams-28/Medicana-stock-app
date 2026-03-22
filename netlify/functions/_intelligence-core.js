@@ -501,7 +501,11 @@ function runOptimisationPipeline(medications, batchInventory, pendingOrderMap = 
           quantity: transferItems,
           quantityBoxes: transferBoxes,
           expiryDate: batch.expiryDate,
-          itemsPerBox: ipb
+          itemsPerBox: ipb,
+          sourceStockBoxes: simulatedBoxes[batch.surplusKey],
+          sourceMinLevel: minLevelMap[batch.surplusKey].suggestedMinLevel,
+          targetStockBoxes: simulatedBoxes[deficitKey],
+          targetMinLevel: minLevelMap[deficitKey].suggestedMinLevel
         });
 
         // Update simulated inventory
