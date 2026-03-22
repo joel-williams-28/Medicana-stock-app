@@ -35,7 +35,7 @@ exports.handler = async (event) => {
     if (!batchId && batchId !== 0) missing.push('batchId');
     if (!sourceLocationId && sourceLocationId !== 0) missing.push('sourceLocationId');
     if (!targetLocationId && targetLocationId !== 0) missing.push('targetLocationId');
-    if (!quantity || isNaN(quantity)) missing.push('quantity');
+    if (isNaN(quantity)) missing.push('quantity');
 
     if (missing.length > 0) {
       console.log('[stock-transfer] Validation failed. Missing:', missing, 'Raw body:', body);

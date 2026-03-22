@@ -4118,7 +4118,12 @@ Medicana Stock Management System`;
             totalTransfers: pipeline.transfers.length,
             totalPharmacySupplies: pipeline.pharmacySupplies.length,
             totalBoxesRedistributed: pipeline.transfers.reduce((s, t) => s + t.quantityBoxes, 0),
-            totalBoxesFromPharmacy: pipeline.pharmacySupplies.reduce((s, t) => s + t.quantityBoxes, 0)
+            totalBoxesFromPharmacy: pipeline.pharmacySupplies.reduce((s, t) => s + t.quantityBoxes, 0),
+            totalOrderLines: (pipeline.orders || []).filter(o => o.orderQuantityBoxes > 0).length,
+            totalAdjustments: (pipeline.adjustments || []).length,
+            totalBoxesToOrder: (pipeline.orders || []).reduce((s, o) => s + o.orderQuantityBoxes, 0),
+            totalBoxesAlreadyOrdered: (pipeline.orders || []).reduce((s, o) => s + o.alreadyOrderedBoxes, 0),
+            totalShortfallBoxes: (pipeline.orders || []).reduce((s, o) => s + o.totalShortfallBoxes, 0)
           };
           updatedPipeline = pipeline;
           const newData = { ...prev.data, pipeline };
