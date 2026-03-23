@@ -4027,7 +4027,8 @@ Medicana Stock Management System`;
       // =============================================
       const loadReviewPipeline = async (preserveWizardStep = false, forceRegenerate = false, skipSnapshotSave = false, useCurrentMins = false) => {
         setReviewPipeline({ loading: true, data: null, error: null });
-        setPipelineCompleteSummary(null);
+        // Clear completion summary when force-regenerating (not during mid-workflow reloads)
+        if (forceRegenerate) setPipelineCompleteSummary(null);
         setMinLevelOverrides({});
         setAppliedMinLevels(new Set());
         if (!preserveWizardStep) {
@@ -4288,6 +4289,13 @@ Medicana Stock Management System`;
       // Auto-load intelligence pipeline when Intelligent Stock tab is active
       useEffect(() => {
         if (ui.activeTab === 'lowstock' && !reviewPipeline.data && !reviewPipeline.loading && auth.isLoggedIn) {
+          // Skip auto-load if completion summary is showing and lock hasn't expired
+          if (pipelineCompleteSummary) {
+            const lockEnd = pipelineCompleteSummary.lockedUntil ? new Date(pipelineCompleteSummary.lockedUntil).getTime() : 0;
+            if (lockEnd > Date.now()) return;
+            // Lock expired — clear summary and load fresh
+            setPipelineCompleteSummary(null);
+          }
           loadReviewPipeline();
         }
       }, [ui.activeTab]);
@@ -4297,7 +4305,12 @@ Medicana Stock Management System`;
         if (!pipelineCompleteSummary?.lockedUntil) { setCountdownText(''); return; }
         const update = () => {
           const diff = new Date(pipelineCompleteSummary.lockedUntil).getTime() - Date.now();
-          if (diff <= 0) { setCountdownText('Ready to regenerate now'); return; }
+          if (diff <= 0) {
+            setCountdownText('Ready to regenerate now');
+            // Lock expired — clear completion view so fresh pipeline loads on next visit
+            setPipelineCompleteSummary(null);
+            return;
+          }
           const d = Math.floor(diff / 86400000);
           const h = Math.floor((diff % 86400000) / 3600000);
           const m = Math.floor((diff % 3600000) / 60000);
