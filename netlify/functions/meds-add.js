@@ -1,6 +1,7 @@
 // netlify/functions/meds-add.js
 // Adds or updates a medication in the database
 const db = require('./_db');
+const { logActivity } = require('./_activity-log');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
@@ -37,55 +38,43 @@ exports.handler = async (event) => {
         const medicationId = check.rows[0].id;
 
         // Update min_level_boxes for existing medication
-        try {
-          await db.query('UPDATE medications SET min_level_boxes = $1 WHERE id = $2', [minBoxes, medicationId]);
-        } catch (updateError) {
-          if (updateError.message && updateError.message.includes('min_level_boxes')) {
-            await db.query('UPDATE medications SET min_level = $1 WHERE id = $2', [minBoxes, medicationId]);
-          }
-        }
+        await db.query('UPDATE medications SET min_level_boxes = $1 WHERE id = $2', [minBoxes, medicationId]);
+
+        await logActivity({
+          userId: null,
+          actionType: 'med_updated',
+          entityType: 'medication',
+          entityId: medicationId,
+          details: { minLevelBoxes: minBoxes, reused: true, barcode: barcode.trim() }
+        });
 
         return db.ok({ reused: true, medicationId });
       }
     }
 
     // No matching barcode - upsert medication
-    try {
-      await db.query(
-        `INSERT INTO medications
-          (id, name, strength, form, barcode, min_level_boxes, standard_items_per_box, fefo)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, true)
-         ON CONFLICT (id)
-         DO UPDATE SET
-          name = EXCLUDED.name,
-          strength = EXCLUDED.strength,
-          form = EXCLUDED.form,
-          barcode = EXCLUDED.barcode,
-          min_level_boxes = EXCLUDED.min_level_boxes,
-          standard_items_per_box = EXCLUDED.standard_items_per_box`,
-        [id, name, strength || '', type || 'stock', barcode || '', minBoxes, standardItemsPerBox || null]
-      );
-    } catch (dbError) {
-      // Fallback: try with min_level column if min_level_boxes doesn't exist yet
-      if (dbError.message && dbError.message.includes('min_level_boxes')) {
-        await db.query(
-          `INSERT INTO medications
-            (id, name, strength, form, barcode, min_level, standard_items_per_box, fefo)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, true)
-           ON CONFLICT (id)
-           DO UPDATE SET
-            name = EXCLUDED.name,
-            strength = EXCLUDED.strength,
-            form = EXCLUDED.form,
-            barcode = EXCLUDED.barcode,
-            min_level = EXCLUDED.min_level,
-            standard_items_per_box = EXCLUDED.standard_items_per_box`,
-          [id, name, strength || '', type || 'stock', barcode || '', minBoxes, standardItemsPerBox || null]
-        );
-      } else {
-        throw dbError;
-      }
-    }
+    await db.query(
+      `INSERT INTO medications
+        (id, name, strength, form, barcode, min_level_boxes, standard_items_per_box, fefo)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true)
+       ON CONFLICT (id)
+       DO UPDATE SET
+        name = EXCLUDED.name,
+        strength = EXCLUDED.strength,
+        form = EXCLUDED.form,
+        barcode = EXCLUDED.barcode,
+        min_level_boxes = EXCLUDED.min_level_boxes,
+        standard_items_per_box = EXCLUDED.standard_items_per_box`,
+      [id, name, strength || '', type || 'stock', barcode || '', minBoxes, standardItemsPerBox || null]
+    );
+
+    await logActivity({
+      userId: null,
+      actionType: 'med_upserted',
+      entityType: 'medication',
+      entityId: id,
+      details: { name, strength, form: type, barcode, minLevelBoxes: minBoxes, standardItemsPerBox }
+    });
 
     return db.ok({ medicationId: id });
   } catch (e) {

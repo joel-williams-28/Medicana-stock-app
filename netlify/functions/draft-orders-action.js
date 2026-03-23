@@ -60,7 +60,10 @@ exports.handler = async (event) => {
     }
 
     // --- APPROVE / APPROVE-ALL ---
-    const email = pharmacistEmail || 'Aasit.Badiani@Medicana.co.uk';
+    if (!pharmacistEmail) {
+      return db.fail(400, 'Missing required field: pharmacistEmail');
+    }
+    const email = pharmacistEmail;
 
     // Get drafts to approve
     let draftsToApprove;
