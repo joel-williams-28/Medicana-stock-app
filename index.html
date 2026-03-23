@@ -735,6 +735,8 @@
       const [executingTransferIndex, setExecutingTransferIndex] = useState(null);
       const [executingSupplyIndex, setExecutingSupplyIndex] = useState(null);
       const [creatingOrders, setCreatingOrders] = useState(false);
+      const [pipelineCompleteSummary, setPipelineCompleteSummary] = useState(null);
+      const [countdownText, setCountdownText] = useState('');
 
       // Guided wizard state for pipeline steps
       const WIZARD_STEPS = [
@@ -4025,6 +4027,7 @@ Medicana Stock Management System`;
       // =============================================
       const loadReviewPipeline = async (preserveWizardStep = false, forceRegenerate = false, skipSnapshotSave = false, useCurrentMins = false) => {
         setReviewPipeline({ loading: true, data: null, error: null });
+        setPipelineCompleteSummary(null);
         setMinLevelOverrides({});
         setAppliedMinLevels(new Set());
         if (!preserveWizardStep) {
@@ -4288,6 +4291,22 @@ Medicana Stock Management System`;
           loadReviewPipeline();
         }
       }, [ui.activeTab]);
+
+      // Countdown timer for pipeline completion view
+      useEffect(() => {
+        if (!pipelineCompleteSummary?.lockedUntil) { setCountdownText(''); return; }
+        const update = () => {
+          const diff = new Date(pipelineCompleteSummary.lockedUntil).getTime() - Date.now();
+          if (diff <= 0) { setCountdownText('Ready to regenerate now'); return; }
+          const d = Math.floor(diff / 86400000);
+          const h = Math.floor((diff % 86400000) / 3600000);
+          const m = Math.floor((diff % 3600000) / 60000);
+          setCountdownText(d > 0 ? `${d}d ${h}h until next regeneration` : h > 0 ? `${h}h ${m}m until next regeneration` : `${m}m until next regeneration`);
+        };
+        update();
+        const id = setInterval(update, 60000);
+        return () => clearInterval(id);
+      }, [pipelineCompleteSummary?.lockedUntil]);
 
       // Mark wizard steps as reviewed when their tab is opened
       useEffect(() => {
@@ -5763,8 +5782,113 @@ Medicana Stock Management System`;
                   {/* Review & Order Sub-tab (Admin/Pharmacist only) — Pipeline-based */}
                   {orderingSubTab === 'review' && canAccessTab('purchaseorders') && (
                     <>
-                  {/* Approval Confirmation View (reused from draft orders) */}
-                  {draftOrders.approvalResult ? (
+                  {/* Pipeline Complete View — shown after Done is clicked */}
+                  {pipelineCompleteSummary ? (
+                    <div className="p-4 sm:p-6">
+                      {/* Green completion header */}
+                      <div className="bg-status-ok-bg border border-status-ok-text rounded-lg p-5 mb-5 text-center">
+                        <div className="text-3xl mb-2">&#10003;</div>
+                        <h3 className="text-lg font-bold text-status-ok-text mb-1">Pipeline Complete</h3>
+                        <p className="text-sm text-status-ok-text">All steps reviewed and actions executed.</p>
+                      </div>
+
+                      {/* 4 green summary cards */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                        {[
+                          { count: pipelineCompleteSummary.stepTotals.adjustments, label: 'Min Levels Applied' },
+                          { count: pipelineCompleteSummary.stepTotals.redistribute, label: 'Transfers Executed' },
+                          { count: pipelineCompleteSummary.stepTotals.pharmacy_supply, label: 'Supplies Sent' },
+                          { count: pipelineCompleteSummary.stepTotals.order, label: 'Orders Placed' },
+                        ].map((card, ci) => (
+                          <div key={ci} className="p-3 rounded-lg border border-status-ok-text bg-status-ok-bg relative">
+                            <span className="absolute top-1 right-1 text-status-ok-text text-xs font-bold">&#10003;</span>
+                            <div className="text-2xl font-bold text-status-ok-text">{card.count}</div>
+                            <div className="text-xs text-status-ok-text">{card.label}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Countdown + maturity + Force Regenerate */}
+                      <div className="px-4 py-3 bg-status-ordered-bg border border-bdr-default rounded-lg mb-5 flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm text-status-ordered-text font-medium">{countdownText}</span>
+                          {pipelineCompleteSummary.maturityLevel && (
+                            <span className="inline-flex items-center text-xs ml-2">
+                              <span className={`w-2 h-2 rounded-full mr-1 ${
+                                pipelineCompleteSummary.maturityLevel === 'mature' ? 'bg-teal-500' :
+                                pipelineCompleteSummary.maturityLevel === 'confident' ? 'bg-green-500' :
+                                pipelineCompleteSummary.maturityLevel === 'learning' ? 'bg-amber-500' : 'bg-gray-400'
+                              }`}></span>
+                              <span className="text-status-ordered-text capitalize">{pipelineCompleteSummary.maturityLevel}</span>
+                              <span className="text-status-ordered-text opacity-75 ml-1">
+                                — {pipelineCompleteSummary.weeksOfData} week{pipelineCompleteSummary.weeksOfData !== 1 ? 's' : ''} of data
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                        {(getCurrentUserInfo()?.role === 'Administrator' || getCurrentUserInfo()?.role === 'Pharmacist') && (
+                          <button onClick={() => {
+                            const locked = pipelineCompleteSummary.lockedUntil && new Date(pipelineCompleteSummary.lockedUntil) > new Date();
+                            setPipelineCompleteSummary(null);
+                            if (locked) setForceRegenConfirm({ show: true, password: '', error: '', loading: false });
+                            else loadReviewPipeline(false, true);
+                          }} className="text-xs text-status-ordered-text underline hover:text-brand-dark font-medium whitespace-nowrap">
+                            {pipelineCompleteSummary.lockedUntil && new Date(pipelineCompleteSummary.lockedUntil) > new Date() ? 'Force Regenerate' : 'Regenerate Now'}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Orders table (only if orders were placed) */}
+                      {pipelineCompleteSummary.orders.length > 0 && (
+                        <div className="mb-5">
+                          <h4 className="font-semibold text-txt-primary text-sm mb-3">Orders Placed</h4>
+                          <div className="border border-bdr-default rounded-lg overflow-hidden">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-off-white border-b border-bdr-default">
+                                  <th className="text-left px-3 py-2 font-medium text-txt-secondary">Medication</th>
+                                  <th className="text-right px-3 py-2 font-medium text-txt-secondary">Qty (boxes)</th>
+                                  <th className="text-center px-3 py-2 font-medium text-txt-secondary">Urgency</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {pipelineCompleteSummary.orders.map((order, oi) => (
+                                  <tr key={oi} className="border-b border-bdr-default last:border-b-0">
+                                    <td className="px-3 py-2 text-txt-primary">{order.medicationName}</td>
+                                    <td className="px-3 py-2 text-right font-medium">{order.quantityBoxes}</td>
+                                    <td className="px-3 py-2 text-center">
+                                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                                        order.urgency === 'urgent' ? 'bg-danger-ghost-bg text-danger-text' : 'bg-status-ordered-bg text-status-ordered-text'
+                                      }`}>{order.urgency}</span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Email re-access buttons */}
+                      {pipelineCompleteSummary.emailContent && (
+                        <div className="flex gap-3">
+                          <button onClick={() => {
+                            const ec = pipelineCompleteSummary.emailContent;
+                            window.open(`mailto:${encodeURIComponent(ec.to)}?subject=${encodeURIComponent(ec.subject)}&body=${encodeURIComponent(ec.body)}`, '_blank');
+                          }} className="flex-1 bg-brand-mid text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium text-sm">
+                            Open in Outlook
+                          </button>
+                          <button onClick={() => {
+                            const ec = pipelineCompleteSummary.emailContent;
+                            navigator.clipboard.writeText(`To: ${ec.to}\nSubject: ${ec.subject}\n\n${ec.body}`);
+                          }} className="flex-1 bg-near-black text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium text-sm">
+                            Copy to Clipboard
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                  ) : draftOrders.approvalResult ? (
                     <div className="p-4 sm:p-6">
                       <div className="bg-status-ok-bg border border-status-ok-text rounded-lg p-4 mb-4">
                         <h3 className="font-semibold text-status-ok-text text-lg mb-1">
@@ -5790,44 +5914,43 @@ Medicana Stock Management System`;
                           Copy to Clipboard
                         </button>
                         <button onClick={() => {
+                          // Capture summary before clearing
+                          setPipelineCompleteSummary({
+                            completedAt: new Date().toISOString(),
+                            stepTotals: {
+                              adjustments: wizardState.stepStatus.adjustments.total,
+                              redistribute: wizardState.stepStatus.redistribute.total,
+                              pharmacy_supply: wizardState.stepStatus.pharmacy_supply.total,
+                              order: wizardState.stepStatus.order.total,
+                            },
+                            orders: (draftOrders.approvalResult?.orders || []).map(o => ({
+                              medicationName: o.medicationName,
+                              quantityBoxes: o.quantityBoxes,
+                              quantityItems: o.quantityItems,
+                              urgency: o.urgency,
+                            })),
+                            emailContent: draftOrders.approvalResult?.emailContent || null,
+                            lockedUntil: reviewPipeline.data?.lockedUntil,
+                            lastPipelineRun: reviewPipeline.data?.lastPipelineRun,
+                            maturityLevel: reviewPipeline.data?.maturityLevel,
+                            weeksOfData: reviewPipeline.data?.weeksOfData,
+                          });
+                          // Clear approval and zero out pipeline
                           setDraftOrders(prev => ({ ...prev, approvalResult: null }));
-                          // Zero out pipeline — all actions completed, show "Stock Levels Are Optimal"
                           setReviewPipeline(prev => ({
                             ...prev,
                             data: prev.data ? {
                               ...prev.data,
                               pipeline: {
                                 ...(prev.data.pipeline || {}),
-                                adjustments: [],
-                                transfers: [],
-                                pharmacySupplies: [],
-                                orders: [],
-                                summary: {
-                                  ...(prev.data.pipeline?.summary || {}),
-                                  totalAdjustments: 0,
-                                  totalTransfers: 0,
-                                  totalPharmacySupplies: 0,
-                                  totalOrderLines: 0,
-                                  totalBoxesRedistributed: 0,
-                                  totalBoxesFromPharmacy: 0,
-                                  totalBoxesToOrder: 0,
-                                  totalBoxesAlreadyOrdered: 0,
-                                  totalShortfallBoxes: 0,
-                                },
+                                adjustments: [], transfers: [], pharmacySupplies: [], orders: [],
+                                summary: { totalAdjustments: 0, totalTransfers: 0, totalPharmacySupplies: 0, totalOrderLines: 0, totalBoxesRedistributed: 0, totalBoxesFromPharmacy: 0, totalBoxesToOrder: 0, totalBoxesAlreadyOrdered: 0, totalShortfallBoxes: 0 },
                               },
                             } : prev.data,
                           }));
                           setMinLevelRefreshDone(false);
                           setReviewPipelineTab('adjustments');
-                          setWizardState({
-                            currentStep: 0,
-                            stepStatus: {
-                              adjustments: { reviewed: true, total: 0 },
-                              redistribute: { reviewed: true, total: 0 },
-                              pharmacy_supply: { reviewed: true, total: 0 },
-                              order: { reviewed: true, total: 0 },
-                            },
-                          });
+                          setWizardState({ currentStep: 0, stepStatus: { adjustments: { reviewed: true, total: 0 }, redistribute: { reviewed: true, total: 0 }, pharmacy_supply: { reviewed: true, total: 0 }, order: { reviewed: true, total: 0 } } });
                         }} className="px-6 bg-btn-secondary text-txt-secondary py-2 rounded-lg hover:bg-bdr-hover transition-colors font-medium text-sm">
                           Done
                         </button>
@@ -6967,9 +7090,31 @@ Medicana Stock Management System`;
                             <div className="text-4xl mb-3">&#10003;</div>
                             <h3 className="text-lg font-bold text-status-ok-text mb-2">Stock Levels Are Optimal</h3>
                             <p className="text-sm text-status-ok-text">No redistribution, orders, or min level adjustments are needed at this time.</p>
-                            <button onClick={loadReviewPipeline} className="mt-4 bg-btn-secondary text-txt-secondary px-4 py-2 rounded hover:bg-bdr-hover transition-colors text-sm">
-                              Refresh
-                            </button>
+                            {Object.values(wizardState.stepStatus).every(s => s.reviewed) ? (
+                              <button onClick={() => {
+                                setPipelineCompleteSummary({
+                                  completedAt: new Date().toISOString(),
+                                  stepTotals: {
+                                    adjustments: wizardState.stepStatus.adjustments.total,
+                                    redistribute: wizardState.stepStatus.redistribute.total,
+                                    pharmacy_supply: wizardState.stepStatus.pharmacy_supply.total,
+                                    order: wizardState.stepStatus.order.total,
+                                  },
+                                  orders: [],
+                                  emailContent: null,
+                                  lockedUntil: reviewPipeline.data?.lockedUntil,
+                                  lastPipelineRun: reviewPipeline.data?.lastPipelineRun,
+                                  maturityLevel: reviewPipeline.data?.maturityLevel,
+                                  weeksOfData: reviewPipeline.data?.weeksOfData,
+                                });
+                              }} className="mt-4 bg-brand-mid text-white px-4 py-2 rounded hover:bg-brand-dark transition-colors text-sm">
+                                View Summary
+                              </button>
+                            ) : (
+                              <button onClick={loadReviewPipeline} className="mt-4 bg-btn-secondary text-txt-secondary px-4 py-2 rounded hover:bg-bdr-hover transition-colors text-sm">
+                                Refresh
+                              </button>
+                            )}
                           </div>
                         )}
                         </>
