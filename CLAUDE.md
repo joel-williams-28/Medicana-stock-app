@@ -154,6 +154,12 @@ Pharmaceutical inventory management system built with React (CDN), Netlify Funct
 - `batches (medication_id, batch_code)` — UNIQUE constraint
 - `users.username` — UNIQUE constraint
 
+### Performance Indexes
+- `idx_batches_medication_id` — `batches(medication_id)`
+- `idx_orders_status_medication` — `orders(status, medication_id)`
+- `idx_draft_orders_status_medication` — `draft_orders(status, medication_id)`
+- `idx_transactions_med_loc_date` — `transactions(medication_id, location_id, occurred_at DESC)`
+
 ### Foreign Keys
 - `activity_log.user_id` → `users.id`
 - `batches.medication_id` → `medications.id`
@@ -178,8 +184,8 @@ Pharmaceutical inventory management system built with React (CDN), Netlify Funct
 - `transactions.id` is **int8** (bigserial/bigint)
 
 ## Architecture
-- **Frontend:** React via CDN (single index.html ~7700 lines), Babel, TailwindCSS
+- **Frontend:** React via CDN (single index.html ~9400 lines), Babel, TailwindCSS
 - **Backend:** Netlify Functions (serverless), Node.js
-- **Database:** Neon PostgreSQL with SSL
-- **API Layer:** api.js (frontend abstraction)
+- **Database:** Neon PostgreSQL with SSL (30s statement timeout)
+- **API Layer:** api.js (frontend abstraction, 60s polling interval, skips when tab hidden)
 - **Shared helpers:** `_db.js` (pool + response helpers), `_activity-log.js`, `_intelligence-core.js`
