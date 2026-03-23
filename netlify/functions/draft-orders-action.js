@@ -98,88 +98,95 @@ exports.handler = async (event) => {
       return db.fail(404, 'No pending draft orders found to approve');
     }
 
-    // Get items_per_box for quantity conversion
+    // Get items_per_box for quantity conversion (filtered to relevant medications only)
+    const medIds = draftsToApprove.map(d => d.medication_id);
     const ipbResult = await db.query(`
-      SELECT medication_id, items_per_box
+      SELECT DISTINCT ON (medication_id) medication_id, items_per_box
       FROM batches
-      WHERE items_per_box IS NOT NULL AND items_per_box > 0
+      WHERE medication_id = ANY($1) AND items_per_box IS NOT NULL AND items_per_box > 0
       ORDER BY medication_id
-    `);
+    `, [medIds]);
     const itemsPerBoxByMed = {};
     for (const row of ipbResult.rows) {
-      if (!itemsPerBoxByMed[row.medication_id]) {
-        itemsPerBoxByMed[row.medication_id] = row.items_per_box;
-      }
+      itemsPerBoxByMed[row.medication_id] = row.items_per_box;
     }
 
     const approvedOrders = [];
     const adj = adjustments || {};
 
-    for (const draft of draftsToApprove) {
-      // Determine final quantity (boxes)
-      const finalBoxes = adj[draft.id] != null ? Number(adj[draft.id]) : draft.suggested_quantity;
-      if (finalBoxes <= 0) continue;
+    // Wrap all approvals in a transaction for atomicity
+    await db.query('BEGIN');
+    try {
+      for (const draft of draftsToApprove) {
+        // Determine final quantity (boxes)
+        const finalBoxes = adj[draft.id] != null ? Number(adj[draft.id]) : draft.suggested_quantity;
+        if (finalBoxes <= 0) continue;
 
-      // Convert to items for the orders table
-      const itemsPerBox = itemsPerBoxByMed[draft.medication_id] || 1;
-      const quantityInItems = finalBoxes * itemsPerBox;
+        // Convert to items for the orders table
+        const itemsPerBox = itemsPerBoxByMed[draft.medication_id] || 1;
+        const quantityInItems = finalBoxes * itemsPerBox;
 
-      // Create real order
-      const orderResult = await db.query(
-        `INSERT INTO orders
-         (medication_id, user_id, quantity, urgency, notes, pharmacist_email, status, ordered_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW())
-         RETURNING id, ordered_at`,
-        [
-          draft.medication_id,
-          userId || null,
-          quantityInItems,
-          draft.urgency,
-          `Auto-generated from draft order #${draft.id}`,
-          email
-        ]
-      );
+        // Create real order
+        const orderResult = await db.query(
+          `INSERT INTO orders
+           (medication_id, user_id, quantity, urgency, notes, pharmacist_email, status, ordered_at)
+           VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW())
+           RETURNING id, ordered_at`,
+          [
+            draft.medication_id,
+            userId || null,
+            quantityInItems,
+            draft.urgency,
+            `Auto-generated from draft order #${draft.id}`,
+            email
+          ]
+        );
 
-      const order = orderResult.rows[0];
+        const order = orderResult.rows[0];
 
-      // Update draft
-      await db.query(
-        `UPDATE draft_orders
-         SET status = 'approved', approved_quantity = $1, approved_by = $2,
-             approved_at = NOW(), order_id = $3
-         WHERE id = $4`,
-        [finalBoxes, userId || null, order.id, draft.id]
-      );
+        // Update draft
+        await db.query(
+          `UPDATE draft_orders
+           SET status = 'approved', approved_quantity = $1, approved_by = $2,
+               approved_at = NOW(), order_id = $3
+           WHERE id = $4`,
+          [finalBoxes, userId || null, order.id, draft.id]
+        );
 
-      // Log activity
-      await logActivity({
-        userId: userId || null,
-        actionType: 'draft_approved',
-        entityType: 'draft_order',
-        entityId: draft.id,
-        details: {
+        // Log activity
+        await logActivity({
+          userId: userId || null,
+          actionType: 'draft_approved',
+          entityType: 'draft_order',
+          entityId: draft.id,
+          details: {
+            draftId: draft.id,
+            medicationName: draft.medication_name,
+            suggestedQuantity: draft.suggested_quantity,
+            approvedQuantity: finalBoxes,
+            quantityInItems,
+            orderId: order.id
+          }
+        });
+
+        approvedOrders.push({
+          orderId: order.id,
           draftId: draft.id,
-          medicationName: draft.medication_name,
-          suggestedQuantity: draft.suggested_quantity,
-          approvedQuantity: finalBoxes,
-          quantityInItems,
-          orderId: order.id
-        }
-      });
-
-      approvedOrders.push({
-        orderId: order.id,
-        draftId: draft.id,
-        medicationId: draft.medication_id,
-        medicationName: draft.medication_name || 'Unknown',
-        medicationForm: draft.medication_form || '',
-        quantityBoxes: finalBoxes,
-        quantityItems: quantityInItems,
-        urgency: draft.urgency,
-        currentStock: Number(draft.current_stock_boxes),
-        minLevel: Number(draft.min_level_boxes),
-        orderedAt: order.ordered_at
-      });
+          medicationId: draft.medication_id,
+          medicationName: draft.medication_name || 'Unknown',
+          medicationForm: draft.medication_form || '',
+          quantityBoxes: finalBoxes,
+          quantityItems: quantityInItems,
+          urgency: draft.urgency,
+          currentStock: Number(draft.current_stock_boxes),
+          minLevel: Number(draft.min_level_boxes),
+          orderedAt: order.ordered_at
+        });
+      }
+      await db.query('COMMIT');
+    } catch (err) {
+      await db.query('ROLLBACK');
+      throw err;
     }
 
     // Log bulk approval

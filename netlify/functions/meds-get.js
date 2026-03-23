@@ -99,9 +99,6 @@ exports.handler = async () => {
       med.numberOfBoxes = med.batches.reduce((sum, b) => sum + (b.numberOfBoxes || 0), 0);
     }
 
-    // Ensure quantity_fulfilled column exists (idempotent migration)
-    await db.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS quantity_fulfilled INTEGER DEFAULT 0').catch(() => {});
-
     // Query pending orders
     const ordersResult = await db.query(`
       SELECT

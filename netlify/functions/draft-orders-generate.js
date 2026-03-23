@@ -17,33 +17,6 @@ exports.handler = async (event) => {
   try {
     const { userId, locationId } = db.parseBody(event);
 
-    // Ensure draft_orders table exists (idempotent)
-    // Ensure draft_orders table exists (idempotent, no FKs to avoid type issues)
-    // NOTE: medication_id and location_id are TEXT to match medications.id and locations.id
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS draft_orders (
-        id SERIAL PRIMARY KEY,
-        medication_id TEXT NOT NULL,
-        location_id TEXT,
-        current_stock_boxes NUMERIC(10,2) NOT NULL DEFAULT 0,
-        min_level_boxes INTEGER NOT NULL DEFAULT 0,
-        suggested_quantity INTEGER NOT NULL CHECK (suggested_quantity > 0),
-        approved_quantity INTEGER,
-        urgency VARCHAR(20) NOT NULL DEFAULT 'routine',
-        intelligence_snapshot JSONB,
-        source VARCHAR(20) NOT NULL DEFAULT 'auto',
-        status VARCHAR(20) NOT NULL DEFAULT 'pending_review',
-        generated_by INTEGER,
-        approved_by INTEGER,
-        generated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-        approved_at TIMESTAMP WITH TIME ZONE,
-        rejected_at TIMESTAMP WITH TIME ZONE,
-        order_id INTEGER,
-        batch_ref UUID NOT NULL,
-        notes TEXT
-      )
-    `).catch(() => {});
-
     // Get maturity info
     const { weeksOfData, maturityLevel } = await getMaturityInfo();
 
@@ -83,16 +56,14 @@ exports.handler = async (event) => {
       agg.location_keys.push(`${medId}|${row.location_id}`);
     }
 
-    // Get existing pending drafts and pending orders to avoid duplicates
-    const existingDrafts = await db.query(
-      `SELECT medication_id FROM draft_orders WHERE status = 'pending_review'`
-    );
-    const draftedMedIds = new Set(existingDrafts.rows.map(r => r.medication_id));
-
-    const existingOrders = await db.query(
-      `SELECT medication_id FROM orders WHERE status = 'pending'`
-    );
-    const orderedMedIds = new Set(existingOrders.rows.map(r => r.medication_id));
+    // Get existing pending drafts and pending orders to avoid duplicates (single query)
+    const existingResult = await db.query(`
+      SELECT DISTINCT medication_id, 'draft' AS source FROM draft_orders WHERE status = 'pending_review'
+      UNION
+      SELECT DISTINCT medication_id, 'order' AS source FROM orders WHERE status = 'pending'
+    `);
+    const draftedMedIds = new Set(existingResult.rows.filter(r => r.source === 'draft').map(r => r.medication_id));
+    const orderedMedIds = new Set(existingResult.rows.filter(r => r.source === 'order').map(r => r.medication_id));
 
     // Generate batch reference
     const batchRef = crypto.randomUUID();

@@ -16,18 +16,17 @@ exports.handler = async (event) => {
       return db.fail(400, 'pharmacistEmail is required');
     }
 
-    // Get items_per_box for quantity conversion
+    // Get items_per_box for quantity conversion (filtered to relevant medications only)
+    const medIds = orders.map(o => o.medicationId).filter(Boolean);
     const ipbResult = await db.query(`
-      SELECT medication_id, items_per_box
+      SELECT DISTINCT ON (medication_id) medication_id, items_per_box
       FROM batches
-      WHERE items_per_box IS NOT NULL AND items_per_box > 0
+      WHERE medication_id = ANY($1) AND items_per_box IS NOT NULL AND items_per_box > 0
       ORDER BY medication_id
-    `);
+    `, [medIds]);
     const itemsPerBoxByMed = {};
     for (const row of ipbResult.rows) {
-      if (!itemsPerBoxByMed[row.medication_id]) {
-        itemsPerBoxByMed[row.medication_id] = row.items_per_box;
-      }
+      itemsPerBoxByMed[row.medication_id] = row.items_per_box;
     }
 
     const createdOrders = [];

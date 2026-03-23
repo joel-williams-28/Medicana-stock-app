@@ -124,23 +124,12 @@ exports.handler = async (event) => {
         }
       }
 
-      // Upsert inventory row
-      const checkInv = await db.query(
-        'SELECT on_hand FROM inventory WHERE location_id = $1 AND batch_id = $2',
-        [locationId, batchIdResult]
+      // Upsert inventory row (atomic — avoids race condition)
+      await db.query(
+        `INSERT INTO inventory (location_id, batch_id, on_hand) VALUES ($1, $2, $3)
+         ON CONFLICT (location_id, batch_id) DO UPDATE SET on_hand = inventory.on_hand + $3`,
+        [locationId, batchIdResult, finalTotal]
       );
-
-      if (checkInv.rows.length === 0) {
-        await db.query(
-          'INSERT INTO inventory (location_id, batch_id, on_hand) VALUES ($1, $2, $3)',
-          [locationId, batchIdResult, finalTotal]
-        );
-      } else {
-        await db.query(
-          'UPDATE inventory SET on_hand = on_hand + $1 WHERE location_id = $2 AND batch_id = $3',
-          [finalTotal, locationId, batchIdResult]
-        );
-      }
 
       // Insert transaction record for delivery
       await db.query(

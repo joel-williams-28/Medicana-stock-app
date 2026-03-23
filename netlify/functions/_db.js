@@ -3,7 +3,9 @@ const { Pool } = require('pg');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: true
+  ssl: true,
+  statement_timeout: 30000,
+  idle_in_transaction_session_timeout: 30000
 });
 
 // Shared response helpers to reduce boilerplate across all functions

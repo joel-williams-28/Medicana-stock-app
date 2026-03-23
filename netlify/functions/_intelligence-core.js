@@ -71,7 +71,8 @@ async function getStockLevels(locationId) {
        WHERE m.is_active = true AND i.location_id = $1 AND i.on_hand > 0
        GROUP BY m.id, m.name, m.strength, m.form, m.min_level_boxes, l.id, l.display_name, lml.min_level_boxes
        ORDER BY m.name`
-    : `SELECT
+    : `WITH group_names AS (SELECT DISTINCT group_name FROM locations WHERE group_name IS NOT NULL)
+       SELECT
          m.id AS medication_id,
          CASE WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
               ELSE m.name || ' ' || m.strength END AS medication_name,
@@ -87,7 +88,7 @@ async function getStockLevels(locationId) {
        JOIN locations l ON l.id = i.location_id
        LEFT JOIN location_min_levels lml ON lml.medication_id = m.id AND lml.location_id = i.location_id
        WHERE m.is_active = true AND i.on_hand > 0
-         AND l.display_name NOT IN (SELECT DISTINCT group_name FROM locations WHERE group_name IS NOT NULL)
+         AND l.display_name NOT IN (SELECT group_name FROM group_names)
        GROUP BY m.id, m.name, m.strength, m.form, m.min_level_boxes, l.id, l.display_name, lml.min_level_boxes
        ORDER BY m.name, l.display_name`;
 
@@ -381,7 +382,7 @@ async function getBatchInventory() {
     JOIN medications m ON m.id = b.medication_id
     WHERE m.is_active = true AND i.on_hand > 0
       AND l.display_name NOT IN (SELECT DISTINCT group_name FROM locations WHERE group_name IS NOT NULL)
-    ORDER BY b.medication_id, i.location_id, b.expiry_date ASC
+    ORDER BY b.medication_id, i.location_id, b.expiry_date ASC NULLS LAST
   `);
   return result.rows;
 }
