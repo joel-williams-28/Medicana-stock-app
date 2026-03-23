@@ -623,6 +623,13 @@
         lastScanTime: 0
       });
 
+      // Debounced search term for filtering (300ms delay to avoid filtering on every keystroke)
+      const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+      useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearchTerm(ui.searchTerm), 300);
+        return () => clearTimeout(timer);
+      }, [ui.searchTerm]);
+
       // Search input barcode detection state
       const [searchBarcodeDetection, setSearchBarcodeDetection] = useState({
         lastKeyTime: 0,
@@ -903,7 +910,7 @@
                       setOrders(ords || []);
                       setDraftOrderCount(draftCount || 0);
                     },
-                    intervalMs: 20000
+                    intervalMs: 60000
                   });
                 } catch (err) {
                   console.error('Failed to restore session data:', err);
@@ -1313,10 +1320,10 @@
 
         const filteredMedications = medications
           .filter(med => matchesLocationFilter(med, ui.currentLocation, locations))
-          .filter(med => 
-            med.name.toLowerCase().includes(ui.searchTerm.toLowerCase()) ||
-            (med.barcode && med.barcode.toLowerCase().includes(ui.searchTerm.toLowerCase())) ||
-            (med.batches && med.batches.some(batch => batch.batchNumber && batch.batchNumber.toLowerCase().includes(ui.searchTerm.toLowerCase())))
+          .filter(med =>
+            med.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+            (med.barcode && med.barcode.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
+            (med.batches && med.batches.some(batch => batch.batchNumber && batch.batchNumber.toLowerCase().includes(debouncedSearchTerm.toLowerCase())))
           )
           .filter(med => medicationFilters.types.length === 0 || medicationFilters.types.includes(med.type))
           .filter(med => medicationFilters.locations.length === 0 || medicationFilters.locations.includes(med.location))
@@ -3847,9 +3854,9 @@ Medicana Stock Management System`;
             return;
           }
 
-          // Get internal medication ID for backend update
-          const internalMedicationId = Number(editMinLevel.editing.internalId);
-          if (!Number.isFinite(internalMedicationId)) {
+          // Get internal medication ID for backend update (TEXT type in DB)
+          const internalMedicationId = String(editMinLevel.editing.internalId || '');
+          if (!internalMedicationId) {
             setEditMinLevel(prev => ({ ...prev, error: 'Unable to determine medication ID for update.' }));
             return;
           }
@@ -3861,7 +3868,7 @@ Medicana Stock Management System`;
           const locationNameForUpdate = isSpecificLocation ? editMinLevel.editing?.location : null;
 
           await window.api.setMedicationMinLevel({
-            medicationId: Math.floor(internalMedicationId),
+            medicationId: internalMedicationId,
             locationId: locationIdForUpdate || undefined,
             minLevel: Math.floor(finalMinLevelBoxes),
             userId: currentUser.id,
@@ -3874,14 +3881,14 @@ Medicana Stock Management System`;
           if (locationIdForUpdate) {
             // Per-location update: only update meds at this location
             setMedications(prev => prev.map(med => (
-              med.internalId === Math.floor(internalMedicationId) && med.locationId === locationIdForUpdate
+              String(med.internalId) === internalMedicationId && med.locationId === locationIdForUpdate
                 ? { ...med, minLevelBoxes: Math.floor(finalMinLevelBoxes) }
                 : med
             )));
           } else {
             // Global update: update all instances of this medication
             setMedications(prev => prev.map(med => (
-              med.internalId === Math.floor(internalMedicationId)
+              String(med.internalId) === internalMedicationId
                 ? { ...med, minLevelBoxes: Math.floor(finalMinLevelBoxes) }
                 : med
             )));

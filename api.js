@@ -46,9 +46,9 @@ window.api = (function () {
     return res.json(); // Returns { success, user } or { success: false, ... }
   }
 
-  // Polling to keep all clients in sync
+  // Polling to keep all clients in sync (skips when tab is hidden to save bandwidth)
   let pollTimer = null;
-  function startPolling({ onData, intervalMs = 20000 }) {
+  function startPolling({ onData, intervalMs = 60000 }) {
     stopPolling();
 
     fetchAllData()
@@ -56,6 +56,7 @@ window.api = (function () {
       .catch(err => console.error('initial poll failed', err));
 
     pollTimer = setInterval(() => {
+      if (document.hidden) return; // Skip poll when tab is not visible
       fetchAllData()
         .then(onData)
         .catch(err => console.error('poll failed', err));
