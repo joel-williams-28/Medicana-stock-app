@@ -4784,7 +4784,8 @@ Medicana Stock Management System`;
                       Intelligent Stock
                         {(() => {
                           const pp = reviewPipeline.data?.pipeline;
-                          const actionCount = pp ? (pp.summary.totalTransfers + pp.summary.totalOrderLines + pp.summary.totalAdjustments) : 0;
+                          const pendingAdj = Math.max(0, (pp?.summary?.totalAdjustments || 0) - appliedMinLevels.size);
+                          const actionCount = pipelineCompleteSummary ? 0 : (pp ? (pp.summary.totalTransfers + pp.summary.totalOrderLines + pendingAdj) : 0);
                           if (actionCount > 0) {
                             return <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">{actionCount}</span>;
                           } else if (lowStockMedications.length > 0) {
@@ -5544,7 +5545,8 @@ Medicana Stock Management System`;
                       <div className="flex-1">
                         {(() => {
                           const pp = reviewPipeline.data?.pipeline;
-                          const totalActions = pp ? (pp.summary.totalTransfers + pp.summary.totalOrderLines + pp.summary.totalAdjustments) : 0;
+                          const pendingAdj = Math.max(0, (pp?.summary?.totalAdjustments || 0) - appliedMinLevels.size);
+                          const totalActions = pipelineCompleteSummary ? 0 : (pp ? (pp.summary.totalTransfers + pp.summary.totalOrderLines + pendingAdj) : 0);
                           if (pp && totalActions > 0) {
                             return (
                               <>
@@ -5553,8 +5555,8 @@ Medicana Stock Management System`;
                                   {pp.summary.totalTransfers > 0 && `${pp.summary.totalTransfers} transfer${pp.summary.totalTransfers !== 1 ? 's' : ''}`}
                                   {pp.summary.totalTransfers > 0 && pp.summary.totalOrderLines > 0 && ', '}
                                   {pp.summary.totalOrderLines > 0 && `${pp.summary.totalOrderLines} order${pp.summary.totalOrderLines !== 1 ? 's' : ''}`}
-                                  {(pp.summary.totalTransfers > 0 || pp.summary.totalOrderLines > 0) && pp.summary.totalAdjustments > 0 && ', '}
-                                  {pp.summary.totalAdjustments > 0 && `${pp.summary.totalAdjustments} min level adjustment${pp.summary.totalAdjustments !== 1 ? 's' : ''}`}
+                                  {(pp.summary.totalTransfers > 0 || pp.summary.totalOrderLines > 0) && pendingAdj > 0 && ', '}
+                                  {pendingAdj > 0 && `${pendingAdj} min level adjustment${pendingAdj !== 1 ? 's' : ''}`}
                                   {' — review in the pipeline below.'}
                                 </p>
                               </>
@@ -5629,7 +5631,8 @@ Medicana Stock Management System`;
                           Review & Order
                           {(() => {
                             const pp = reviewPipeline.data?.pipeline;
-                            const actionCount = pp ? (pp.summary.totalTransfers + pp.summary.totalOrderLines + pp.summary.totalAdjustments) : 0;
+                            const pendingAdj = Math.max(0, (pp?.summary?.totalAdjustments || 0) - appliedMinLevels.size);
+                            const actionCount = pipelineCompleteSummary ? 0 : (pp ? (pp.summary.totalTransfers + pp.summary.totalOrderLines + pendingAdj) : 0);
                             return actionCount > 0 ? <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">{actionCount}</span> : null;
                           })()}
                         </button>
