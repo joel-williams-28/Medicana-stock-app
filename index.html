@@ -5791,7 +5791,43 @@ Medicana Stock Management System`;
                         </button>
                         <button onClick={() => {
                           setDraftOrders(prev => ({ ...prev, approvalResult: null }));
-                          loadReviewPipeline(false, true);
+                          // Zero out pipeline — all actions completed, show "Stock Levels Are Optimal"
+                          setReviewPipeline(prev => ({
+                            ...prev,
+                            data: prev.data ? {
+                              ...prev.data,
+                              pipeline: {
+                                ...(prev.data.pipeline || {}),
+                                adjustments: [],
+                                transfers: [],
+                                pharmacySupplies: [],
+                                orders: [],
+                                summary: {
+                                  ...(prev.data.pipeline?.summary || {}),
+                                  totalAdjustments: 0,
+                                  totalTransfers: 0,
+                                  totalPharmacySupplies: 0,
+                                  totalOrderLines: 0,
+                                  totalBoxesRedistributed: 0,
+                                  totalBoxesFromPharmacy: 0,
+                                  totalBoxesToOrder: 0,
+                                  totalBoxesAlreadyOrdered: 0,
+                                  totalShortfallBoxes: 0,
+                                },
+                              },
+                            } : prev.data,
+                          }));
+                          setMinLevelRefreshDone(false);
+                          setReviewPipelineTab('adjustments');
+                          setWizardState({
+                            currentStep: 0,
+                            stepStatus: {
+                              adjustments: { reviewed: true, total: 0 },
+                              redistribute: { reviewed: true, total: 0 },
+                              pharmacy_supply: { reviewed: true, total: 0 },
+                              order: { reviewed: true, total: 0 },
+                            },
+                          });
                         }} className="px-6 bg-btn-secondary text-txt-secondary py-2 rounded-lg hover:bg-bdr-hover transition-colors font-medium text-sm">
                           Done
                         </button>
