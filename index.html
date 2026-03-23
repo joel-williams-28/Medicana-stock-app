@@ -6617,7 +6617,7 @@ Medicana Stock Management System`;
                                             details: {
                                               totalSupplies: succeeded,
                                               totalFailed: failures.length,
-                                              totalBoxesSupplied: pp.pharmacySupplies.reduce((sum, s) => sum + s.quantityBoxes, 0),
+                                              totalBoxesSupplied: pp.pharmacySupplies.reduce((sum, s, idx) => sum + (pharmacySupplyAdjustments[idx] != null ? Number(pharmacySupplyAdjustments[idx]) : s.quantityBoxes), 0),
                                               source: 'intelligence_pipeline'
                                             }
                                           });

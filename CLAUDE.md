@@ -139,6 +139,19 @@ Pharmaceutical inventory management system built with React (CDN), Netlify Funct
 | active | bool | NO | TRUE |
 | location | text | YES | |
 
+### pipeline_snapshots
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| id | int4 | NO | nextval('pipeline_snapshots_id_seq') |
+| snapshot | jsonb | NO | |
+| generated_at | timestamptz | NO | now() |
+| generated_by | int4 | YES | |
+
+### Key Constraints (not shown in column definitions above)
+- `intelligence_config.key` — PRIMARY KEY (used in ON CONFLICT upserts)
+- `inventory (location_id, batch_id)` — composite PRIMARY KEY
+- `location_min_levels (medication_id, location_id)` — composite PRIMARY KEY
+
 ## Key Type Notes
 - `medications.id` is **TEXT** (not integer)
 - `locations.id` is **TEXT** (not integer)
