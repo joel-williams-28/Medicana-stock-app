@@ -5791,7 +5791,7 @@ Medicana Stock Management System`;
                         </button>
                         <button onClick={() => {
                           setDraftOrders(prev => ({ ...prev, approvalResult: null }));
-                          loadReviewPipeline();
+                          loadReviewPipeline(false, true);
                         }} className="px-6 bg-btn-secondary text-txt-secondary py-2 rounded-lg hover:bg-bdr-hover transition-colors font-medium text-sm">
                           Done
                         </button>
