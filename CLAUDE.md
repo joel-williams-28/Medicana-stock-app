@@ -189,3 +189,10 @@ Pharmaceutical inventory management system built with React (CDN), Netlify Funct
 - **Database:** Neon PostgreSQL with SSL (30s statement timeout)
 - **API Layer:** api.js (frontend abstraction, 60s polling interval, skips when tab hidden)
 - **Shared helpers:** `_db.js` (pool + response helpers), `_activity-log.js`, `_intelligence-core.js`
+
+## Deliverable Requirements
+
+When completing any request that involves backend changes, always include at the end of your response:
+
+1. **Backend code changes** — The full implementation of any new or modified Netlify Functions, shared helpers, or other backend files.
+2. **Database migration SQL** — The `CREATE TABLE`, `ALTER TABLE`, `CREATE INDEX`, or other DDL statements needed to create or update the relevant tables/schema on the Neon PostgreSQL server. Present these as ready-to-run SQL so they can be executed directly against the production database.
