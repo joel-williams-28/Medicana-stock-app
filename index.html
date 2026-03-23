@@ -6313,10 +6313,8 @@ Medicana Stock Management System`;
                                                     // Only auto-refresh before final refresh is done; after that, new items are optional
                                                     if (!minLevelRefreshDone) {
                                                       const remainingAfter = pp.adjustments.filter(a => !next.has(`${a.medicationId}-${a.locationId}`)).length;
-                                                      const allApplied = remainingAfter === 0;
-                                                      const batchHit = next.size > 0 && next.size % 10 === 0;
-                                                      if (allApplied || batchHit) {
-                                                        doMinLevelRefresh(allApplied);
+                                                      if (remainingAfter === 0) {
+                                                        doMinLevelRefresh(true);
                                                       }
                                                     }
                                                     return next;
