@@ -17,7 +17,7 @@ exports.handler = async (event) => {
         // Table may not exist yet
         config = { go_live_date: '' };
       }
-      return db.json(200, { success: true, config });
+      return db.ok({ config });
     }
 
     if (event.httpMethod === 'POST') {

@@ -9,7 +9,7 @@ exports.handler = async (event) => {
     const result = await db.query(
       'SELECT id, username, full_name, role FROM users WHERE active = true ORDER BY full_name'
     );
-    return db.json(200, { success: true, users: result.rows });
+    return db.ok({ users: result.rows });
   } catch (e) {
     return db.serverError('users-list', e);
   }

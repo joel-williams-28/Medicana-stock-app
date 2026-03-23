@@ -1464,7 +1464,6 @@
             
             // Set a timeout to open the modal (small delay to ensure user sees "no results")
             const timeoutId = setTimeout(() => {
-              console.log('Barcode scanned in search with no results, opening add medication modal');
               const currentUser = getCurrentUserInfo();
               let defaultLocation = 'Cupboard 1';
               
@@ -1510,7 +1509,6 @@
             const barcode = barcodeNewMedForm.barcode.trim();
             // Only trigger if medication is not already locked (to avoid re-triggering)
             if (!barcodeNewMedForm.medicationLocked) {
-              console.log('Modal opened with barcode, triggering lookup:', barcode);
               // Small delay to ensure modal is fully rendered
               const timeoutId = setTimeout(() => {
                 handleBarcodeLookup(barcode);
@@ -1593,7 +1591,6 @@
 
       // Barcode lookup handler - called when barcode is entered/scanned
       const handleBarcodeLookup = async (barcode) => {
-        console.log('handleBarcodeLookup called with:', barcode);
         if (!barcode || !barcode.trim()) {
           // Clear medication lock state if barcode is empty
           setBarcodeNewMedForm(prev => ({
@@ -1612,14 +1609,12 @@
         }
 
         try {
-          console.log('Calling window.api.lookupByBarcode with:', barcode.trim());
           if (!window.api || !window.api.lookupByBarcode) {
             console.error('window.api.lookupByBarcode is not available');
             throw new Error('Barcode lookup API is not available');
           }
           const result = await window.api.lookupByBarcode(barcode.trim());
-          console.log('Barcode lookup result:', result);
-          
+
           if (result.found && result.medication) {
             const med = result.medication;
             // Prefill and lock medication fields
@@ -1667,19 +1662,16 @@
 
       // Batch number lookup handler - called when batch number is available but no barcode
       const handleBatchLookup = async (batchNumber) => {
-        console.log('handleBatchLookup called with:', batchNumber);
         if (!batchNumber || !batchNumber.trim()) {
           return;
         }
 
         try {
-          console.log('Calling window.api.checkBatch with:', batchNumber.trim());
           if (!window.api || !window.api.checkBatch) {
             console.error('window.api.checkBatch is not available');
             throw new Error('Batch lookup API is not available');
           }
           const result = await window.api.checkBatch(batchNumber.trim());
-          console.log('Batch lookup result:', result);
 
           if (result.exists && result.batch) {
             const batch = result.batch;
@@ -2642,7 +2634,6 @@
           const timeoutId = setTimeout(() => {
             const currentInput = globalBarcodeScanner.currentInput;
             if (currentInput.length >= 8) { // Minimum barcode length
-              console.log('Global barcode detected:', currentInput);
               handleBarcodeScanned(currentInput);
             }
             setGlobalBarcodeScanner(prev => ({
@@ -2770,8 +2761,6 @@ Medicana Stock Management System`;
           return;
         }
         
-        console.log('Submitting with:', { boxQuantity, itemsPerBox, totalQuantity });
-
         // Set submitting state
         setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
 
@@ -2998,7 +2987,6 @@ Medicana Stock Management System`;
             medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
             batchCode: batch.batchNumber || null
           };
-          console.log('[Barcode Transfer] payload:', JSON.stringify(transferPayload), '| raw form:', { srcLocId, tgtLocId, batchIdVal, transferQty });
           await window.api.transferStock(transferPayload);
 
           const data = await window.api.fetchAllData();
@@ -3090,7 +3078,6 @@ Medicana Stock Management System`;
             medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
             batchCode: batch.batchNumber || null
           };
-          console.log('[Barcode Patient Use] payload:', JSON.stringify(adjustPayload), '| raw form:', { locationIdVal, batchIdVal, useQty });
           await window.api.adjustStock(adjustPayload);
 
           const data = await window.api.fetchAllData();
@@ -3204,7 +3191,6 @@ Medicana Stock Management System`;
             medicationName: medFullName,
             batchCode: batch.batchNumber || null
           };
-          console.log('[Barcode Transfer+Use] transfer payload:', JSON.stringify(transferPayload), '| raw form:', { srcLocId, tgtLocId, batchIdVal, transferQty });
           await window.api.transferStock(transferPayload);
 
           // Step 2: Record patient use at target (same batchId — transfer reuses batch row)
@@ -3222,7 +3208,6 @@ Medicana Stock Management System`;
             medicationName: medFullName,
             batchCode: batch.batchNumber || null
           };
-          console.log('[Barcode Transfer+Use] adjust payload:', JSON.stringify(adjustPayload), '| raw form:', { tgtLocId, batchIdVal, useQty });
           await window.api.adjustStock(adjustPayload);
 
           const data = await window.api.fetchAllData();

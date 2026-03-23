@@ -8,3 +8,6 @@
 [functions.seed-demo-data]
   timeout = 60
 
+[functions.intelligence-report]
+  timeout = 30
+
