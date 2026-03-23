@@ -147,10 +147,24 @@ Pharmaceutical inventory management system built with React (CDN), Netlify Funct
 | generated_at | timestamptz | NO | now() |
 | generated_by | int4 | YES | |
 
-### Key Constraints (not shown in column definitions above)
+### Key Constraints
 - `intelligence_config.key` — PRIMARY KEY (used in ON CONFLICT upserts)
 - `inventory (location_id, batch_id)` — composite PRIMARY KEY
 - `location_min_levels (medication_id, location_id)` — composite PRIMARY KEY
+- `batches (medication_id, batch_code)` — UNIQUE constraint
+- `users.username` — UNIQUE constraint
+
+### Foreign Keys
+- `activity_log.user_id` → `users.id`
+- `batches.medication_id` → `medications.id`
+- `inventory.location_id` → `locations.id`
+- `inventory.batch_id` → `batches.id`
+- `orders.medication_id` → `medications.id`
+- `orders.user_id` → `users.id`
+- `transactions.user_id` → `users.id`
+- `transactions.location_id` → `locations.id`
+- `transactions.batch_id` → `batches.id`
+- `transactions.medication_id` → `medications.id`
 
 ## Key Type Notes
 - `medications.id` is **TEXT** (not integer)
