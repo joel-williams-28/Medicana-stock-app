@@ -4027,8 +4027,6 @@ Medicana Stock Management System`;
       // =============================================
       const loadReviewPipeline = async (preserveWizardStep = false, forceRegenerate = false, skipSnapshotSave = false, useCurrentMins = false) => {
         setReviewPipeline({ loading: true, data: null, error: null });
-        // Clear completion summary when force-regenerating (not during mid-workflow reloads)
-        if (forceRegenerate) setPipelineCompleteSummary(null);
         setMinLevelOverrides({});
         setAppliedMinLevels(new Set());
         if (!preserveWizardStep) {
@@ -4041,6 +4039,12 @@ Medicana Stock Management System`;
           // skipSnapshotSave=true for mid-workflow regeneration (don't overwrite the cached snapshot or lock)
           // useCurrentMins=true after Step 1 to use applied min levels for redistribution calculations
           const data = await window.api.fetchIntelligenceReport(null, forceRegenerate, skipSnapshotSave, useCurrentMins);
+          // Restore or clear completion summary from backend response
+          if (data.completionSummary && !forceRegenerate) {
+            setPipelineCompleteSummary(data.completionSummary);
+          } else {
+            setPipelineCompleteSummary(null);
+          }
           setReviewPipeline({ loading: false, data, error: null });
           // Pre-select order items that still need ordering (skip those fully covered by pending orders)
           const orders = data.pipeline?.orders || [];
@@ -4289,13 +4293,6 @@ Medicana Stock Management System`;
       // Auto-load intelligence pipeline when Intelligent Stock tab is active
       useEffect(() => {
         if (ui.activeTab === 'lowstock' && !reviewPipeline.data && !reviewPipeline.loading && auth.isLoggedIn) {
-          // Skip auto-load if completion summary is showing and lock hasn't expired
-          if (pipelineCompleteSummary) {
-            const lockEnd = pipelineCompleteSummary.lockedUntil ? new Date(pipelineCompleteSummary.lockedUntil).getTime() : 0;
-            if (lockEnd > Date.now()) return;
-            // Lock expired — clear summary and load fresh
-            setPipelineCompleteSummary(null);
-          }
           loadReviewPipeline();
         }
       }, [ui.activeTab]);
@@ -5928,7 +5925,7 @@ Medicana Stock Management System`;
                         </button>
                         <button onClick={() => {
                           // Capture summary before clearing
-                          setPipelineCompleteSummary({
+                          const summary = {
                             completedAt: new Date().toISOString(),
                             stepTotals: {
                               adjustments: wizardState.stepStatus.adjustments.total,
@@ -5947,7 +5944,14 @@ Medicana Stock Management System`;
                             lastPipelineRun: reviewPipeline.data?.lastPipelineRun,
                             maturityLevel: reviewPipeline.data?.maturityLevel,
                             weeksOfData: reviewPipeline.data?.weeksOfData,
-                          });
+                          };
+                          setPipelineCompleteSummary(summary);
+                          // Persist to backend
+                          window.api.setIntelligenceConfig({
+                            key: 'pipeline_completion_summary',
+                            value: JSON.stringify(summary),
+                            userId: getCurrentUserInfo()?.id
+                          }).catch(() => {});
                           // Clear approval and zero out pipeline
                           setDraftOrders(prev => ({ ...prev, approvalResult: null }));
                           setReviewPipeline(prev => ({
@@ -7105,7 +7109,7 @@ Medicana Stock Management System`;
                             <p className="text-sm text-status-ok-text">No redistribution, orders, or min level adjustments are needed at this time.</p>
                             {Object.values(wizardState.stepStatus).every(s => s.reviewed) ? (
                               <button onClick={() => {
-                                setPipelineCompleteSummary({
+                                const summary = {
                                   completedAt: new Date().toISOString(),
                                   stepTotals: {
                                     adjustments: wizardState.stepStatus.adjustments.total,
@@ -7119,7 +7123,13 @@ Medicana Stock Management System`;
                                   lastPipelineRun: reviewPipeline.data?.lastPipelineRun,
                                   maturityLevel: reviewPipeline.data?.maturityLevel,
                                   weeksOfData: reviewPipeline.data?.weeksOfData,
-                                });
+                                };
+                                setPipelineCompleteSummary(summary);
+                                window.api.setIntelligenceConfig({
+                                  key: 'pipeline_completion_summary',
+                                  value: JSON.stringify(summary),
+                                  userId: getCurrentUserInfo()?.id
+                                }).catch(() => {});
                               }} className="mt-4 bg-brand-mid text-white px-4 py-2 rounded hover:bg-brand-dark transition-colors text-sm">
                                 View Summary
                               </button>

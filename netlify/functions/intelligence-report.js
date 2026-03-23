@@ -61,6 +61,20 @@ exports.handler = async (event) => {
     } catch (_) {}
     const isLocked = lockedUntil && new Date(lockedUntil) > new Date();
 
+    // Check for pipeline completion summary
+    let completionSummary = null;
+    try {
+      const csResult = await db.query("SELECT value FROM intelligence_config WHERE key = 'pipeline_completion_summary'");
+      if (csResult.rows.length > 0 && csResult.rows[0].value) {
+        completionSummary = JSON.parse(csResult.rows[0].value);
+      }
+    } catch (_) {}
+    // Only return completion summary while pipeline is locked — once lock expires, clear it
+    if (!isLocked && completionSummary) {
+      completionSummary = null;
+      db.query("DELETE FROM intelligence_config WHERE key = 'pipeline_completion_summary'").catch(() => {});
+    }
+
     // For org-wide requests (no locationId), check for cached pipeline snapshot
     if (!locationId && !forceRegenerate) {
       try {
@@ -86,6 +100,7 @@ exports.handler = async (event) => {
             ...snapshot,
             lastPipelineRun: row.generated_at.toISOString(),
             lockedUntil: lockedUntil || null,
+            completionSummary,
             fromCache: true
           });
         }
@@ -218,6 +233,9 @@ exports.handler = async (event) => {
              ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
             [lastPipelineRun]
           );
+          // Clear completion summary on fresh generation
+          await db.query("DELETE FROM intelligence_config WHERE key = 'pipeline_completion_summary'");
+          completionSummary = null;
           // Set 7-day generation lock
           lockedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
           await db.query(
@@ -258,7 +276,8 @@ exports.handler = async (event) => {
       aggregated,
       pipeline,
       lastPipelineRun,
-      lockedUntil: lockedUntil || null
+      lockedUntil: lockedUntil || null,
+      completionSummary
     });
   } catch (e) {
     return db.serverError('intelligence-report', e);
