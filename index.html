@@ -558,6 +558,182 @@
     };
 
 
+    /* ───────────────────────────────────────────────────────────
+       CliniTrack Landing Page — shown on bare domain clinitrack.co.uk
+       ─────────────────────────────────────────────────────────── */
+    const CliniTrackLandingPage = () => {
+      useEffect(() => {
+        document.title = 'CliniTrack - Pharmacy Stock Management Platform';
+        let meta = document.querySelector('meta[name="description"]');
+        if (!meta) { meta = document.createElement('meta'); meta.name = 'description'; document.head.appendChild(meta); }
+        meta.content = 'CliniTrack helps pharmacies manage medication stock with real-time tracking, FEFO expiry management, and automated ordering.';
+      }, []);
+
+      const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+      const features = [
+        { title: 'Real-Time Stock Tracking', desc: 'Monitor medication inventory across all locations with live updates and intelligent low-stock alerts.', icon: 'chart' },
+        { title: 'FEFO Expiry Management', desc: 'First-Expiry, First-Out tracking ensures medications are dispensed before expiry, reducing waste.', icon: 'clock' },
+        { title: 'Barcode Scanning', desc: 'Scan GS1 DataMatrix and standard barcodes with camera or infrared scanner for instant stock operations.', icon: 'scan' },
+        { title: 'Multi-Location Support', desc: 'Manage stock across multiple dispensaries, wards, and storage locations from a single dashboard.', icon: 'location' },
+        { title: 'Automated Order Intelligence', desc: 'AI-driven reorder suggestions based on consumption patterns, min levels, and pipeline analysis.', icon: 'brain' },
+        { title: 'Full Audit Trail', desc: 'Every stock movement is logged with user, timestamp, and reason — ready for regulatory compliance.', icon: 'shield' },
+      ];
+
+      const FeatureIcon = ({ type }) => {
+        const icons = {
+          chart: <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>,
+          clock: <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>,
+          scan: <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5z"/><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 14.625v6.75h6.75v-6.75h-6.75z"/></svg>,
+          location: <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008z"/></svg>,
+          brain: <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"/></svg>,
+          shield: <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>,
+        };
+        return icons[type] || null;
+      };
+
+      const steps = [
+        { num: '1', title: 'Get Set Up', desc: 'We configure your locations, medications, and user accounts tailored to your pharmacy.' },
+        { num: '2', title: 'Scan & Track', desc: 'Staff scan barcodes to receive, dispense, and transfer stock — all logged automatically.' },
+        { num: '3', title: 'Stay Ahead', desc: 'Intelligent alerts and automated order suggestions keep you stocked and compliant.' },
+      ];
+
+      return (
+        <div className="min-h-screen bg-white text-near-black">
+          {/* Nav */}
+          <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-bdr-default">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-brand-mid flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                </div>
+                <span className="text-xl font-bold text-brand-dark">CliniTrack</span>
+              </div>
+              <div className="hidden md:flex items-center gap-8 text-sm font-medium text-txt-secondary">
+                <a href="#features" className="hover:text-brand-mid transition-colors">Features</a>
+                <a href="#how-it-works" className="hover:text-brand-mid transition-colors">How It Works</a>
+                <a href="#contact" className="hover:text-brand-mid transition-colors">Contact</a>
+                <a href="https://medicana.clinitrack.co.uk" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-mid text-white hover:bg-brand-dark transition-colors">
+                  Client Login
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
+                </a>
+              </div>
+              <button className="md:hidden p-2 text-txt-secondary" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d={mobileMenuOpen ? "M6 18L18 6M6 6l12 12" : "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"}/></svg>
+              </button>
+            </div>
+            {mobileMenuOpen && (
+              <div className="md:hidden border-t border-bdr-default bg-white px-4 py-3 space-y-2 text-sm font-medium">
+                <a href="#features" className="block py-2 text-txt-secondary hover:text-brand-mid" onClick={() => setMobileMenuOpen(false)}>Features</a>
+                <a href="#how-it-works" className="block py-2 text-txt-secondary hover:text-brand-mid" onClick={() => setMobileMenuOpen(false)}>How It Works</a>
+                <a href="#contact" className="block py-2 text-txt-secondary hover:text-brand-mid" onClick={() => setMobileMenuOpen(false)}>Contact</a>
+                <a href="https://medicana.clinitrack.co.uk" className="block py-2 text-brand-mid font-semibold">Client Login</a>
+              </div>
+            )}
+          </nav>
+
+          {/* Hero */}
+          <section className="relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-brand-pale via-white to-white"></div>
+            <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 lg:py-36">
+              <div className="max-w-3xl">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-pale text-brand-dark text-sm font-medium mb-6">
+                  <span className="w-2 h-2 rounded-full bg-brand-mid"></span>
+                  Pharmacy Stock Management
+                </div>
+                <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-brand-deepest leading-tight">
+                  Medication Stock,<br/>Simplified
+                </h1>
+                <p className="mt-6 text-lg sm:text-xl text-txt-secondary max-w-2xl leading-relaxed">
+                  CliniTrack gives pharmacies real-time visibility over every medication, batch, and location — with intelligent ordering that keeps you stocked and compliant.
+                </p>
+                <div className="mt-8 flex flex-wrap gap-4">
+                  <a href="#contact" className="inline-flex items-center px-6 py-3 rounded-lg bg-brand-mid text-white font-semibold hover:bg-brand-dark transition-colors shadow-sm">
+                    Get Started
+                  </a>
+                  <a href="#features" className="inline-flex items-center px-6 py-3 rounded-lg bg-white text-brand-dark font-semibold border border-bdr-default hover:border-bdr-hover transition-colors">
+                    See Features
+                  </a>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Features */}
+          <section id="features" className="py-20 sm:py-24 bg-off-white">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="text-center max-w-2xl mx-auto mb-14">
+                <h2 className="text-3xl sm:text-4xl font-bold text-brand-deepest">Everything You Need</h2>
+                <p className="mt-4 text-lg text-txt-secondary">Purpose-built tools for pharmacy inventory — from barcode scanning to automated reordering.</p>
+              </div>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {features.map((f, i) => (
+                  <div key={i} className="bg-white rounded-xl p-6 border border-bdr-default hover:border-brand-light hover:shadow-md transition-all">
+                    <div className="w-12 h-12 rounded-lg bg-brand-pale text-brand-mid flex items-center justify-center mb-4">
+                      <FeatureIcon type={f.icon} />
+                    </div>
+                    <h3 className="text-lg font-semibold text-near-black mb-2">{f.title}</h3>
+                    <p className="text-txt-secondary text-sm leading-relaxed">{f.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* How It Works */}
+          <section id="how-it-works" className="py-20 sm:py-24">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="text-center max-w-2xl mx-auto mb-14">
+                <h2 className="text-3xl sm:text-4xl font-bold text-brand-deepest">How It Works</h2>
+                <p className="mt-4 text-lg text-txt-secondary">Up and running in days, not months.</p>
+              </div>
+              <div className="grid md:grid-cols-3 gap-8">
+                {steps.map((s, i) => (
+                  <div key={i} className="text-center">
+                    <div className="w-14 h-14 rounded-full bg-brand-mid text-white text-2xl font-bold flex items-center justify-center mx-auto mb-5">
+                      {s.num}
+                    </div>
+                    <h3 className="text-xl font-semibold text-near-black mb-2">{s.title}</h3>
+                    <p className="text-txt-secondary leading-relaxed">{s.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* CTA / Contact */}
+          <section id="contact" className="py-20 sm:py-24 bg-brand-deepest text-white">
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+              <h2 className="text-3xl sm:text-4xl font-bold">Ready to Streamline Your Stock?</h2>
+              <p className="mt-4 text-lg text-brand-light max-w-2xl mx-auto">
+                Get in touch to arrange a demo or discuss how CliniTrack can work for your pharmacy.
+              </p>
+              <div className="mt-8">
+                <a href="mailto:hello@clinitrack.co.uk" className="inline-flex items-center gap-2 px-8 py-3.5 rounded-lg bg-white text-brand-deepest font-semibold hover:bg-brand-pale transition-colors">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg>
+                  hello@clinitrack.co.uk
+                </a>
+              </div>
+            </div>
+          </section>
+
+          {/* Footer */}
+          <footer className="bg-near-black text-txt-disabled py-10">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded bg-brand-mid flex items-center justify-center">
+                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                </div>
+                <span className="font-semibold text-white">CliniTrack</span>
+              </div>
+              <p className="text-sm">&copy; {new Date().getFullYear()} CliniTrack. All rights reserved.</p>
+            </div>
+          </footer>
+        </div>
+      );
+    };
+
+
     const MedicationStockApp = () => {
       // Check if storage is available
       const [storageAvailable, setStorageAvailable] = useState(true);
@@ -9627,8 +9803,19 @@ ${tc.name()} Stock Management System`;
       );
     };
 
+      function isLandingPageDomain() {
+        const host = window.location.hostname.toLowerCase();
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('landing') === '1') return true;
+        return (host === 'clinitrack.co.uk' || host === 'www.clinitrack.co.uk');
+      }
+
       const root = ReactDOM.createRoot(document.getElementById('root'));
-      root.render(<MedicationStockApp />);
+      root.render(
+        isLandingPageDomain()
+          ? <CliniTrackLandingPage />
+          : <MedicationStockApp />
+      );
   </script>
 </body>
 </html>
