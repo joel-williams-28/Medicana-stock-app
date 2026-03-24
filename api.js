@@ -46,9 +46,9 @@ window.api = (function () {
     return res.json(); // Returns { success, user } or { success: false, ... }
   }
 
-  // Polling to keep all clients in sync
+  // Polling to keep all clients in sync (skips when tab is hidden to save bandwidth)
   let pollTimer = null;
-  function startPolling({ onData, intervalMs = 20000 }) {
+  function startPolling({ onData, intervalMs = 60000 }) {
     stopPolling();
 
     fetchAllData()
@@ -56,6 +56,7 @@ window.api = (function () {
       .catch(err => console.error('initial poll failed', err));
 
     pollTimer = setInterval(() => {
+      if (document.hidden) return; // Skip poll when tab is not visible
       fetchAllData()
         .then(onData)
         .catch(err => console.error('poll failed', err));
@@ -81,10 +82,11 @@ window.api = (function () {
     return out;
   }
 
-  async function fetchIntelligenceReport(locationId, force = false, nosave = false) {
+  async function fetchIntelligenceReport(locationId, force = false, nosave = false, useCurrentMins = false) {
     let qs = locationId ? `?location_id=${locationId}` : '';
     if (force) qs += (qs ? '&' : '?') + 'force=true';
     if (nosave) qs += (qs ? '&' : '?') + 'nosave=true';
+    if (useCurrentMins) qs += (qs ? '&' : '?') + 'use_current_mins=true';
     const res = await fetch(`/.netlify/functions/intelligence-report${qs}`);
     const out = await res.json();
     if (!res.ok || !out.success) throw new Error(out.message || 'Failed to fetch intelligence report');

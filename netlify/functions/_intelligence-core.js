@@ -71,7 +71,8 @@ async function getStockLevels(locationId) {
        WHERE m.is_active = true AND i.location_id = $1 AND i.on_hand > 0
        GROUP BY m.id, m.name, m.strength, m.form, m.min_level_boxes, l.id, l.display_name, lml.min_level_boxes
        ORDER BY m.name`
-    : `SELECT
+    : `WITH group_names AS (SELECT DISTINCT group_name FROM locations WHERE group_name IS NOT NULL)
+       SELECT
          m.id AS medication_id,
          CASE WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
               ELSE m.name || ' ' || m.strength END AS medication_name,
@@ -87,7 +88,7 @@ async function getStockLevels(locationId) {
        JOIN locations l ON l.id = i.location_id
        LEFT JOIN location_min_levels lml ON lml.medication_id = m.id AND lml.location_id = i.location_id
        WHERE m.is_active = true AND i.on_hand > 0
-         AND l.display_name NOT IN (SELECT DISTINCT group_name FROM locations WHERE group_name IS NOT NULL)
+         AND l.display_name NOT IN (SELECT group_name FROM group_names)
        GROUP BY m.id, m.name, m.strength, m.form, m.min_level_boxes, l.id, l.display_name, lml.min_level_boxes
        ORDER BY m.name, l.display_name`;
 
@@ -381,7 +382,7 @@ async function getBatchInventory() {
     JOIN medications m ON m.id = b.medication_id
     WHERE m.is_active = true AND i.on_hand > 0
       AND l.display_name NOT IN (SELECT DISTINCT group_name FROM locations WHERE group_name IS NOT NULL)
-    ORDER BY b.medication_id, i.location_id, b.expiry_date ASC
+    ORDER BY b.medication_id, i.location_id, b.expiry_date ASC NULLS LAST
   `);
   return result.rows;
 }
@@ -394,8 +395,11 @@ async function getBatchInventory() {
  * 4. Calculate pharmacy's derived min level (1.5× hospital-wide mins)
  * 5. External orders for pharmacy only (with supply destination projections)
  */
-function runOptimisationPipeline(medications, batchInventory, pendingOrderMap = {}) {
+function runOptimisationPipeline(medications, batchInventory, pendingOrderMap = {}, useCurrentMinLevels = false) {
   // Step 1: Build min level map from already-analyzed medications
+  // When useCurrentMinLevels=true (mid-workflow regeneration after Step 1),
+  // use actual DB min levels as the target instead of re-computed suggestions.
+  // This ensures Steps 2-4 honour the levels the user applied in Step 1.
   const minLevelMap = {};
   for (const med of medications) {
     const key = `${med.medicationId}|${med.locationId}`;
@@ -406,7 +410,7 @@ function runOptimisationPipeline(medications, batchInventory, pendingOrderMap = 
       locationName: med.locationName,
       currentBoxes: med.currentBoxes,
       currentMinLevel: med.currentMinLevel,
-      suggestedMinLevel: med.recommendation.suggestedMinLevel,
+      suggestedMinLevel: useCurrentMinLevels ? med.currentMinLevel : med.recommendation.suggestedMinLevel,
       avgWeeklyUsage: med.avgWeeklyUsage,
       itemsPerBox: med.itemsPerBox,
       isPharmacy: med.locationId === PHARMACY_LOCATION_ID

@@ -9,33 +9,6 @@ exports.handler = async (event) => {
     const params = event.queryStringParameters || {};
     const status = params.status || 'pending_review';
 
-    // Ensure table exists
-    // Ensure draft_orders table exists (idempotent, no FKs to avoid type issues)
-    // NOTE: medication_id and location_id are TEXT to match medications.id and locations.id
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS draft_orders (
-        id SERIAL PRIMARY KEY,
-        medication_id TEXT NOT NULL,
-        location_id TEXT,
-        current_stock_boxes NUMERIC(10,2) NOT NULL DEFAULT 0,
-        min_level_boxes INTEGER NOT NULL DEFAULT 0,
-        suggested_quantity INTEGER NOT NULL,
-        approved_quantity INTEGER,
-        urgency VARCHAR(20) NOT NULL DEFAULT 'routine',
-        intelligence_snapshot JSONB,
-        source VARCHAR(20) NOT NULL DEFAULT 'auto',
-        status VARCHAR(20) NOT NULL DEFAULT 'pending_review',
-        generated_by INTEGER,
-        approved_by INTEGER,
-        generated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-        approved_at TIMESTAMP WITH TIME ZONE,
-        rejected_at TIMESTAMP WITH TIME ZONE,
-        order_id INTEGER,
-        batch_ref UUID NOT NULL,
-        notes TEXT
-      )
-    `).catch(() => {});
-
     const result = await db.query(`
       SELECT
         d.id,

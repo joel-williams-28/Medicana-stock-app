@@ -17,7 +17,7 @@ exports.handler = async (event) => {
         // Table may not exist yet
         config = { go_live_date: '' };
       }
-      return db.json(200, { success: true, config });
+      return db.ok({ config });
     }
 
     if (event.httpMethod === 'POST') {
@@ -28,7 +28,7 @@ exports.handler = async (event) => {
       }
 
       // Only allow known config keys
-      const allowedKeys = ['go_live_date', 'last_pipeline_run'];
+      const allowedKeys = ['go_live_date', 'last_pipeline_run', 'pipeline_lock_until', 'pipeline_completion_summary'];
       if (!allowedKeys.includes(key)) {
         return db.fail(400, `Unknown config key: ${key}`);
       }

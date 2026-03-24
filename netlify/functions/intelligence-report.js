@@ -2,6 +2,7 @@
 // Server-side intelligence report generation with full transaction history access
 // Supports pipeline snapshot caching with 7-day cooldown
 const db = require('./_db');
+const { logActivity } = require('./_activity-log');
 const {
   getMaturityInfo,
   getStockLevels,
@@ -11,23 +12,6 @@ const {
   getBatchInventory,
   runOptimisationPipeline
 } = require('./_intelligence-core');
-
-// Ensure pipeline_snapshots table exists (auto-create on first use)
-let snapshotsTableReady = false;
-async function ensureSnapshotsTable() {
-  if (snapshotsTableReady) return;
-  try {
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS pipeline_snapshots (
-        id SERIAL PRIMARY KEY,
-        snapshot JSONB NOT NULL,
-        generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        generated_by INT4
-      )`);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_pipeline_snapshots_generated_at ON pipeline_snapshots (generated_at DESC)`);
-    snapshotsTableReady = true;
-  } catch (_) { /* non-critical */ }
-}
 
 // Reconcile cached adjustments against current DB min levels.
 // Filters out adjustments that have already been applied (or manually changed).
@@ -66,12 +50,34 @@ exports.handler = async (event) => {
     const params = event.queryStringParameters || {};
     const locationId = params.location_id || null;
     const forceRegenerate = params.force === 'true';
-    const saveSnapshot = params.nosave !== 'true'; // Skip snapshot save for Step 1 internal regeneration
+    const saveSnapshot = params.nosave !== 'true'; // Skip snapshot save for Step 1/2/3 internal regeneration
+    const useCurrentMinLevels = params.use_current_mins === 'true'; // Use DB min levels instead of suggested
+
+    // Check generation lock status
+    let lockedUntil = null;
+    try {
+      const lockResult = await db.query("SELECT value FROM intelligence_config WHERE key = 'pipeline_lock_until'");
+      if (lockResult.rows.length > 0) lockedUntil = lockResult.rows[0].value;
+    } catch (_) {}
+    const isLocked = lockedUntil && new Date(lockedUntil) > new Date();
+
+    // Check for pipeline completion summary
+    let completionSummary = null;
+    try {
+      const csResult = await db.query("SELECT value FROM intelligence_config WHERE key = 'pipeline_completion_summary'");
+      if (csResult.rows.length > 0 && csResult.rows[0].value) {
+        completionSummary = JSON.parse(csResult.rows[0].value);
+      }
+    } catch (_) {}
+    // Only return completion summary while pipeline is locked — once lock expires, clear it
+    if (!isLocked && completionSummary) {
+      completionSummary = null;
+      db.query("DELETE FROM intelligence_config WHERE key = 'pipeline_completion_summary'").catch(() => {});
+    }
 
     // For org-wide requests (no locationId), check for cached pipeline snapshot
     if (!locationId && !forceRegenerate) {
       try {
-        await ensureSnapshotsTable();
         const cached = await db.query(
           `SELECT snapshot, generated_at FROM pipeline_snapshots
            WHERE generated_at > NOW() - INTERVAL '7 days'
@@ -90,10 +96,11 @@ exports.handler = async (event) => {
             }
           }
 
-          return db.json(200, {
-            success: true,
+          return db.ok({
             ...snapshot,
             lastPipelineRun: row.generated_at.toISOString(),
+            lockedUntil: lockedUntil || null,
+            completionSummary,
             fromCache: true
           });
         }
@@ -134,8 +141,7 @@ exports.handler = async (event) => {
         }
       }));
 
-      return db.json(200, {
-        success: true,
+      return db.ok({
         goLiveDate,
         weeksOfData,
         maturityLevel,
@@ -203,8 +209,10 @@ exports.handler = async (event) => {
       }
 
       // Run optimisation pipeline (redistribute → order → adjust)
+      // When useCurrentMinLevels=true (mid-workflow regeneration after Step 1),
+      // use actual DB min levels instead of re-computed suggested levels
       const batchInventory = await getBatchInventory();
-      pipeline = runOptimisationPipeline(medications, batchInventory, pendingOrderMap);
+      pipeline = runOptimisationPipeline(medications, batchInventory, pendingOrderMap, useCurrentMinLevels);
 
       // Save pipeline snapshot to database for cross-device access
       // Skip save for internal regenerations (Step 1 advancement) — only save for
@@ -213,7 +221,6 @@ exports.handler = async (event) => {
       lastPipelineRun = new Date().toISOString();
       if (saveSnapshot) {
         try {
-          await ensureSnapshotsTable();
           await db.query(
             `INSERT INTO pipeline_snapshots (snapshot, generated_at)
              VALUES ($1, $2)`,
@@ -226,6 +233,31 @@ exports.handler = async (event) => {
              ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
             [lastPipelineRun]
           );
+          // Clear completion summary on fresh generation
+          await db.query("DELETE FROM intelligence_config WHERE key = 'pipeline_completion_summary'");
+          completionSummary = null;
+          // Set 7-day generation lock
+          lockedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+          await db.query(
+            `INSERT INTO intelligence_config (key, value, updated_at)
+             VALUES ('pipeline_lock_until', $1, NOW())
+             ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+            [lockedUntil]
+          );
+          // Log pipeline generation event
+          await logActivity({
+            userId: null,
+            actionType: 'pipeline_generated',
+            entityType: 'pipeline_snapshot',
+            details: {
+              medicationCount: medications.length,
+              adjustments: pipeline?.summary?.totalAdjustments || 0,
+              transfers: pipeline?.summary?.totalTransfers || 0,
+              pharmacySupplies: pipeline?.summary?.totalPharmacySupplies || 0,
+              orders: pipeline?.summary?.totalOrders || 0,
+              forced: forceRegenerate
+            }
+          });
         } catch (_) { /* non-critical */ }
       }
     } else {
@@ -236,15 +268,16 @@ exports.handler = async (event) => {
       } catch (_) {}
     }
 
-    return db.json(200, {
-      success: true,
+    return db.ok({
       goLiveDate,
       weeksOfData,
       maturityLevel,
       medications,
       aggregated,
       pipeline,
-      lastPipelineRun
+      lastPipelineRun,
+      lockedUntil: lockedUntil || null,
+      completionSummary
     });
   } catch (e) {
     return db.serverError('intelligence-report', e);

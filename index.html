@@ -623,6 +623,13 @@
         lastScanTime: 0
       });
 
+      // Debounced search term for filtering (300ms delay to avoid filtering on every keystroke)
+      const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+      useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearchTerm(ui.searchTerm), 300);
+        return () => clearTimeout(timer);
+      }, [ui.searchTerm]);
+
       // Search input barcode detection state
       const [searchBarcodeDetection, setSearchBarcodeDetection] = useState({
         lastKeyTime: 0,
@@ -652,7 +659,6 @@
         showLowStockReport: false,
           showFefoOverride: false,
           showChangePassword: false,
-          showIntelligenceReport: false,
           showNewMedicationOrder: false,
           showBarcodeNewMedication: false,
           showLowStockAlert: false,
@@ -719,13 +725,18 @@
       // Pipeline-based Review & Order state
       const [reviewPipeline, setReviewPipeline] = useState({ loading: false, data: null, error: null });
       const [reviewPipelineTab, setReviewPipelineTab] = useState('adjustments');
-      const [applyingMinLevels, setApplyingMinLevels] = useState(false);
+      const [applyingMinLevelIndex, setApplyingMinLevelIndex] = useState(null);
       const [minLevelOverrides, setMinLevelOverrides] = useState({});
       const [appliedMinLevels, setAppliedMinLevels] = useState(new Set());
       const [minLevelRefreshDone, setMinLevelRefreshDone] = useState(false);
       const [pipelineOrderSelections, setPipelineOrderSelections] = useState(new Set());
       const [pipelineOrderAdjustments, setPipelineOrderAdjustments] = useState({});
       const [pharmacySupplyAdjustments, setPharmacySupplyAdjustments] = useState({});
+      const [executingTransferIndex, setExecutingTransferIndex] = useState(null);
+      const [executingSupplyIndex, setExecutingSupplyIndex] = useState(null);
+      const [creatingOrders, setCreatingOrders] = useState(false);
+      const [pipelineCompleteSummary, setPipelineCompleteSummary] = useState(null);
+      const [countdownText, setCountdownText] = useState('');
 
       // Guided wizard state for pipeline steps
       const WIZARD_STEPS = [
@@ -745,6 +756,12 @@
       });
       const [skipConfirm, setSkipConfirm] = useState({
         show: false, password: '', error: '', targetStep: null, loading: false
+      });
+      const [forceRegenConfirm, setForceRegenConfirm] = useState({
+        show: false, password: '', error: '', loading: false
+      });
+      const [pipelineConfirm, setPipelineConfirm] = useState({
+        show: false, title: '', message: '', onConfirm: null
       });
 
       const [newMedicationOrderForm, setNewMedicationOrderForm] = useState({
@@ -834,12 +851,6 @@
           searchTerm: '' // search query for existing medication lookup
         });
 
-        // Intelligence Report state - server-driven analytics
-        const [intelligenceReport, setIntelligenceReport] = useState({
-          loading: false, data: null, error: null
-        });
-        const [intelligenceTab, setIntelligenceTab] = useState('all'); // 'all' | 'critical' | 'optimise'
-
         // Session timeout management
         const [sessionTimeout, setSessionTimeout] = useState({
           showWarning: false,
@@ -904,7 +915,7 @@
                       setOrders(ords || []);
                       setDraftOrderCount(draftCount || 0);
                     },
-                    intervalMs: 20000
+                    intervalMs: 60000
                   });
                 } catch (err) {
                   console.error('Failed to restore session data:', err);
@@ -1237,45 +1248,6 @@
           return filtered;
         })();
 
-      // Fetch server-side intelligence report
-      const fetchIntelligenceReport = async (locationId) => {
-        setIntelligenceReport(prev => ({ ...prev, loading: true, error: null }));
-        setIntelligenceTab('all'); // Reset tab when report refreshes
-        try {
-          const data = await window.api.fetchIntelligenceReport(locationId || null);
-          setIntelligenceReport({ loading: false, data, error: null });
-        } catch (err) {
-          setIntelligenceReport(prev => ({ ...prev, loading: false, error: err.message }));
-        }
-      };
-
-      // Apply a min level recommendation from the intelligence report
-      const applyMinLevelRecommendation = async (medicationId, locationId, newMinLevel, medicationName, oldMinLevel, locationName) => {
-        try {
-          const currentUser = getCurrentUserInfo();
-          await window.api.setMedicationMinLevel({
-            medicationId,
-            locationId,
-            minLevel: newMinLevel,
-            userId: currentUser?.id,
-            medicationName,
-            oldMinLevel,
-            locationName
-          });
-          // Refresh main data
-          const data = await window.api.fetchAllData();
-          setMedications(data.medications || []);
-          setTransactions(data.transactions || []);
-          setLocations(data.locations || []);
-          setOrders(data.orders || []);
-          // Refresh intelligence report
-          await fetchIntelligenceReport(locationId);
-        } catch (err) {
-          console.error('Failed to apply recommendation:', err);
-          alert('Failed to apply recommendation: ' + (err.message || 'Unknown error'));
-        }
-      };
-
       const filteredTransactions = transactions.filter(trans => {
         // Always show order transactions regardless of location filter
         if (trans.type === 'order') return true;
@@ -1353,10 +1325,10 @@
 
         const filteredMedications = medications
           .filter(med => matchesLocationFilter(med, ui.currentLocation, locations))
-          .filter(med => 
-            med.name.toLowerCase().includes(ui.searchTerm.toLowerCase()) ||
-            (med.barcode && med.barcode.toLowerCase().includes(ui.searchTerm.toLowerCase())) ||
-            (med.batches && med.batches.some(batch => batch.batchNumber && batch.batchNumber.toLowerCase().includes(ui.searchTerm.toLowerCase())))
+          .filter(med =>
+            med.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+            (med.barcode && med.barcode.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
+            (med.batches && med.batches.some(batch => batch.batchNumber && batch.batchNumber.toLowerCase().includes(debouncedSearchTerm.toLowerCase())))
           )
           .filter(med => medicationFilters.types.length === 0 || medicationFilters.types.includes(med.type))
           .filter(med => medicationFilters.locations.length === 0 || medicationFilters.locations.includes(med.location))
@@ -1497,7 +1469,6 @@
             
             // Set a timeout to open the modal (small delay to ensure user sees "no results")
             const timeoutId = setTimeout(() => {
-              console.log('Barcode scanned in search with no results, opening add medication modal');
               const currentUser = getCurrentUserInfo();
               let defaultLocation = 'Cupboard 1';
               
@@ -1543,7 +1514,6 @@
             const barcode = barcodeNewMedForm.barcode.trim();
             // Only trigger if medication is not already locked (to avoid re-triggering)
             if (!barcodeNewMedForm.medicationLocked) {
-              console.log('Modal opened with barcode, triggering lookup:', barcode);
               // Small delay to ensure modal is fully rendered
               const timeoutId = setTimeout(() => {
                 handleBarcodeLookup(barcode);
@@ -1626,7 +1596,6 @@
 
       // Barcode lookup handler - called when barcode is entered/scanned
       const handleBarcodeLookup = async (barcode) => {
-        console.log('handleBarcodeLookup called with:', barcode);
         if (!barcode || !barcode.trim()) {
           // Clear medication lock state if barcode is empty
           setBarcodeNewMedForm(prev => ({
@@ -1645,14 +1614,12 @@
         }
 
         try {
-          console.log('Calling window.api.lookupByBarcode with:', barcode.trim());
           if (!window.api || !window.api.lookupByBarcode) {
             console.error('window.api.lookupByBarcode is not available');
             throw new Error('Barcode lookup API is not available');
           }
           const result = await window.api.lookupByBarcode(barcode.trim());
-          console.log('Barcode lookup result:', result);
-          
+
           if (result.found && result.medication) {
             const med = result.medication;
             // Prefill and lock medication fields
@@ -1700,19 +1667,16 @@
 
       // Batch number lookup handler - called when batch number is available but no barcode
       const handleBatchLookup = async (batchNumber) => {
-        console.log('handleBatchLookup called with:', batchNumber);
         if (!batchNumber || !batchNumber.trim()) {
           return;
         }
 
         try {
-          console.log('Calling window.api.checkBatch with:', batchNumber.trim());
           if (!window.api || !window.api.checkBatch) {
             console.error('window.api.checkBatch is not available');
             throw new Error('Batch lookup API is not available');
           }
           const result = await window.api.checkBatch(batchNumber.trim());
-          console.log('Batch lookup result:', result);
 
           if (result.exists && result.batch) {
             const batch = result.batch;
@@ -2675,7 +2639,6 @@
           const timeoutId = setTimeout(() => {
             const currentInput = globalBarcodeScanner.currentInput;
             if (currentInput.length >= 8) { // Minimum barcode length
-              console.log('Global barcode detected:', currentInput);
               handleBarcodeScanned(currentInput);
             }
             setGlobalBarcodeScanner(prev => ({
@@ -2803,8 +2766,6 @@ Medicana Stock Management System`;
           return;
         }
         
-        console.log('Submitting with:', { boxQuantity, itemsPerBox, totalQuantity });
-
         // Set submitting state
         setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
 
@@ -3031,7 +2992,6 @@ Medicana Stock Management System`;
             medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
             batchCode: batch.batchNumber || null
           };
-          console.log('[Barcode Transfer] payload:', JSON.stringify(transferPayload), '| raw form:', { srcLocId, tgtLocId, batchIdVal, transferQty });
           await window.api.transferStock(transferPayload);
 
           const data = await window.api.fetchAllData();
@@ -3123,7 +3083,6 @@ Medicana Stock Management System`;
             medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
             batchCode: batch.batchNumber || null
           };
-          console.log('[Barcode Patient Use] payload:', JSON.stringify(adjustPayload), '| raw form:', { locationIdVal, batchIdVal, useQty });
           await window.api.adjustStock(adjustPayload);
 
           const data = await window.api.fetchAllData();
@@ -3237,7 +3196,6 @@ Medicana Stock Management System`;
             medicationName: medFullName,
             batchCode: batch.batchNumber || null
           };
-          console.log('[Barcode Transfer+Use] transfer payload:', JSON.stringify(transferPayload), '| raw form:', { srcLocId, tgtLocId, batchIdVal, transferQty });
           await window.api.transferStock(transferPayload);
 
           // Step 2: Record patient use at target (same batchId — transfer reuses batch row)
@@ -3255,7 +3213,6 @@ Medicana Stock Management System`;
             medicationName: medFullName,
             batchCode: batch.batchNumber || null
           };
-          console.log('[Barcode Transfer+Use] adjust payload:', JSON.stringify(adjustPayload), '| raw form:', { tgtLocId, batchIdVal, useQty });
           await window.api.adjustStock(adjustPayload);
 
           const data = await window.api.fetchAllData();
@@ -3887,9 +3844,9 @@ Medicana Stock Management System`;
             return;
           }
 
-          // Get internal medication ID for backend update
-          const internalMedicationId = Number(editMinLevel.editing.internalId);
-          if (!Number.isFinite(internalMedicationId)) {
+          // Get internal medication ID for backend update (TEXT type in DB)
+          const internalMedicationId = String(editMinLevel.editing.internalId || '');
+          if (!internalMedicationId) {
             setEditMinLevel(prev => ({ ...prev, error: 'Unable to determine medication ID for update.' }));
             return;
           }
@@ -3901,7 +3858,7 @@ Medicana Stock Management System`;
           const locationNameForUpdate = isSpecificLocation ? editMinLevel.editing?.location : null;
 
           await window.api.setMedicationMinLevel({
-            medicationId: Math.floor(internalMedicationId),
+            medicationId: internalMedicationId,
             locationId: locationIdForUpdate || undefined,
             minLevel: Math.floor(finalMinLevelBoxes),
             userId: currentUser.id,
@@ -3914,14 +3871,14 @@ Medicana Stock Management System`;
           if (locationIdForUpdate) {
             // Per-location update: only update meds at this location
             setMedications(prev => prev.map(med => (
-              med.internalId === Math.floor(internalMedicationId) && med.locationId === locationIdForUpdate
+              String(med.internalId) === internalMedicationId && med.locationId === locationIdForUpdate
                 ? { ...med, minLevelBoxes: Math.floor(finalMinLevelBoxes) }
                 : med
             )));
           } else {
             // Global update: update all instances of this medication
             setMedications(prev => prev.map(med => (
-              med.internalId === Math.floor(internalMedicationId)
+              String(med.internalId) === internalMedicationId
                 ? { ...med, minLevelBoxes: Math.floor(finalMinLevelBoxes) }
                 : med
             )));
@@ -4068,7 +4025,7 @@ Medicana Stock Management System`;
       // =============================================
       // PIPELINE-BASED REVIEW & ORDER HANDLERS
       // =============================================
-      const loadReviewPipeline = async (preserveWizardStep = false, forceRegenerate = false, skipSnapshotSave = false) => {
+      const loadReviewPipeline = async (preserveWizardStep = false, forceRegenerate = false, skipSnapshotSave = false, useCurrentMins = false) => {
         setReviewPipeline({ loading: true, data: null, error: null });
         setMinLevelOverrides({});
         setAppliedMinLevels(new Set());
@@ -4079,8 +4036,15 @@ Medicana Stock Management System`;
         try {
           // Server handles 7-day cooldown: returns cached snapshot if within cooldown,
           // or generates fresh pipeline if expired or force=true
-          // skipSnapshotSave=true for Step 1 internal regeneration (don't overwrite the cached snapshot)
-          const data = await window.api.fetchIntelligenceReport(null, forceRegenerate, skipSnapshotSave);
+          // skipSnapshotSave=true for mid-workflow regeneration (don't overwrite the cached snapshot or lock)
+          // useCurrentMins=true after Step 1 to use applied min levels for redistribution calculations
+          const data = await window.api.fetchIntelligenceReport(null, forceRegenerate, skipSnapshotSave, useCurrentMins);
+          // Restore or clear completion summary from backend response
+          if (data.completionSummary && !forceRegenerate) {
+            setPipelineCompleteSummary(data.completionSummary);
+          } else {
+            setPipelineCompleteSummary(null);
+          }
           setReviewPipeline({ loading: false, data, error: null });
           // Pre-select order items that still need ordering (skip those fully covered by pending orders)
           const orders = data.pipeline?.orders || [];
@@ -4131,8 +4095,10 @@ Medicana Stock Management System`;
               setReviewPipelineTab(WIZARD_STEPS[firstStepWithItems].key);
             }
           }
+          return data;
         } catch (err) {
           setReviewPipeline({ loading: false, data: null, error: err.message });
+          return null;
         }
       };
 
@@ -4155,7 +4121,12 @@ Medicana Stock Management System`;
             totalTransfers: pipeline.transfers.length,
             totalPharmacySupplies: pipeline.pharmacySupplies.length,
             totalBoxesRedistributed: pipeline.transfers.reduce((s, t) => s + t.quantityBoxes, 0),
-            totalBoxesFromPharmacy: pipeline.pharmacySupplies.reduce((s, t) => s + t.quantityBoxes, 0)
+            totalBoxesFromPharmacy: pipeline.pharmacySupplies.reduce((s, t) => s + t.quantityBoxes, 0),
+            totalOrderLines: (pipeline.orders || []).filter(o => o.orderQuantityBoxes > 0).length,
+            totalAdjustments: (pipeline.adjustments || []).length,
+            totalBoxesToOrder: (pipeline.orders || []).reduce((s, o) => s + o.orderQuantityBoxes, 0),
+            totalBoxesAlreadyOrdered: (pipeline.orders || []).reduce((s, o) => s + o.alreadyOrderedBoxes, 0),
+            totalShortfallBoxes: (pipeline.orders || []).reduce((s, o) => s + o.totalShortfallBoxes, 0)
           };
           updatedPipeline = pipeline;
           const newData = { ...prev.data, pipeline };
@@ -4179,7 +4150,9 @@ Medicana Stock Management System`;
           setTransactions(data.transactions || []);
           setLocations(data.locations || []);
           setOrders(data.orders || []);
-          await loadReviewPipeline(true, true, true); // resets appliedMinLevels so counter restarts from 0
+          // Regenerate pipeline using actual DB min levels (useCurrentMins=true)
+          // so Steps 2-4 honour the levels the user applied in Step 1
+          const freshData = await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
           if (isFinal) {
             setMinLevelRefreshDone(true);
             // Ensure step 1 is marked reviewed so user can advance without password
@@ -4190,6 +4163,17 @@ Medicana Stock Management System`;
                 adjustments: { ...prev.stepStatus.adjustments, reviewed: true }
               }
             }));
+            // Auto-advance to Step 2 only if no new adjustment suggestions appeared
+            // (if new suggestions appeared after recalculation, let user review them first)
+            // Note: directly set state instead of calling advanceWizardStep() which would
+            // read stale wizardState and trigger the skip-step password dialog
+            const newAdjs = freshData?.pipeline?.adjustments || [];
+            if (newAdjs.length === 0) {
+              setTimeout(() => {
+                setWizardState(prev => ({ ...prev, currentStep: 1 }));
+                setReviewPipelineTab(WIZARD_STEPS[1].key);
+              }, 500);
+            }
           }
           // Refresh activity log so newly created min_level_changed entries appear
           loadActivityLog(true);
@@ -4237,7 +4221,7 @@ Medicana Stock Management System`;
                 setLocations(data.locations || []);
                 setOrders(data.orders || []);
               });
-              loadReviewPipeline(true, true, true);
+              loadReviewPipeline(true, true, true, true); // useCurrentMins=true
             }
           } else {
             setWizardState(prev => ({ ...prev, currentStep: targetIndex }));
@@ -4275,12 +4259,34 @@ Medicana Stock Management System`;
           });
           setReviewPipelineTab(WIZARD_STEPS[targetIndex].key);
           setSkipConfirm({ show: false, password: '', error: '', targetStep: null, loading: false });
-          // If we skipped past step 1, trigger recalculation
+          // If we skipped past step 1, trigger recalculation with current DB min levels
           if (wizardState.currentStep === 0 && targetIndex > 0) {
-            loadReviewPipeline(true, true, true);
+            loadReviewPipeline(true, true, true, true); // useCurrentMins=true
           }
         } catch (err) {
           setSkipConfirm(prev => ({ ...prev, loading: false, error: 'Network error. Please try again.' }));
+        }
+      };
+
+      const handleForceRegenConfirm = async () => {
+        setForceRegenConfirm(prev => ({ ...prev, loading: true, error: '' }));
+        try {
+          const userInfo = getCurrentUserInfo();
+          const res = await fetch('/.netlify/functions/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: userInfo.username, password: forceRegenConfirm.password })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            setForceRegenConfirm(prev => ({ ...prev, loading: false, error: 'Invalid password. Please try again.' }));
+            return;
+          }
+          // Password verified — force regenerate pipeline
+          setForceRegenConfirm({ show: false, password: '', error: '', loading: false });
+          loadReviewPipeline(false, true);
+        } catch (err) {
+          setForceRegenConfirm(prev => ({ ...prev, loading: false, error: 'Network error. Please try again.' }));
         }
       };
 
@@ -4290,6 +4296,27 @@ Medicana Stock Management System`;
           loadReviewPipeline();
         }
       }, [ui.activeTab]);
+
+      // Countdown timer for pipeline completion view
+      useEffect(() => {
+        if (!pipelineCompleteSummary?.lockedUntil) { setCountdownText(''); return; }
+        const update = () => {
+          const diff = new Date(pipelineCompleteSummary.lockedUntil).getTime() - Date.now();
+          if (diff <= 0) {
+            setCountdownText('Ready to regenerate now');
+            // Lock expired — clear completion view so fresh pipeline loads on next visit
+            setPipelineCompleteSummary(null);
+            return;
+          }
+          const d = Math.floor(diff / 86400000);
+          const h = Math.floor((diff % 86400000) / 3600000);
+          const m = Math.floor((diff % 3600000) / 60000);
+          setCountdownText(d > 0 ? `${d}d ${h}h until next regeneration` : h > 0 ? `${h}h ${m}m until next regeneration` : `${m}m until next regeneration`);
+        };
+        update();
+        const id = setInterval(update, 60000);
+        return () => clearInterval(id);
+      }, [pipelineCompleteSummary?.lockedUntil]);
 
       // Mark wizard steps as reviewed when their tab is opened
       useEffect(() => {
@@ -4308,6 +4335,28 @@ Medicana Stock Management System`;
           }
         }
       }, [reviewPipelineTab]);
+
+      // Auto-advance: when current step is reviewed and has 0 remaining items, advance to next step
+      useEffect(() => {
+        if (!reviewPipeline.data?.pipeline) return;
+        if (reviewPipeline.loading) return;
+        const pp = reviewPipeline.data.pipeline;
+        const step = wizardState.currentStep;
+        const stepKey = WIZARD_STEPS[step]?.key;
+        if (!stepKey) return;
+
+        const counts = {
+          adjustments: (pp.adjustments || []).length,
+          redistribute: (pp.transfers || []).length,
+          pharmacy_supply: (pp.pharmacySupplies || []).length,
+          order: pp.orders ? pp.orders.filter(o => o.orderQuantityBoxes > 0).length : 0,
+        };
+
+        // If current step is reviewed and has 0 items, advance to next step
+        if (wizardState.stepStatus[stepKey].reviewed && counts[stepKey] === 0 && step < WIZARD_STEPS.length - 1) {
+          advanceWizardStep(step + 1);
+        }
+      }, [reviewPipeline.data, reviewPipeline.loading, wizardState.currentStep, wizardState.stepStatus]);
 
       // Live-update the step 1 badge count as items are applied locally
       useEffect(() => {
@@ -4347,6 +4396,7 @@ Medicana Stock Management System`;
 
         if (selectedOrders.length === 0) { alert('No orders selected'); return; }
 
+        setCreatingOrders(true);
         try {
           const userInfo = getCurrentUserInfo();
           const result = await window.api.createIntelligenceOrders({
@@ -4356,6 +4406,11 @@ Medicana Stock Management System`;
           });
           // Reuse existing email preview UI via draftOrders.approvalResult
           setDraftOrders(prev => ({ ...prev, approvalResult: result }));
+          // Mark step 4 as reviewed (pipeline complete)
+          setWizardState(prev => ({
+            ...prev,
+            stepStatus: { ...prev.stepStatus, order: { ...prev.stepStatus.order, reviewed: true } }
+          }));
           // Refresh main data
           const data = await window.api.fetchAllData();
           setMedications(data.medications || []);
@@ -4363,6 +4418,8 @@ Medicana Stock Management System`;
           setDraftOrderCount(data.draftOrderCount || 0);
         } catch (err) {
           alert('Failed to create orders: ' + err.message);
+        } finally {
+          setCreatingOrders(false);
         }
       };
 
@@ -4727,7 +4784,8 @@ Medicana Stock Management System`;
                       Intelligent Stock
                         {(() => {
                           const pp = reviewPipeline.data?.pipeline;
-                          const actionCount = pp ? (pp.summary.totalTransfers + pp.summary.totalOrderLines + pp.summary.totalAdjustments) : 0;
+                          const pendingAdj = Math.max(0, (pp?.summary?.totalAdjustments || 0) - appliedMinLevels.size);
+                          const actionCount = pipelineCompleteSummary ? 0 : (pp ? (pp.summary.totalTransfers + pp.summary.totalOrderLines + pendingAdj) : 0);
                           if (actionCount > 0) {
                             return <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">{actionCount}</span>;
                           } else if (lowStockMedications.length > 0) {
@@ -5487,7 +5545,8 @@ Medicana Stock Management System`;
                       <div className="flex-1">
                         {(() => {
                           const pp = reviewPipeline.data?.pipeline;
-                          const totalActions = pp ? (pp.summary.totalTransfers + pp.summary.totalOrderLines + pp.summary.totalAdjustments) : 0;
+                          const pendingAdj = Math.max(0, (pp?.summary?.totalAdjustments || 0) - appliedMinLevels.size);
+                          const totalActions = pipelineCompleteSummary ? 0 : (pp ? (pp.summary.totalTransfers + pp.summary.totalOrderLines + pendingAdj) : 0);
                           if (pp && totalActions > 0) {
                             return (
                               <>
@@ -5496,8 +5555,8 @@ Medicana Stock Management System`;
                                   {pp.summary.totalTransfers > 0 && `${pp.summary.totalTransfers} transfer${pp.summary.totalTransfers !== 1 ? 's' : ''}`}
                                   {pp.summary.totalTransfers > 0 && pp.summary.totalOrderLines > 0 && ', '}
                                   {pp.summary.totalOrderLines > 0 && `${pp.summary.totalOrderLines} order${pp.summary.totalOrderLines !== 1 ? 's' : ''}`}
-                                  {(pp.summary.totalTransfers > 0 || pp.summary.totalOrderLines > 0) && pp.summary.totalAdjustments > 0 && ', '}
-                                  {pp.summary.totalAdjustments > 0 && `${pp.summary.totalAdjustments} min level adjustment${pp.summary.totalAdjustments !== 1 ? 's' : ''}`}
+                                  {(pp.summary.totalTransfers > 0 || pp.summary.totalOrderLines > 0) && pendingAdj > 0 && ', '}
+                                  {pendingAdj > 0 && `${pendingAdj} min level adjustment${pendingAdj !== 1 ? 's' : ''}`}
                                   {' — review in the pipeline below.'}
                                 </p>
                               </>
@@ -5521,20 +5580,6 @@ Medicana Stock Management System`;
                           }
                         })()}
                       </div>
-                        {hasAccessTo('intelligenceReport') && (
-                          <button onClick={() => {
-                            setModals(prev => ({ ...prev, showIntelligenceReport: true }));
-                            const currentLocId = (() => {
-                              if (ui.currentLocation === 'All') return null;
-                              const loc = locations.find(l => l.displayName === ui.currentLocation);
-                              return loc ? loc.id : null;
-                            })();
-                            fetchIntelligenceReport(currentLocId);
-                          }} className="flex items-center bg-brand-mid text-white px-4 py-2 rounded hover:bg-brand-dark transition-colors text-sm mr-2">
-                            <TrendingUp className="w-4 h-4 mr-2" />
-                            Intelligence Report
-                          </button>
-                        )}
                         {hasAccessTo('exportSimpleReport') && (
                           <button onClick={exportLowStockReport} className="flex items-center bg-near-black text-white px-4 py-2 rounded hover:bg-brand-dark transition-colors text-sm">
                             <Download className="w-4 h-4 mr-2" />
@@ -5586,7 +5631,8 @@ Medicana Stock Management System`;
                           Review & Order
                           {(() => {
                             const pp = reviewPipeline.data?.pipeline;
-                            const actionCount = pp ? (pp.summary.totalTransfers + pp.summary.totalOrderLines + pp.summary.totalAdjustments) : 0;
+                            const pendingAdj = Math.max(0, (pp?.summary?.totalAdjustments || 0) - appliedMinLevels.size);
+                            const actionCount = pipelineCompleteSummary ? 0 : (pp ? (pp.summary.totalTransfers + pp.summary.totalOrderLines + pendingAdj) : 0);
                             return actionCount > 0 ? <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">{actionCount}</span> : null;
                           })()}
                         </button>
@@ -5749,8 +5795,113 @@ Medicana Stock Management System`;
                   {/* Review & Order Sub-tab (Admin/Pharmacist only) — Pipeline-based */}
                   {orderingSubTab === 'review' && canAccessTab('purchaseorders') && (
                     <>
-                  {/* Approval Confirmation View (reused from draft orders) */}
-                  {draftOrders.approvalResult ? (
+                  {/* Pipeline Complete View — shown after Done is clicked */}
+                  {pipelineCompleteSummary ? (
+                    <div className="p-4 sm:p-6">
+                      {/* Green completion header */}
+                      <div className="bg-status-ok-bg border border-status-ok-text rounded-lg p-5 mb-5 text-center">
+                        <div className="text-3xl mb-2">&#10003;</div>
+                        <h3 className="text-lg font-bold text-status-ok-text mb-1">Pipeline Complete</h3>
+                        <p className="text-sm text-status-ok-text">All steps reviewed and actions executed.</p>
+                      </div>
+
+                      {/* 4 green summary cards */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                        {[
+                          { count: pipelineCompleteSummary.stepTotals.adjustments, label: 'Min Levels Applied' },
+                          { count: pipelineCompleteSummary.stepTotals.redistribute, label: 'Transfers Executed' },
+                          { count: pipelineCompleteSummary.stepTotals.pharmacy_supply, label: 'Supplies Sent' },
+                          { count: pipelineCompleteSummary.stepTotals.order, label: 'Orders Placed' },
+                        ].map((card, ci) => (
+                          <div key={ci} className="p-3 rounded-lg border border-status-ok-text bg-status-ok-bg relative">
+                            <span className="absolute top-1 right-1 text-status-ok-text text-xs font-bold">&#10003;</span>
+                            <div className="text-2xl font-bold text-status-ok-text">{card.count}</div>
+                            <div className="text-xs text-status-ok-text">{card.label}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Countdown + maturity + Force Regenerate */}
+                      <div className="px-4 py-3 bg-status-ordered-bg border border-bdr-default rounded-lg mb-5 flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm text-status-ordered-text font-medium">{countdownText}</span>
+                          {pipelineCompleteSummary.maturityLevel && (
+                            <span className="inline-flex items-center text-xs ml-2">
+                              <span className={`w-2 h-2 rounded-full mr-1 ${
+                                pipelineCompleteSummary.maturityLevel === 'mature' ? 'bg-teal-500' :
+                                pipelineCompleteSummary.maturityLevel === 'confident' ? 'bg-green-500' :
+                                pipelineCompleteSummary.maturityLevel === 'learning' ? 'bg-amber-500' : 'bg-gray-400'
+                              }`}></span>
+                              <span className="text-status-ordered-text capitalize">{pipelineCompleteSummary.maturityLevel}</span>
+                              <span className="text-status-ordered-text opacity-75 ml-1">
+                                — {pipelineCompleteSummary.weeksOfData} week{pipelineCompleteSummary.weeksOfData !== 1 ? 's' : ''} of data
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                        {(getCurrentUserInfo()?.role === 'Administrator' || getCurrentUserInfo()?.role === 'Pharmacist') && (
+                          <button onClick={() => {
+                            const locked = pipelineCompleteSummary.lockedUntil && new Date(pipelineCompleteSummary.lockedUntil) > new Date();
+                            setPipelineCompleteSummary(null);
+                            if (locked) setForceRegenConfirm({ show: true, password: '', error: '', loading: false });
+                            else loadReviewPipeline(false, true);
+                          }} className="text-xs text-status-ordered-text underline hover:text-brand-dark font-medium whitespace-nowrap">
+                            {pipelineCompleteSummary.lockedUntil && new Date(pipelineCompleteSummary.lockedUntil) > new Date() ? 'Force Regenerate' : 'Regenerate Now'}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Orders table (only if orders were placed) */}
+                      {pipelineCompleteSummary.orders.length > 0 && (
+                        <div className="mb-5">
+                          <h4 className="font-semibold text-txt-primary text-sm mb-3">Orders Placed</h4>
+                          <div className="border border-bdr-default rounded-lg overflow-hidden">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-off-white border-b border-bdr-default">
+                                  <th className="text-left px-3 py-2 font-medium text-txt-secondary">Medication</th>
+                                  <th className="text-right px-3 py-2 font-medium text-txt-secondary">Qty (boxes)</th>
+                                  <th className="text-center px-3 py-2 font-medium text-txt-secondary">Urgency</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {pipelineCompleteSummary.orders.map((order, oi) => (
+                                  <tr key={oi} className="border-b border-bdr-default last:border-b-0">
+                                    <td className="px-3 py-2 text-txt-primary">{order.medicationName}</td>
+                                    <td className="px-3 py-2 text-right font-medium">{order.quantityBoxes}</td>
+                                    <td className="px-3 py-2 text-center">
+                                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                                        order.urgency === 'urgent' ? 'bg-danger-ghost-bg text-danger-text' : 'bg-status-ordered-bg text-status-ordered-text'
+                                      }`}>{order.urgency}</span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Email re-access buttons */}
+                      {pipelineCompleteSummary.emailContent && (
+                        <div className="flex gap-3">
+                          <button onClick={() => {
+                            const ec = pipelineCompleteSummary.emailContent;
+                            window.open(`mailto:${encodeURIComponent(ec.to)}?subject=${encodeURIComponent(ec.subject)}&body=${encodeURIComponent(ec.body)}`, '_blank');
+                          }} className="flex-1 bg-brand-mid text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium text-sm">
+                            Open in Outlook
+                          </button>
+                          <button onClick={() => {
+                            const ec = pipelineCompleteSummary.emailContent;
+                            navigator.clipboard.writeText(`To: ${ec.to}\nSubject: ${ec.subject}\n\n${ec.body}`);
+                          }} className="flex-1 bg-near-black text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium text-sm">
+                            Copy to Clipboard
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                  ) : draftOrders.approvalResult ? (
                     <div className="p-4 sm:p-6">
                       <div className="bg-status-ok-bg border border-status-ok-text rounded-lg p-4 mb-4">
                         <h3 className="font-semibold text-status-ok-text text-lg mb-1">
@@ -5776,8 +5927,50 @@ Medicana Stock Management System`;
                           Copy to Clipboard
                         </button>
                         <button onClick={() => {
+                          // Capture summary before clearing
+                          const summary = {
+                            completedAt: new Date().toISOString(),
+                            stepTotals: {
+                              adjustments: wizardState.stepStatus.adjustments.total,
+                              redistribute: wizardState.stepStatus.redistribute.total,
+                              pharmacy_supply: wizardState.stepStatus.pharmacy_supply.total,
+                              order: wizardState.stepStatus.order.total,
+                            },
+                            orders: (draftOrders.approvalResult?.orders || []).map(o => ({
+                              medicationName: o.medicationName,
+                              quantityBoxes: o.quantityBoxes,
+                              quantityItems: o.quantityItems,
+                              urgency: o.urgency,
+                            })),
+                            emailContent: draftOrders.approvalResult?.emailContent || null,
+                            lockedUntil: reviewPipeline.data?.lockedUntil,
+                            lastPipelineRun: reviewPipeline.data?.lastPipelineRun,
+                            maturityLevel: reviewPipeline.data?.maturityLevel,
+                            weeksOfData: reviewPipeline.data?.weeksOfData,
+                          };
+                          setPipelineCompleteSummary(summary);
+                          // Persist to backend
+                          window.api.setIntelligenceConfig({
+                            key: 'pipeline_completion_summary',
+                            value: JSON.stringify(summary),
+                            userId: getCurrentUserInfo()?.id
+                          }).catch(() => {});
+                          // Clear approval and zero out pipeline
                           setDraftOrders(prev => ({ ...prev, approvalResult: null }));
-                          loadReviewPipeline();
+                          setReviewPipeline(prev => ({
+                            ...prev,
+                            data: prev.data ? {
+                              ...prev.data,
+                              pipeline: {
+                                ...(prev.data.pipeline || {}),
+                                adjustments: [], transfers: [], pharmacySupplies: [], orders: [],
+                                summary: { totalAdjustments: 0, totalTransfers: 0, totalPharmacySupplies: 0, totalOrderLines: 0, totalBoxesRedistributed: 0, totalBoxesFromPharmacy: 0, totalBoxesToOrder: 0, totalBoxesAlreadyOrdered: 0, totalShortfallBoxes: 0 },
+                              },
+                            } : prev.data,
+                          }));
+                          setMinLevelRefreshDone(true);
+                          setReviewPipelineTab('adjustments');
+                          setWizardState({ currentStep: 0, stepStatus: { adjustments: { reviewed: true, total: 0 }, redistribute: { reviewed: true, total: 0 }, pharmacy_supply: { reviewed: true, total: 0 }, order: { reviewed: true, total: 0 } } });
                         }} className="px-6 bg-btn-secondary text-txt-secondary py-2 rounded-lg hover:bg-bdr-hover transition-colors font-medium text-sm">
                           Done
                         </button>
@@ -5816,7 +6009,7 @@ Medicana Stock Management System`;
 
                     return (
                     <div>
-                      {/* Maturity warning for early stages */}
+                      {/* Maturity warning for early stages + inline go-live date config */}
                       {isEarly && (
                         <div className="p-4 bg-status-ordered-bg border-b border-status-ordered-bg">
                           <h3 className="font-semibold text-status-ordered-text">
@@ -5824,15 +6017,28 @@ Medicana Stock Management System`;
                           </h3>
                           <p className="text-sm text-status-ordered-text mt-1">
                             {maturity === 'not_configured'
-                              ? 'Set a go-live date in the Intelligence Report to begin tracking medication usage patterns.'
-                              : 'The system is collecting usage data. After the first full week, recommendations will appear here.'}
+                              ? 'Set a go-live date to begin tracking medication usage patterns.'
+                              : `The system is collecting usage data (go-live: ${new Date(pData.goLiveDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}). After the first full week, recommendations will appear here.`}
                           </p>
-                          <button onClick={() => {
-                            setModals(prev => ({ ...prev, showIntelligenceReport: true }));
-                            fetchIntelligenceReport(null);
-                          }} className="mt-2 bg-status-ordered-text text-white px-4 py-1.5 rounded text-sm hover:opacity-90 transition-colors">
-                            Open Intelligence Report
-                          </button>
+                          <p className="text-xs text-status-ordered-text mt-1 opacity-75">Controls how far back usage data is analysed (up to 12 weeks). Move forward to narrow the window, or backward to include more history.</p>
+                          {(getUserRole() === 'Administrator' || getUserRole() === 'Pharmacist') && (
+                            <button onClick={async () => {
+                              const current = pData.goLiveDate || '';
+                              const dateStr = prompt(
+                                'Enter the go-live date (YYYY-MM-DD format).\n\nThis controls how far back the system analyses usage data.\nMove it forward to narrow the window, or backward to include more history.',
+                                current || new Date().toISOString().slice(0, 10)
+                              );
+                              if (!dateStr) return;
+                              if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { alert('Invalid date format. Use YYYY-MM-DD.'); return; }
+                              try {
+                                const userInfo = getCurrentUserInfo();
+                                await window.api.setIntelligenceConfig({ key: 'go_live_date', value: dateStr, userId: userInfo?.id });
+                                loadReviewPipeline(false, true);
+                              } catch (err) { alert('Failed to set go-live date: ' + err.message); }
+                            }} className="mt-2 bg-status-ordered-text text-white px-4 py-1.5 rounded text-sm hover:opacity-90 transition-colors">
+                              {pData.goLiveDate ? 'Change Go-Live Date' : 'Set Go-Live Date'}
+                            </button>
+                          )}
                         </div>
                       )}
 
@@ -5859,19 +6065,19 @@ Medicana Stock Management System`;
                             </button>
                             );
                           })()}
-                          <button onClick={() => advanceWizardStep(1)} className={`p-3 rounded-lg border text-left transition-colors relative ${reviewPipelineTab === 'redistribute' ? 'border-status-ok-text bg-status-ok-bg' : 'border-bdr-default bg-white hover:bg-off-white'}`}>
+                          <button onClick={() => advanceWizardStep(1)} className={`p-3 rounded-lg border text-left transition-colors relative ${reviewPipelineTab === 'redistribute' || wizardState.stepStatus.redistribute.reviewed ? 'border-status-ok-text bg-status-ok-bg' : 'border-bdr-default bg-white hover:bg-off-white'}`}>
                             {wizardState.stepStatus.redistribute.reviewed && <span className="absolute top-1 right-1 text-status-ok-text text-xs font-bold">{'\u2713'}</span>}
                             <div className="text-2xl font-bold text-near-black">{pp.summary.totalTransfers}</div>
                             <div className="text-xs text-txt-tertiary">Location Transfers</div>
                             {pp.summary.totalBoxesRedistributed > 0 && <div className="text-xs text-status-ok-text mt-1">{pp.summary.totalBoxesRedistributed} boxes</div>}
                           </button>
-                          <button onClick={() => advanceWizardStep(2)} className={`p-3 rounded-lg border text-left transition-colors relative ${reviewPipelineTab === 'pharmacy_supply' ? 'border-brand-mid bg-brand-pale' : 'border-bdr-default bg-white hover:bg-off-white'}`}>
+                          <button onClick={() => advanceWizardStep(2)} className={`p-3 rounded-lg border text-left transition-colors relative ${reviewPipelineTab === 'pharmacy_supply' ? 'border-brand-mid bg-brand-pale' : wizardState.stepStatus.pharmacy_supply.reviewed ? 'border-status-ok-text bg-status-ok-bg' : 'border-bdr-default bg-white hover:bg-off-white'}`}>
                             {wizardState.stepStatus.pharmacy_supply.reviewed && <span className="absolute top-1 right-1 text-status-ok-text text-xs font-bold">{'\u2713'}</span>}
                             <div className="text-2xl font-bold text-near-black">{pp.summary.totalPharmacySupplies || 0}</div>
                             <div className="text-xs text-txt-tertiary">Pharmacy Supplies</div>
                             {(pp.summary.totalBoxesFromPharmacy || 0) > 0 && <div className="text-xs text-brand-mid mt-1">{pp.summary.totalBoxesFromPharmacy} boxes</div>}
                           </button>
-                          <button onClick={() => advanceWizardStep(3)} className={`p-3 rounded-lg border text-left transition-colors relative ${reviewPipelineTab === 'order' ? 'border-danger-solid bg-danger-ghost-bg' : 'border-bdr-default bg-white hover:bg-off-white'}`}>
+                          <button onClick={() => advanceWizardStep(3)} className={`p-3 rounded-lg border text-left transition-colors relative ${reviewPipelineTab === 'order' ? 'border-danger-solid bg-danger-ghost-bg' : wizardState.stepStatus.order.reviewed ? 'border-status-ok-text bg-status-ok-bg' : 'border-bdr-default bg-white hover:bg-off-white'}`}>
                             {wizardState.stepStatus.order.reviewed && <span className="absolute top-1 right-1 text-status-ok-text text-xs font-bold">{'\u2713'}</span>}
                             <div className="text-2xl font-bold text-near-black">{pp.orders.filter(o => o.orderQuantityBoxes > 0).length}</div>
                             <div className="text-xs text-txt-tertiary">External Orders</div>
@@ -5889,28 +6095,94 @@ Medicana Stock Management System`;
                           const genAt = pData?.lastPipelineRun;
                           if (!genAt) return null;
                           const daysSince = Math.floor((Date.now() - new Date(genAt).getTime()) / (1000 * 60 * 60 * 24));
-                          const daysRemaining = Math.max(0, 7 - daysSince);
+                          const lockUntilStr = pData?.lockedUntil;
+                          const isLocked = lockUntilStr && new Date(lockUntilStr) > new Date();
+                          const daysRemaining = isLocked ? Math.max(0, Math.ceil((new Date(lockUntilStr) - Date.now()) / (1000 * 60 * 60 * 24))) : 0;
                           const isCached = pData?.fromCache;
                           return (
+                            <React.Fragment>
                             <div className="px-4 py-2 bg-status-ordered-bg border-b border-bdr-default flex items-center justify-between">
-                              <p className="text-xs text-status-ordered-text">
-                                Pipeline generated {daysSince === 0 ? 'today' : `${daysSince} day${daysSince !== 1 ? 's' : ''} ago`}{isCached ? ' (cached)' : ''}.
-                                {daysRemaining > 0 ? ` Next generation available in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}.` : ' Ready to regenerate.'}
-                              </p>
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <p className="text-xs text-status-ordered-text">
+                                  Pipeline generated {daysSince === 0 ? 'today' : `${daysSince} day${daysSince !== 1 ? 's' : ''} ago`}{isCached ? ' (cached)' : ''}.
+                                  {isLocked ? ` Locked for ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}.` : ' Ready to regenerate.'}
+                                </p>
+                                {maturity && (
+                                  <span className="inline-flex items-center text-xs">
+                                    <span className={`w-2 h-2 rounded-full mr-1 ${
+                                      maturity === 'mature' ? 'bg-teal-500' :
+                                      maturity === 'confident' ? 'bg-green-500' :
+                                      maturity === 'learning' ? 'bg-amber-500' :
+                                      maturity === 'collecting' ? 'bg-blue-500' : 'bg-gray-400'
+                                    }`}></span>
+                                    <span className="text-status-ordered-text capitalize">{maturity}</span>
+                                    <span className="text-status-ordered-text opacity-75 ml-1">— {pData.weeksOfData} week{pData.weeksOfData !== 1 ? 's' : ''} of data</span>
+                                    {pData.goLiveDate && (getUserRole() === 'Administrator' || getUserRole() === 'Pharmacist') && (
+                                      <button onClick={async () => {
+                                        const dateStr = prompt(
+                                          'Change go-live date (YYYY-MM-DD).\n\nControls how far back usage data is analysed (up to 12 weeks).',
+                                          pData.goLiveDate
+                                        );
+                                        if (!dateStr) return;
+                                        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { alert('Invalid date format. Use YYYY-MM-DD.'); return; }
+                                        try {
+                                          const userInfo = getCurrentUserInfo();
+                                          await window.api.setIntelligenceConfig({ key: 'go_live_date', value: dateStr, userId: userInfo?.id });
+                                          loadReviewPipeline(false, true);
+                                        } catch (err) { alert('Failed to update: ' + err.message); }
+                                      }} className="text-status-ordered-text underline ml-1 hover:text-brand-dark">Change</button>
+                                    )}
+                                  </span>
+                                )}
+                              </div>
                               {(getCurrentUserInfo()?.role === 'Administrator' || getCurrentUserInfo()?.role === 'Pharmacist') && (
                                 <button
                                   onClick={() => {
-                                    if (daysRemaining > 0) {
-                                      if (!confirm(`Pipeline was generated ${daysSince} day${daysSince !== 1 ? 's' : ''} ago. Regenerating early may not have enough new data for accurate recommendations.\n\nForce regenerate?`)) return;
+                                    if (isLocked) {
+                                      // Require password to force regenerate within lock period
+                                      setForceRegenConfirm({ show: true, password: '', error: '', loading: false });
+                                    } else {
+                                      loadReviewPipeline(false, true);
                                     }
-                                    loadReviewPipeline(false, true);
                                   }}
                                   className="text-xs text-status-ordered-text underline hover:text-brand-dark font-medium ml-2 whitespace-nowrap"
                                 >
-                                  {daysRemaining > 0 ? 'Force Regenerate' : 'Regenerate'}
+                                  {isLocked ? 'Force Regenerate' : 'Regenerate'}
                                 </button>
                               )}
                             </div>
+                            {/* Force Regenerate password confirmation dialog */}
+                            {forceRegenConfirm.show && (
+                              <div className="px-4 py-3 bg-status-ordered-bg border-b border-bdr-default">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs text-status-ordered-text font-medium">Enter password to force regenerate:</span>
+                                  <input
+                                    type="password"
+                                    value={forceRegenConfirm.password}
+                                    onChange={(e) => setForceRegenConfirm(prev => ({ ...prev, password: e.target.value, error: '' }))}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleForceRegenConfirm()}
+                                    className="px-2 py-1 border border-bdr-default rounded text-sm w-40"
+                                    placeholder="Password"
+                                    autoFocus
+                                  />
+                                  <button
+                                    onClick={handleForceRegenConfirm}
+                                    disabled={forceRegenConfirm.loading || !forceRegenConfirm.password}
+                                    className="px-3 py-1 bg-status-ordered-text text-white text-xs font-medium rounded hover:opacity-90 disabled:opacity-50"
+                                  >
+                                    {forceRegenConfirm.loading ? 'Verifying...' : 'Confirm'}
+                                  </button>
+                                  <button
+                                    onClick={() => setForceRegenConfirm({ show: false, password: '', error: '', loading: false })}
+                                    className="px-3 py-1 bg-btn-secondary text-txt-secondary text-xs font-medium rounded hover:bg-bdr-hover"
+                                  >
+                                    Cancel
+                                  </button>
+                                  {forceRegenConfirm.error && <span className="text-xs text-danger-solid">{forceRegenConfirm.error}</span>}
+                                </div>
+                              </div>
+                            )}
+                            </React.Fragment>
                           );
                         })()}
 
@@ -5993,16 +6265,10 @@ Medicana Stock Management System`;
                           </div>
                         </div>
 
-                        {/* Refresh + View Full Report buttons */}
-                        <div className="px-4 py-2 flex items-center justify-between bg-white border-b border-bdr-default">
+                        {/* Refresh button */}
+                        <div className="px-4 py-2 flex items-center bg-white border-b border-bdr-default">
                           <button onClick={loadReviewPipeline} className="text-sm text-txt-tertiary hover:text-txt-secondary transition-colors">
                             Refresh
-                          </button>
-                          <button onClick={() => {
-                            setModals(prev => ({ ...prev, showIntelligenceReport: true }));
-                            fetchIntelligenceReport(null);
-                          }} className="text-sm text-brand-mid hover:text-brand-dark transition-colors">
-                            View Full Intelligence Report
                           </button>
                         </div>
 
@@ -6020,7 +6286,7 @@ Medicana Stock Management System`;
                           return (
                           <div className="p-4">
                             {minLevelRefreshDone ? (
-                              <div className="bg-status-ok-bg border-l-4 border-status-ok-text p-4 mb-4 rounded-r">
+                              <div className="bg-status-ok-bg border-l-4 border-status-ok-text p-4 mb-4 rounded-r sticky top-0 z-10">
                                 <div className="flex items-center justify-between flex-wrap gap-2">
                                   <div>
                                     <h3 className="text-base font-bold text-status-ok-text flex items-center">
@@ -6035,10 +6301,11 @@ Medicana Stock Management System`;
                                   </div>
                                   {reviewPipelineTab !== 'all' && pendingAdjs.length > 1 && (
                                     <button
-                                      disabled={applyingMinLevels}
+                                      disabled={applyingMinLevelIndex != null}
                                       onClick={async () => {
-                                        if (!confirm(`Apply all ${pendingAdjs.length} new suggestions?`)) return;
-                                        setApplyingMinLevels(true);
+                                        setPipelineConfirm({ show: true, title: 'Apply All Suggestions', message: `Apply all ${pendingAdjs.length} new suggestions?`, onConfirm: async () => {
+                                        setPipelineConfirm({ show: false, title: '', message: '', onConfirm: null });
+                                        setApplyingMinLevelIndex('all');
                                         const currentUser = getCurrentUserInfo();
                                         try {
                                           await Promise.all(pendingAdjs.map(adj => {
@@ -6062,20 +6329,21 @@ Medicana Stock Management System`;
                                         } catch (err) {
                                           alert('Failed to apply: ' + (err.message || 'Unknown error'));
                                         } finally {
-                                          setApplyingMinLevels(false);
+                                          setApplyingMinLevelIndex(null);
                                         }
+                                        }});
                                       }}
                                       className={`px-4 py-1.5 text-white text-sm font-medium rounded transition-colors whitespace-nowrap ${
-                                        applyingMinLevels ? 'bg-gray-400 cursor-not-allowed' : 'bg-status-ok-text hover:opacity-90'
+                                        applyingMinLevelIndex != null ? 'bg-gray-400 cursor-not-allowed' : 'bg-status-ok-text hover:opacity-90'
                                       }`}
                                     >
-                                      {applyingMinLevels ? 'Applying...' : `Apply All (${pendingAdjs.length})`}
+                                      {applyingMinLevelIndex === 'all' ? 'Applying...' : `Apply All (${pendingAdjs.length})`}
                                     </button>
                                   )}
                                 </div>
                               </div>
                             ) : (
-                            <div className="bg-status-low-bg border-l-4 border-status-low-text p-4 mb-4 rounded-r">
+                            <div className="bg-status-low-bg border-l-4 border-status-low-text p-4 mb-4 rounded-r sticky top-0 z-10">
                               <div className="flex items-center justify-between flex-wrap gap-2">
                                 <div>
                                   <h3 className="text-base font-bold text-status-low-text flex items-center">
@@ -6086,10 +6354,11 @@ Medicana Stock Management System`;
                                 </div>
                                 {reviewPipelineTab !== 'all' && pendingAdjs.length > 1 && (
                                   <button
-                                    disabled={applyingMinLevels}
+                                    disabled={applyingMinLevelIndex != null}
                                     onClick={async () => {
-                                      if (!confirm(`Apply all ${pendingAdjs.length} min level changes?`)) return;
-                                      setApplyingMinLevels(true);
+                                      setPipelineConfirm({ show: true, title: 'Apply All Min Levels', message: `Apply all ${pendingAdjs.length} min level changes?`, onConfirm: async () => {
+                                      setPipelineConfirm({ show: false, title: '', message: '', onConfirm: null });
+                                      setApplyingMinLevelIndex('all');
                                       const currentUser = getCurrentUserInfo();
                                       try {
                                         await Promise.all(pendingAdjs.map(adj => {
@@ -6116,14 +6385,15 @@ Medicana Stock Management System`;
                                       } catch (err) {
                                         alert('Failed to apply: ' + (err.message || 'Unknown error'));
                                       } finally {
-                                        setApplyingMinLevels(false);
+                                        setApplyingMinLevelIndex(null);
                                       }
+                                      }});
                                     }}
                                     className={`px-4 py-1.5 text-white text-sm font-medium rounded transition-colors whitespace-nowrap ${
-                                      applyingMinLevels ? 'bg-gray-400 cursor-not-allowed' : 'bg-status-low-text hover:opacity-90'
+                                      applyingMinLevelIndex != null ? 'bg-gray-400 cursor-not-allowed' : 'bg-status-low-text hover:opacity-90'
                                     }`}
                                   >
-                                    {applyingMinLevels ? 'Applying...' : `Apply All (${pendingAdjs.length})`}
+                                    {applyingMinLevelIndex === 'all' ? 'Applying...' : `Apply All (${pendingAdjs.length})`}
                                   </button>
                                 )}
                               </div>
@@ -6203,9 +6473,9 @@ Medicana Stock Management System`;
                                         {reviewPipelineTab !== 'all' && (
                                           <td className="px-4 py-3 text-center">
                                             <button
-                                              disabled={applyingMinLevels || changeDiff === 0}
+                                              disabled={applyingMinLevelIndex === 'all' || applyingMinLevelIndex === i || changeDiff === 0}
                                               onClick={async () => {
-                                                setApplyingMinLevels(true);
+                                                setApplyingMinLevelIndex(i);
                                                 try {
                                                   const currentUser = getCurrentUserInfo();
                                                   await window.api.setMedicationMinLevel({
@@ -6222,10 +6492,8 @@ Medicana Stock Management System`;
                                                     // Only auto-refresh before final refresh is done; after that, new items are optional
                                                     if (!minLevelRefreshDone) {
                                                       const remainingAfter = pp.adjustments.filter(a => !next.has(`${a.medicationId}-${a.locationId}`)).length;
-                                                      const allApplied = remainingAfter === 0;
-                                                      const batchHit = next.size > 0 && next.size % 10 === 0;
-                                                      if (allApplied || batchHit) {
-                                                        doMinLevelRefresh(allApplied);
+                                                      if (remainingAfter === 0) {
+                                                        doMinLevelRefresh(true);
                                                       }
                                                     }
                                                     return next;
@@ -6235,14 +6503,14 @@ Medicana Stock Management System`;
                                                 } catch (err) {
                                                   alert('Failed to apply: ' + (err.message || 'Unknown error'));
                                                 } finally {
-                                                  setApplyingMinLevels(false);
+                                                  setApplyingMinLevelIndex(null);
                                                 }
                                               }}
                                               className={`px-3 py-1 text-white text-xs font-medium rounded transition-colors ${
-                                                applyingMinLevels || changeDiff === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-brand-mid hover:bg-brand-dark'
+                                                applyingMinLevelIndex === 'all' || applyingMinLevelIndex === i || changeDiff === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-brand-mid hover:bg-brand-dark'
                                               }`}
                                             >
-                                              {applyingMinLevels ? 'Applying...' : 'Apply'}
+                                              {applyingMinLevelIndex === i ? 'Applying...' : 'Apply'}
                                             </button>
                                           </td>
                                         )}
@@ -6275,7 +6543,7 @@ Medicana Stock Management System`;
                         {/* Pipeline Step 2: Redistribute (was step 1) */}
                         {(reviewPipelineTab === 'all' || reviewPipelineTab === 'redistribute') && pp.transfers.length > 0 && (
                           <div className="p-4">
-                            <div className="bg-status-ok-bg border-l-4 border-status-ok-text p-4 mb-4 rounded-r">
+                            <div className="bg-status-ok-bg border-l-4 border-status-ok-text p-4 mb-4 rounded-r sticky top-0 z-10">
                               <div className="flex items-center justify-between flex-wrap gap-2">
                                 <div>
                                   <h3 className="text-base font-bold text-status-ok-text flex items-center">
@@ -6286,45 +6554,76 @@ Medicana Stock Management System`;
                                 </div>
                                 {reviewPipelineTab !== 'all' && pp.transfers.length > 1 && (
                                   <button
+                                    disabled={executingTransferIndex != null}
                                     onClick={async () => {
-                                      if (!confirm(`Execute all ${pp.transfers.length} recommended transfers?`)) return;
-                                      const currentUser = getCurrentUserInfo();
-                                      let succeeded = 0;
-                                      const failures = [];
-                                      for (const t of pp.transfers) {
-                                        try {
-                                          await window.api.transferStock({
-                                            userId: currentUser?.id,
-                                            batchId: t.batchId,
-                                            sourceLocationId: t.sourceLoc,
-                                            targetLocationId: t.targetLoc,
-                                            quantity: t.quantity,
-                                            reason: 'Intelligence-recommended redistribution (FEFO)',
-                                            medicationName: t.medicationName,
-                                            batchCode: t.batchCode
-                                          });
-                                          succeeded++;
-                                        } catch (err) {
-                                          failures.push(`${t.medicationName}: ${err.message}`);
+                                      setPipelineConfirm({ show: true, title: 'Execute All Transfers', message: `Execute all ${pp.transfers.length} recommended transfers?`, onConfirm: async () => {
+                                      setPipelineConfirm({ show: false, title: '', message: '', onConfirm: null });
+                                      setExecutingTransferIndex('all');
+                                      try {
+                                        const currentUser = getCurrentUserInfo();
+                                        let succeeded = 0;
+                                        const failures = [];
+                                        for (const t of pp.transfers) {
+                                          try {
+                                            await window.api.transferStock({
+                                              userId: currentUser?.id,
+                                              batchId: t.batchId,
+                                              sourceLocationId: t.sourceLoc,
+                                              targetLocationId: t.targetLoc,
+                                              quantity: t.quantity,
+                                              reason: 'Intelligence-recommended redistribution (FEFO)',
+                                              medicationName: t.medicationName,
+                                              batchCode: t.batchCode,
+                                              sourceStockBoxes: t.sourceStockBoxes,
+                                              targetStockBoxes: t.targetStockBoxes,
+                                              sourceMinLevel: t.sourceMinLevel,
+                                              targetMinLevel: t.targetMinLevel,
+                                              quantityBoxes: t.quantityBoxes,
+                                              pipelineStep: 'redistribute'
+                                            });
+                                            succeeded++;
+                                          } catch (err) {
+                                            failures.push(`${t.medicationName}: ${err.message}`);
+                                          }
                                         }
+                                        if (failures.length > 0) {
+                                          alert(`${succeeded} of ${pp.transfers.length} transfers executed.\n\nFailed (${failures.length}):\n${failures.join('\n')}`);
+                                        }
+                                        const data = await window.api.fetchAllData();
+                                        setMedications(data.medications || []);
+                                        setTransactions(data.transactions || []);
+                                        setLocations(data.locations || []);
+                                        // Log bulk summary
+                                        try {
+                                          await window.api.postActivityLog({
+                                            userId: currentUser?.id,
+                                            actionType: 'bulk_transfers_executed',
+                                            entityType: 'pipeline',
+                                            details: {
+                                              totalTransfers: succeeded,
+                                              totalFailed: failures.length,
+                                              totalBoxesMoved: pp.transfers.reduce((sum, t) => sum + t.quantityBoxes, 0),
+                                              source: 'intelligence_pipeline'
+                                            }
+                                          });
+                                        } catch (_) {}
+                                        // Regenerate pipeline server-side to recalculate Steps 3-4
+                                        // with current inventory (post-transfer)
+                                        await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
+                                        // Mark step 2 as reviewed
+                                        setWizardState(prev => ({
+                                          ...prev,
+                                          stepStatus: { ...prev.stepStatus, redistribute: { ...prev.stepStatus.redistribute, reviewed: true } }
+                                        }));
+                                        loadActivityLog(true);
+                                      } finally {
+                                        setExecutingTransferIndex(null);
                                       }
-                                      if (failures.length > 0) {
-                                        alert(`${succeeded} of ${pp.transfers.length} transfers executed.\n\nFailed (${failures.length}):\n${failures.join('\n')}`);
-                                      }
-                                      const data = await window.api.fetchAllData();
-                                      setMedications(data.medications || []);
-                                      setTransactions(data.transactions || []);
-                                      setLocations(data.locations || []);
-                                      // Remove all successfully executed transfers from local pipeline state
-                                      const successIndices = [];
-                                      for (let ti = 0; ti < pp.transfers.length; ti++) {
-                                        if (!failures.some(f => f.startsWith(pp.transfers[ti].medicationName + ':'))) successIndices.push(ti);
-                                      }
-                                      removeFromPipeline('transfers', successIndices);
+                                      }});
                                     }}
-                                    className="px-4 py-1.5 bg-status-ok-text text-white text-sm font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
+                                    className={`px-4 py-1.5 text-white text-sm font-medium rounded transition-colors whitespace-nowrap ${executingTransferIndex != null ? 'bg-gray-400 cursor-not-allowed' : 'bg-status-ok-text hover:opacity-90'}`}
                                   >
-                                    Execute All Transfers
+                                    {executingTransferIndex === 'all' ? 'Executing...' : 'Execute All Transfers'}
                                   </button>
                                 )}
                               </div>
@@ -6332,7 +6631,7 @@ Medicana Stock Management System`;
                             <div className="bg-white rounded-lg border border-bdr-default overflow-hidden">
                               <div className="overflow-x-auto">
                                 <table className="w-full text-sm">
-                                  <thead className="bg-off-white">
+                                  <thead className="bg-off-white sticky top-0 z-10">
                                     <tr>
                                       <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Medication</th>
                                       <th className="px-4 py-3 text-left font-semibold text-txt-secondary">From</th>
@@ -6363,9 +6662,11 @@ Medicana Stock Management System`;
                                         {reviewPipelineTab !== 'all' && (
                                           <td className="px-4 py-3 text-center">
                                             <button
+                                              disabled={executingTransferIndex === 'all' || executingTransferIndex === i}
                                               onClick={async () => {
-                                                const currentUser = getCurrentUserInfo();
+                                                setExecutingTransferIndex(i);
                                                 try {
+                                                  const currentUser = getCurrentUserInfo();
                                                   await window.api.transferStock({
                                                     userId: currentUser?.id,
                                                     batchId: t.batchId,
@@ -6374,20 +6675,38 @@ Medicana Stock Management System`;
                                                     quantity: t.quantity,
                                                     reason: 'Intelligence-recommended redistribution (FEFO)',
                                                     medicationName: t.medicationName,
-                                                    batchCode: t.batchCode
+                                                    batchCode: t.batchCode,
+                                                    sourceStockBoxes: t.sourceStockBoxes,
+                                                    targetStockBoxes: t.targetStockBoxes,
+                                                    sourceMinLevel: t.sourceMinLevel,
+                                                    targetMinLevel: t.targetMinLevel,
+                                                    quantityBoxes: t.quantityBoxes,
+                                                    pipelineStep: 'redistribute'
                                                   });
                                                   const data = await window.api.fetchAllData();
                                                   setMedications(data.medications || []);
                                                   setTransactions(data.transactions || []);
                                                   setLocations(data.locations || []);
-                                                  removeFromPipeline('transfers', i);
+                                                  // If this was the last transfer, regenerate pipeline for Steps 3-4
+                                                  if (pp.transfers.length <= 1) {
+                                                    await loadReviewPipeline(true, true, true, true);
+                                                    setWizardState(prev => ({
+                                                      ...prev,
+                                                      stepStatus: { ...prev.stepStatus, redistribute: { ...prev.stepStatus.redistribute, reviewed: true } }
+                                                    }));
+                                                  } else {
+                                                    removeFromPipeline('transfers', i);
+                                                  }
+                                                  loadActivityLog(true);
                                                 } catch (err) {
                                                   alert(`Transfer failed: ${err.message}`);
+                                                } finally {
+                                                  setExecutingTransferIndex(null);
                                                 }
                                               }}
-                                              className="px-3 py-1 bg-status-ok-text text-white text-xs font-medium rounded hover:opacity-90 transition-colors"
+                                              className={`px-3 py-1 text-white text-xs font-medium rounded transition-colors ${executingTransferIndex === 'all' || executingTransferIndex === i ? 'bg-gray-400 cursor-not-allowed' : 'bg-status-ok-text hover:opacity-90'}`}
                                             >
-                                              Execute
+                                              {executingTransferIndex === i ? '...' : 'Execute'}
                                             </button>
                                           </td>
                                         )}
@@ -6420,7 +6739,7 @@ Medicana Stock Management System`;
                         {/* Pipeline Step 3: Pharmacy Supply (was step 2) */}
                         {(reviewPipelineTab === 'all' || reviewPipelineTab === 'pharmacy_supply') && (pp.pharmacySupplies || []).length > 0 && (
                           <div className="p-4">
-                            <div className="bg-brand-pale border-l-4 border-brand-mid p-4 mb-4 rounded-r">
+                            <div className="bg-brand-pale border-l-4 border-brand-mid p-4 mb-4 rounded-r sticky top-0 z-10">
                               <div className="flex items-center justify-between flex-wrap gap-2">
                                 <div>
                                   <h3 className="text-base font-bold text-brand-dark flex items-center">
@@ -6431,46 +6750,79 @@ Medicana Stock Management System`;
                                 </div>
                                 {reviewPipelineTab !== 'all' && pp.pharmacySupplies.length > 1 && (
                                   <button
+                                    disabled={executingSupplyIndex != null}
                                     onClick={async () => {
-                                      if (!confirm(`Execute all ${pp.pharmacySupplies.length} pharmacy supply actions?`)) return;
-                                      const currentUser = getCurrentUserInfo();
-                                      let succeeded = 0;
-                                      const failures = [];
-                                      const successIndices = [];
-                                      for (let si = 0; si < pp.pharmacySupplies.length; si++) {
-                                        const s = pp.pharmacySupplies[si];
-                                        const adjBoxes = pharmacySupplyAdjustments[si] != null ? Number(pharmacySupplyAdjustments[si]) : s.quantityBoxes;
-                                        const adjItems = adjBoxes * (s.itemsPerBox || 1);
-                                        if (adjBoxes <= 0) { successIndices.push(si); continue; }
-                                        try {
-                                          await window.api.transferStock({
-                                            userId: currentUser?.id,
-                                            batchId: s.batchId,
-                                            sourceLocationId: s.sourceLoc,
-                                            targetLocationId: s.targetLoc,
-                                            quantity: adjItems,
-                                            reason: 'Pharmacy supply (intelligence-recommended)',
-                                            medicationName: s.medicationName,
-                                            batchCode: s.batchCode
-                                          });
-                                          succeeded++;
-                                          successIndices.push(si);
-                                        } catch (err) {
-                                          failures.push(`${s.medicationName}: ${err.message}`);
+                                      setPipelineConfirm({ show: true, title: 'Execute All Supplies', message: `Execute all ${pp.pharmacySupplies.length} pharmacy supply actions?`, onConfirm: async () => {
+                                      setPipelineConfirm({ show: false, title: '', message: '', onConfirm: null });
+                                      setExecutingSupplyIndex('all');
+                                      try {
+                                        const currentUser = getCurrentUserInfo();
+                                        let succeeded = 0;
+                                        const failures = [];
+                                        const successIndices = [];
+                                        for (let si = 0; si < pp.pharmacySupplies.length; si++) {
+                                          const s = pp.pharmacySupplies[si];
+                                          const adjBoxes = pharmacySupplyAdjustments[si] != null ? Number(pharmacySupplyAdjustments[si]) : s.quantityBoxes;
+                                          const adjItems = adjBoxes * (s.itemsPerBox || 1);
+                                          if (adjBoxes <= 0) { successIndices.push(si); continue; }
+                                          try {
+                                            await window.api.transferStock({
+                                              userId: currentUser?.id,
+                                              batchId: s.batchId,
+                                              sourceLocationId: s.sourceLoc,
+                                              targetLocationId: s.targetLoc,
+                                              quantity: adjItems,
+                                              reason: 'Pharmacy supply (intelligence-recommended)',
+                                              medicationName: s.medicationName,
+                                              batchCode: s.batchCode,
+                                              sourceStockBoxes: s.sourceStockBoxes,
+                                              quantityBoxes: adjBoxes,
+                                              pipelineStep: 'pharmacy_supply'
+                                            });
+                                            succeeded++;
+                                            successIndices.push(si);
+                                          } catch (err) {
+                                            failures.push(`${s.medicationName}: ${err.message}`);
+                                          }
                                         }
+                                        if (failures.length > 0) {
+                                          alert(`${succeeded} of ${pp.pharmacySupplies.length} supplies executed.\n\nFailed (${failures.length}):\n${failures.join('\n')}`);
+                                        }
+                                        const data = await window.api.fetchAllData();
+                                        setMedications(data.medications || []);
+                                        setTransactions(data.transactions || []);
+                                        setLocations(data.locations || []);
+                                        // Log bulk summary
+                                        try {
+                                          await window.api.postActivityLog({
+                                            userId: currentUser?.id,
+                                            actionType: 'bulk_pharmacy_supplies_executed',
+                                            entityType: 'pipeline',
+                                            details: {
+                                              totalSupplies: succeeded,
+                                              totalFailed: failures.length,
+                                              totalBoxesSupplied: pp.pharmacySupplies.reduce((sum, s, idx) => sum + (pharmacySupplyAdjustments[idx] != null ? Number(pharmacySupplyAdjustments[idx]) : s.quantityBoxes), 0),
+                                              source: 'intelligence_pipeline'
+                                            }
+                                          });
+                                        } catch (_) {}
+                                        // Regenerate pipeline server-side to recalculate Step 4
+                                        // with current inventory (post-pharmacy-supply)
+                                        await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
+                                        // Mark step 3 as reviewed
+                                        setWizardState(prev => ({
+                                          ...prev,
+                                          stepStatus: { ...prev.stepStatus, pharmacy_supply: { ...prev.stepStatus.pharmacy_supply, reviewed: true } }
+                                        }));
+                                        loadActivityLog(true);
+                                      } finally {
+                                        setExecutingSupplyIndex(null);
                                       }
-                                      if (failures.length > 0) {
-                                        alert(`${succeeded} of ${pp.pharmacySupplies.length} supplies executed.\n\nFailed (${failures.length}):\n${failures.join('\n')}`);
-                                      }
-                                      const data = await window.api.fetchAllData();
-                                      setMedications(data.medications || []);
-                                      setTransactions(data.transactions || []);
-                                      setLocations(data.locations || []);
-                                      removeFromPipeline('pharmacySupplies', successIndices);
+                                      }});
                                     }}
-                                    className="px-4 py-1.5 bg-brand-mid text-white text-sm font-medium rounded hover:bg-brand-dark transition-colors whitespace-nowrap"
+                                    className={`px-4 py-1.5 text-white text-sm font-medium rounded transition-colors whitespace-nowrap ${executingSupplyIndex != null ? 'bg-gray-400 cursor-not-allowed' : 'bg-brand-mid hover:bg-brand-dark'}`}
                                   >
-                                    Execute All Supplies
+                                    {executingSupplyIndex === 'all' ? 'Executing...' : 'Execute All Supplies'}
                                   </button>
                                 )}
                               </div>
@@ -6478,7 +6830,7 @@ Medicana Stock Management System`;
                             <div className="bg-white rounded-lg border border-bdr-default overflow-hidden">
                               <div className="overflow-x-auto">
                                 <table className="w-full text-sm">
-                                  <thead className="bg-off-white">
+                                  <thead className="bg-off-white sticky top-0 z-10">
                                     <tr>
                                       <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Medication</th>
                                       <th className="px-4 py-3 text-left font-semibold text-txt-secondary">From</th>
@@ -6525,11 +6877,13 @@ Medicana Stock Management System`;
                                         {reviewPipelineTab !== 'all' && (
                                           <td className="px-4 py-3 text-center">
                                             <button
+                                              disabled={executingSupplyIndex === 'all' || executingSupplyIndex === i}
                                               onClick={async () => {
-                                                const adjustedBoxes = pharmacySupplyAdjustments[i] != null ? Number(pharmacySupplyAdjustments[i]) : s.quantityBoxes;
-                                                const adjustedItems = adjustedBoxes * (s.itemsPerBox || 1);
-                                                const currentUser = getCurrentUserInfo();
+                                                setExecutingSupplyIndex(i);
                                                 try {
+                                                  const adjustedBoxes = pharmacySupplyAdjustments[i] != null ? Number(pharmacySupplyAdjustments[i]) : s.quantityBoxes;
+                                                  const adjustedItems = adjustedBoxes * (s.itemsPerBox || 1);
+                                                  const currentUser = getCurrentUserInfo();
                                                   await window.api.transferStock({
                                                     userId: currentUser?.id,
                                                     batchId: s.batchId,
@@ -6538,20 +6892,35 @@ Medicana Stock Management System`;
                                                     quantity: adjustedItems,
                                                     reason: 'Pharmacy supply (intelligence-recommended)',
                                                     medicationName: s.medicationName,
-                                                    batchCode: s.batchCode
+                                                    batchCode: s.batchCode,
+                                                    sourceStockBoxes: s.sourceStockBoxes,
+                                                    quantityBoxes: adjustedBoxes,
+                                                    pipelineStep: 'pharmacy_supply'
                                                   });
                                                   const data = await window.api.fetchAllData();
                                                   setMedications(data.medications || []);
                                                   setTransactions(data.transactions || []);
                                                   setLocations(data.locations || []);
-                                                  removeFromPipeline('pharmacySupplies', i);
+                                                  // If this was the last supply, regenerate pipeline for Step 4
+                                                  if ((pp.pharmacySupplies || []).length <= 1) {
+                                                    await loadReviewPipeline(true, true, true, true);
+                                                    setWizardState(prev => ({
+                                                      ...prev,
+                                                      stepStatus: { ...prev.stepStatus, pharmacy_supply: { ...prev.stepStatus.pharmacy_supply, reviewed: true } }
+                                                    }));
+                                                  } else {
+                                                    removeFromPipeline('pharmacySupplies', i);
+                                                  }
+                                                  loadActivityLog(true);
                                                 } catch (err) {
                                                   alert(`Pharmacy supply failed: ${err.message}`);
+                                                } finally {
+                                                  setExecutingSupplyIndex(null);
                                                 }
                                               }}
-                                              className="px-3 py-1 bg-brand-mid text-white text-xs font-medium rounded hover:bg-brand-dark transition-colors"
+                                              className={`px-3 py-1 text-white text-xs font-medium rounded transition-colors ${executingSupplyIndex === 'all' || executingSupplyIndex === i ? 'bg-gray-400 cursor-not-allowed' : 'bg-brand-mid hover:bg-brand-dark'}`}
                                             >
-                                              Execute
+                                              {executingSupplyIndex === i ? '...' : 'Execute'}
                                             </button>
                                           </td>
                                         )}
@@ -6584,7 +6953,7 @@ Medicana Stock Management System`;
                         {/* Pipeline Step 4: External Orders (Pharmacy Only) (was step 3) */}
                         {(reviewPipelineTab === 'all' || reviewPipelineTab === 'order') && pp.orders.length > 0 && (
                           <div className="p-4">
-                            <div className="bg-danger-ghost-bg border-l-4 border-danger-solid p-4 mb-4 rounded-r">
+                            <div className="bg-danger-ghost-bg border-l-4 border-danger-solid p-4 mb-4 rounded-r sticky top-0 z-10">
                               <h3 className="text-base font-bold text-danger-ghost-text flex items-center">
                                 <span className="bg-danger-solid text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-2">4</span>
                                 External Orders — {pp.orders.filter(o => o.orderQuantityBoxes > 0).length} Medication{pp.orders.filter(o => o.orderQuantityBoxes > 0).length !== 1 ? 's' : ''} Need Ordering{pp.orders.some(o => o.alreadyOrderedBoxes > 0) ? ` (${pp.orders.filter(o => o.alreadyOrderedBoxes > 0).length} with orders pending)` : ''}
@@ -6706,10 +7075,11 @@ Medicana Stock Management System`;
                               {reviewPipelineTab !== 'all' && (
                                 <div className="px-4 py-3 border-t border-bdr-default bg-off-white flex flex-wrap gap-2 items-center">
                                   <button
+                                    disabled={creatingOrders}
                                     onClick={handleCreatePipelineOrders}
-                                    className="bg-brand-mid text-white px-4 py-2 rounded text-sm font-medium hover:bg-brand-dark transition-colors"
+                                    className={`px-4 py-2 rounded text-sm font-medium text-white transition-colors ${creatingOrders ? 'bg-gray-400 cursor-not-allowed' : 'bg-brand-mid hover:bg-brand-dark'}`}
                                   >
-                                    Create Purchase Order ({pipelineOrderSelections.size})
+                                    {creatingOrders ? 'Creating Orders...' : `Create Purchase Order (${pipelineOrderSelections.size})`}
                                   </button>
                                   <span className="text-xs text-txt-tertiary ml-auto">
                                     {pipelineOrderSelections.size} of {pp.orders.length} selected
@@ -6740,9 +7110,37 @@ Medicana Stock Management System`;
                             <div className="text-4xl mb-3">&#10003;</div>
                             <h3 className="text-lg font-bold text-status-ok-text mb-2">Stock Levels Are Optimal</h3>
                             <p className="text-sm text-status-ok-text">No redistribution, orders, or min level adjustments are needed at this time.</p>
-                            <button onClick={loadReviewPipeline} className="mt-4 bg-btn-secondary text-txt-secondary px-4 py-2 rounded hover:bg-bdr-hover transition-colors text-sm">
-                              Refresh
-                            </button>
+                            {Object.values(wizardState.stepStatus).every(s => s.reviewed) ? (
+                              <button onClick={() => {
+                                const summary = {
+                                  completedAt: new Date().toISOString(),
+                                  stepTotals: {
+                                    adjustments: wizardState.stepStatus.adjustments.total,
+                                    redistribute: wizardState.stepStatus.redistribute.total,
+                                    pharmacy_supply: wizardState.stepStatus.pharmacy_supply.total,
+                                    order: wizardState.stepStatus.order.total,
+                                  },
+                                  orders: [],
+                                  emailContent: null,
+                                  lockedUntil: reviewPipeline.data?.lockedUntil,
+                                  lastPipelineRun: reviewPipeline.data?.lastPipelineRun,
+                                  maturityLevel: reviewPipeline.data?.maturityLevel,
+                                  weeksOfData: reviewPipeline.data?.weeksOfData,
+                                };
+                                setPipelineCompleteSummary(summary);
+                                window.api.setIntelligenceConfig({
+                                  key: 'pipeline_completion_summary',
+                                  value: JSON.stringify(summary),
+                                  userId: getCurrentUserInfo()?.id
+                                }).catch(() => {});
+                              }} className="mt-4 bg-brand-mid text-white px-4 py-2 rounded hover:bg-brand-dark transition-colors text-sm">
+                                View Summary
+                              </button>
+                            ) : (
+                              <button onClick={loadReviewPipeline} className="mt-4 bg-btn-secondary text-txt-secondary px-4 py-2 rounded hover:bg-bdr-hover transition-colors text-sm">
+                                Refresh
+                              </button>
+                            )}
                           </div>
                         )}
                         </>
@@ -8879,1032 +9277,7 @@ Medicana Stock Management System`;
               </div>
             )}
 
-            {/* Stock Intelligence Report Modal */}
-            {modals.showIntelligenceReport && (() => {
-              const report = intelligenceReport.data;
-              const isLoading = intelligenceReport.loading;
-              const reportError = intelligenceReport.error;
-
-              // Categorise medications from server response
-              const criticalMeds = report ? report.medications.filter(m => m.recommendation.action === 'order' || m.recommendation.action === 'increase') : [];
-              const optimizeMeds = report ? report.medications.filter(m => m.recommendation.action === 'decrease') : [];
-              const activeMeds = report ? report.medications.filter(m => m.avgWeeklyUsage > 0) : [];
-              const allMeds = report ? report.medications : [];
-
-              // Maturity labels
-              const maturityLabels = {
-                not_configured: { label: 'Not Configured', color: 'gray', desc: 'Set a go-live date to begin tracking.' },
-                collecting: { label: 'Collecting Data', color: 'blue', desc: report && report.daysUntilFirstRecommendation != null ? `${report.daysUntilFirstRecommendation} day${report.daysUntilFirstRecommendation !== 1 ? 's' : ''} until first recommendations.` : 'Gathering initial usage data.' },
-                learning: { label: 'Learning', color: 'amber', desc: `${report ? report.weeksOfData : 0} week${report && report.weeksOfData !== 1 ? 's' : ''} of data. Recommendations are preliminary.` },
-                confident: { label: 'Confident', color: 'green', desc: `${report ? report.weeksOfData : 0} weeks of data. Recommendations are reliable.` },
-                mature: { label: 'Mature', color: 'cyan', desc: `${report ? report.weeksOfData : 0}+ weeks of data. Full intelligence active.` }
-              };
-              const maturity = report ? (maturityLabels[report.maturityLevel] || maturityLabels.not_configured) : maturityLabels.not_configured;
-
-              return (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setModals(prev => ({ ...prev, showIntelligenceReport: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
-                  <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full flex flex-col" style={{maxHeight: '90vh'}}>
-                    {/* Header */}
-                    <div className="px-6 py-4 border-b border-bdr-default flex-shrink-0 bg-gradient-to-r from-brand-mid to-brand-dark">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                          <BarChart className="w-6 h-6 text-white mr-3" />
-                          <div>
-                            <h2 className="text-xl font-bold text-white">Stock Intelligence Report</h2>
-                            <p className="text-sm text-brand-pale">Usage analytics and smart stock recommendations</p>
-                          </div>
-                        </div>
-                        <button onClick={() => setModals(prev => ({ ...prev, showIntelligenceReport: false }))} className="text-white hover:text-brand-light text-2xl">&times;</button>
-                      </div>
-                      {/* Location selector within modal */}
-                      <div className="mt-3 flex items-center gap-3">
-                        <label className="text-sm text-brand-pale font-medium">Location:</label>
-                        <select
-                          value={(() => {
-                            // Find location ID matching current app location
-                            if (ui.currentLocation === 'All') return '';
-                            const loc = locations.find(l => l.displayName === ui.currentLocation);
-                            return loc ? loc.id : '';
-                          })()}
-                          onChange={(e) => {
-                            const locId = e.target.value || null;
-                            fetchIntelligenceReport(locId);
-                          }}
-                          className="px-3 py-1.5 rounded text-sm bg-white text-near-black border-0 focus:ring-2 focus:ring-brand-light"
-                        >
-                          <option value="">All Locations</option>
-                          {locations.map(loc => (
-                            <option key={loc.id} value={loc.id}>{loc.displayName}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="overflow-y-auto px-6 py-4 flex-1 bg-off-white">
-                      {/* Loading State */}
-                      {isLoading && (
-                        <div className="flex items-center justify-center py-16">
-                          <div className="text-center">
-                            <div className="inline-block w-8 h-8 border-4 border-brand-light border-t-brand-mid rounded-full animate-spin mb-4"></div>
-                            <p className="text-txt-tertiary">Generating intelligence report...</p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Error State */}
-                      {reportError && !isLoading && (
-                        <div className="bg-danger-ghost-bg border border-danger-ghost-bg rounded-lg p-6 text-center">
-                          <AlertTriangle className="w-8 h-8 text-danger-solid mx-auto mb-3" />
-                          <p className="text-danger-ghost-text font-medium mb-2">Failed to load intelligence report</p>
-                          <p className="text-danger-ghost-text text-sm mb-4">{reportError}</p>
-                          <button onClick={() => fetchIntelligenceReport(null)} className="px-4 py-2 bg-danger-solid text-white rounded hover:bg-danger-ghost-text text-sm">Retry</button>
-                        </div>
-                      )}
-
-                      {/* Report Content */}
-                      {report && !isLoading && (
-                        <>
-                          {/* Maturity Banner */}
-                          <div className={`mb-4 p-3 rounded-lg border-2 flex items-center justify-between ${
-                            maturity.color === 'gray' ? 'bg-off-white border-bdr-default' :
-                            maturity.color === 'blue' ? 'bg-status-ordered-bg border-status-ordered-text' :
-                            maturity.color === 'amber' ? 'bg-status-low-bg border-status-low-text' :
-                            maturity.color === 'green' ? 'bg-status-ok-bg border-status-ok-text' :
-                            'bg-brand-pale border-brand-light'
-                          }`}>
-                            <div className="flex items-center gap-3">
-                              <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                                maturity.color === 'gray' ? 'bg-btn-secondary text-txt-secondary' :
-                                maturity.color === 'blue' ? 'bg-status-ordered-bg text-status-ordered-text' :
-                                maturity.color === 'amber' ? 'bg-status-low-bg text-status-low-text' :
-                                maturity.color === 'green' ? 'bg-status-ok-bg text-status-ok-text' :
-                                'bg-brand-light text-brand-deepest'
-                              }`}>{maturity.label}</span>
-                              <span className="text-sm text-txt-secondary">{maturity.desc}</span>
-                            </div>
-                            {/* Go-Live Date Configuration (Admin only) */}
-                            {(report.maturityLevel === 'not_configured' || (getCurrentUserInfo()?.role === 'Administrator' || getCurrentUserInfo()?.role === 'Pharmacist')) && (
-                              <div className="flex items-center gap-2">
-                                {report.goLiveDate ? (
-                                  <span className="text-xs text-txt-tertiary">Go-live: {new Date(report.goLiveDate).toLocaleDateString('en-GB')}</span>
-                                ) : null}
-                                {(getCurrentUserInfo()?.role === 'Administrator' || getCurrentUserInfo()?.role === 'Pharmacist') && (
-                                  <button
-                                    onClick={() => {
-                                      const dateStr = prompt(
-                                        'Enter go-live date (YYYY-MM-DD):',
-                                        report.goLiveDate || new Date().toISOString().slice(0, 10)
-                                      );
-                                      if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-                                        window.api.setIntelligenceConfig({ key: 'go_live_date', value: dateStr, userId: getCurrentUserInfo()?.id })
-                                          .then(() => {
-                                            // Find current location ID for refresh
-                                            const currentLocId = (() => {
-                                              if (ui.currentLocation === 'All') return null;
-                                              const loc = locations.find(l => l.displayName === ui.currentLocation);
-                                              return loc ? loc.id : null;
-                                            })();
-                                            fetchIntelligenceReport(currentLocId);
-                                          })
-                                          .catch(err => alert('Failed to set go-live date: ' + err.message));
-                                      } else if (dateStr !== null) {
-                                        alert('Please enter a valid date in YYYY-MM-DD format.');
-                                      }
-                                    }}
-                                    className={`px-3 py-1 rounded text-xs font-medium ${
-                                      report.goLiveDate
-                                        ? 'bg-btn-secondary text-txt-secondary hover:bg-btn-secondary'
-                                        : 'bg-brand-mid text-white hover:bg-brand-dark'
-                                    }`}
-                                  >
-                                    {report.goLiveDate ? 'Change Date' : 'Set Go-Live Date'}
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Executive Summary */}
-                          <div className={`grid gap-4 mb-6 ${report.pipeline ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2 sm:grid-cols-4'}`}>
-                            {report.pipeline ? (
-                              <>
-                                <div className="bg-white p-4 rounded-lg border-2 border-status-ok-bg shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => setIntelligenceTab('redistribute')}>
-                                  <div className="text-2xl font-bold text-status-ok-text">{report.pipeline.summary.totalTransfers}</div>
-                                  <div className="text-sm text-txt-tertiary">Transfers</div>
-                                  <div className="text-xs text-txt-disabled mt-1">{report.pipeline.summary.totalBoxesRedistributed} boxes</div>
-                                </div>
-                                <div className="bg-white p-4 rounded-lg border-2 border-danger-ghost-bg shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => setIntelligenceTab('order')}>
-                                  <div className="text-2xl font-bold text-danger-ghost-text">{report.pipeline.summary.totalOrderLines}</div>
-                                  <div className="text-sm text-txt-tertiary">Orders Needed</div>
-                                  <div className="text-xs text-txt-disabled mt-1">{report.pipeline.summary.totalBoxesToOrder} boxes to order</div>
-                                  {report.pipeline.summary.totalBoxesAlreadyOrdered > 0 && <div className="text-xs text-status-ordered-text mt-0.5">{report.pipeline.summary.totalBoxesAlreadyOrdered} on order</div>}
-                                </div>
-                                <div className="bg-white p-4 rounded-lg border-2 border-status-low-bg shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => setIntelligenceTab('adjustments')}>
-                                  <div className="text-2xl font-bold text-status-low-text">{report.pipeline.summary.totalAdjustments}</div>
-                                  <div className="text-sm text-txt-tertiary">Min Level Changes</div>
-                                </div>
-                                <div className="bg-white p-4 rounded-lg border-2 border-brand-light shadow-sm">
-                                  <div className="text-2xl font-bold text-brand-mid">{allMeds.length}</div>
-                                  <div className="text-sm text-txt-tertiary">Medications Tracked</div>
-                                </div>
-                              </>
-                            ) : (
-                              <>
-                                <div className="bg-white p-4 rounded-lg border-2 border-brand-light shadow-sm">
-                                  <div className="text-2xl font-bold text-brand-mid">{allMeds.length}</div>
-                                  <div className="text-sm text-txt-tertiary">Medications Tracked</div>
-                                </div>
-                                <div className="bg-white p-4 rounded-lg border-2 border-danger-ghost-bg shadow-sm">
-                                  <div className="text-2xl font-bold text-danger-ghost-text">{criticalMeds.length}</div>
-                                  <div className="text-sm text-txt-tertiary">Requiring Attention</div>
-                                </div>
-                                <div className="bg-white p-4 rounded-lg border-2 border-status-ordered-bg shadow-sm">
-                                  <div className="text-2xl font-bold text-status-ordered-text">{activeMeds.length}</div>
-                                  <div className="text-sm text-txt-tertiary">With Usage Data</div>
-                                </div>
-                                <div className="bg-white p-4 rounded-lg border-2 border-status-low-bg shadow-sm">
-                                  <div className="text-2xl font-bold text-status-low-text">{optimizeMeds.length}</div>
-                                  <div className="text-sm text-txt-tertiary">Can Be Optimised</div>
-                                </div>
-                              </>
-                            )}
-                          </div>
-
-                          {/* Section Tab Navigation */}
-                          {report.maturityLevel !== 'not_configured' && report.maturityLevel !== 'collecting' && (
-                            <div className="sticky top-0 z-10 bg-off-white -mx-6 px-6 pt-2 pb-0 border-b border-bdr-default mb-4">
-                              <div className="flex gap-1 overflow-x-auto scrollbar-hide">
-                                <button
-                                  onClick={() => setIntelligenceTab('all')}
-                                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                                    intelligenceTab === 'all'
-                                      ? 'border-brand-mid text-brand-mid'
-                                      : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'
-                                  }`}
-                                >
-                                  All
-                                </button>
-                                {/* Pipeline tabs (All Locations view) */}
-                                {report.pipeline && (
-                                  <>
-                                    {report.pipeline.summary.totalTransfers > 0 && (
-                                      <button
-                                        onClick={() => setIntelligenceTab('redistribute')}
-                                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
-                                          intelligenceTab === 'redistribute'
-                                            ? 'border-status-ok-text text-status-ok-text'
-                                            : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'
-                                        }`}
-                                      >
-                                        Redistribute
-                                        <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${
-                                          intelligenceTab === 'redistribute' ? 'bg-status-ok-bg text-status-ok-text' : 'bg-btn-secondary text-txt-tertiary'
-                                        }`}>{report.pipeline.summary.totalTransfers}</span>
-                                      </button>
-                                    )}
-                                    {(report.pipeline.summary.totalPharmacySupplies || 0) > 0 && (
-                                      <button
-                                        onClick={() => setIntelligenceTab('pharmacy_supply')}
-                                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
-                                          intelligenceTab === 'pharmacy_supply'
-                                            ? 'border-brand-mid text-brand-mid'
-                                            : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'
-                                        }`}
-                                      >
-                                        Pharmacy Supply
-                                        <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${
-                                          intelligenceTab === 'pharmacy_supply' ? 'bg-brand-pale text-brand-mid' : 'bg-btn-secondary text-txt-tertiary'
-                                        }`}>{report.pipeline.summary.totalPharmacySupplies}</span>
-                                      </button>
-                                    )}
-                                    {report.pipeline.summary.totalOrderLines > 0 && (
-                                      <button
-                                        onClick={() => setIntelligenceTab('order')}
-                                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
-                                          intelligenceTab === 'order'
-                                            ? 'border-danger-solid text-danger-ghost-text'
-                                            : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'
-                                        }`}
-                                      >
-                                        <AlertTriangle className="w-3.5 h-3.5" />
-                                        External Orders
-                                        <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${
-                                          intelligenceTab === 'order' ? 'bg-danger-ghost-bg text-danger-ghost-text' : 'bg-btn-secondary text-txt-tertiary'
-                                        }`}>{report.pipeline.summary.totalOrderLines}</span>
-                                      </button>
-                                    )}
-                                    {report.pipeline.summary.totalAdjustments > 0 && (
-                                      <button
-                                        onClick={() => setIntelligenceTab('adjustments')}
-                                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
-                                          intelligenceTab === 'adjustments'
-                                            ? 'border-status-low-text text-status-low-text'
-                                            : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'
-                                        }`}
-                                      >
-                                        Adjust Min Levels
-                                        <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${
-                                          intelligenceTab === 'adjustments' ? 'bg-status-low-bg text-status-low-text' : 'bg-btn-secondary text-txt-tertiary'
-                                        }`}>{report.pipeline.summary.totalAdjustments}</span>
-                                      </button>
-                                    )}
-                                  </>
-                                )}
-                                {/* Legacy tabs (specific location view) */}
-                                {!report.pipeline && (
-                                  <>
-                                    {criticalMeds.length > 0 && (
-                                      <button
-                                        onClick={() => setIntelligenceTab('critical')}
-                                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
-                                          intelligenceTab === 'critical'
-                                            ? 'border-danger-solid text-danger-ghost-text'
-                                            : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'
-                                        }`}
-                                      >
-                                        <AlertTriangle className="w-3.5 h-3.5" />
-                                        Requiring Attention
-                                        <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${
-                                          intelligenceTab === 'critical' ? 'bg-danger-ghost-bg text-danger-ghost-text' : 'bg-btn-secondary text-txt-tertiary'
-                                        }`}>{criticalMeds.length}</span>
-                                      </button>
-                                    )}
-                                    {optimizeMeds.length > 0 && (
-                                      <button
-                                        onClick={() => setIntelligenceTab('optimise')}
-                                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
-                                          intelligenceTab === 'optimise'
-                                            ? 'border-status-low-text text-status-low-text'
-                                            : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'
-                                        }`}
-                                      >
-                                        Can Be Optimised
-                                        <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${
-                                          intelligenceTab === 'optimise' ? 'bg-status-low-bg text-status-low-text' : 'bg-btn-secondary text-txt-tertiary'
-                                        }`}>{optimizeMeds.length}</span>
-                                      </button>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* No Recommendations Yet */}
-                          {(report.maturityLevel === 'not_configured' || report.maturityLevel === 'collecting') && (
-                            <div className="bg-status-ordered-bg border border-status-ordered-bg rounded-lg p-8 text-center mb-6">
-                              <BarChart className="w-12 h-12 text-status-ordered-text mx-auto mb-4" />
-                              <h3 className="text-lg font-bold text-status-ordered-text mb-2">
-                                {report.maturityLevel === 'not_configured' ? 'Intelligence Report Not Yet Active' : 'Collecting Usage Data'}
-                              </h3>
-                              <p className="text-status-ordered-text text-sm max-w-lg mx-auto">
-                                {report.maturityLevel === 'not_configured'
-                                  ? 'Set a go-live date above to begin tracking medication usage patterns. After one week of data collection, the system will start providing intelligent stock recommendations.'
-                                  : 'The system is collecting usage data. After the first full week, recommendations will appear here based on actual usage patterns at each location.'}
-                              </p>
-                            </div>
-                          )}
-
-                          {/* Critical Medications (legacy — specific location view only) */}
-                          {!report.pipeline && criticalMeds.length > 0 && (intelligenceTab === 'all' || intelligenceTab === 'critical') && (
-                            <div className="mb-6">
-                              <div className="bg-danger-ghost-bg border-l-4 border-danger-solid p-4 mb-4">
-                                <h3 className="text-lg font-bold text-danger-ghost-text flex items-center">
-                                  <AlertTriangle className="w-5 h-5 mr-2" />
-                                  Critical: {criticalMeds.length} Medication{criticalMeds.length !== 1 ? 's' : ''} Requiring Attention
-                                </h3>
-                              </div>
-                              <div className="space-y-3">
-                                {criticalMeds.map(med => {
-                                  const stableKey = `${med.medicationId}|${med.locationId}`;
-                                  const maxUsage = Math.max(...(med.weeklyUsage.length > 0 ? med.weeklyUsage.map(w => w.totalOut) : [0]), 1);
-                                  return (
-                                    <div key={stableKey} className="bg-white rounded-lg border-2 border-danger-ghost-bg p-4 shadow-sm">
-                                      <div className="flex justify-between items-start mb-3">
-                                        <div>
-                                          <h4 className="font-bold text-near-black text-lg">{med.medicationName}</h4>
-                                          <p className="text-xs text-txt-tertiary mt-0.5">{med.locationName}</p>
-                                          <div className="flex flex-wrap gap-2 mt-2 text-sm">
-                                            <span className={`px-2 py-1 rounded ${med.currentBoxes < med.currentMinLevel ? 'bg-status-critical-bg text-status-critical-text font-semibold' : 'bg-status-ok-bg text-status-ok-text'}`}>
-                                              Current: {med.currentBoxes} boxes
-                                            </span>
-                                            <span className="px-2 py-1 rounded bg-off-white text-near-black">
-                                              Min Level: {med.currentMinLevel} boxes
-                                            </span>
-                                            {med.projectedStockoutDate && (
-                                              <span className="px-2 py-1 rounded bg-danger-ghost-bg text-danger-ghost-text font-semibold">
-                                                Projected stock-out: {new Date(med.projectedStockoutDate).toLocaleDateString('en-GB')}
-                                              </span>
-                                            )}
-                                          </div>
-                                        </div>
-                                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                                          med.recommendation.action === 'order' ? 'bg-status-critical-bg text-status-critical-text' : 'bg-status-expired-bg text-status-expired-text'
-                                        }`}>
-                                          {med.recommendation.action === 'order' ? 'ORDER NEEDED' : 'INCREASE MIN'}
-                                        </span>
-                                      </div>
-
-                                      {/* Weekly Usage Bars */}
-                                      {med.weeklyUsage.length > 0 && (
-                                        <div className="mb-3">
-                                          <div className="text-xs text-txt-tertiary font-semibold mb-1">WEEKLY USAGE (last {med.weeklyUsage.length} weeks)</div>
-                                          <div className="flex items-end gap-1 h-10">
-                                            {med.weeklyUsage.map((week, i) => (
-                                              <div key={i} className="flex-1 flex flex-col items-center">
-                                                <div
-                                                  className="w-full bg-status-ordered-text rounded-t"
-                                                  style={{ height: `${Math.max(2, (week.totalOut / maxUsage) * 32)}px` }}
-                                                  title={`Week of ${week.weekStart}: ${week.totalOut} units out`}
-                                                ></div>
-                                              </div>
-                                            ))}
-                                          </div>
-                                          <div className="flex justify-between text-xs text-txt-disabled mt-1">
-                                            <span>{med.weeklyUsage.length > 0 ? med.weeklyUsage[0].weekStart.slice(5) : ''}</span>
-                                            <span>Avg: {med.avgWeeklyUsage} boxes/wk</span>
-                                            <span>{med.weeklyUsage.length > 0 ? med.weeklyUsage[med.weeklyUsage.length - 1].weekStart.slice(5) : ''}</span>
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {/* Recommendation */}
-                                      <div className="bg-gradient-to-r from-brand-pale to-brand-pale p-3 rounded border border-brand-light">
-                                        <div className="flex items-start">
-                                          <TrendingUp className="w-5 h-5 text-brand-mid mr-2 mt-0.5 flex-shrink-0" />
-                                          <div className="flex-1">
-                                            <div className="flex items-center gap-2 mb-1">
-                                              <span className="font-semibold text-near-black">Recommendation</span>
-                                              <span className={`text-xs px-1.5 py-0.5 rounded ${
-                                                med.recommendation.confidence >= 0.7 ? 'bg-status-ok-bg text-brand-dark' :
-                                                med.recommendation.confidence >= 0.3 ? 'bg-status-low-bg text-status-low-text' :
-                                                'bg-off-white text-txt-tertiary'
-                                              }`}>
-                                                {med.recommendation.confidence >= 0.7 ? 'High' : med.recommendation.confidence >= 0.3 ? 'Medium' : 'Low'} confidence
-                                              </span>
-                                              {med.usageTrend !== 'insufficient_data' && (
-                                                <span className={`text-xs px-1.5 py-0.5 rounded ${
-                                                  med.usageTrend === 'increasing' ? 'bg-danger-ghost-bg text-danger-ghost-text' :
-                                                  med.usageTrend === 'decreasing' ? 'bg-status-ok-bg text-brand-mid' :
-                                                  'bg-off-white text-txt-tertiary'
-                                                }`}>
-                                                  {med.usageTrend === 'increasing' ? 'Trend: Rising' : med.usageTrend === 'decreasing' ? 'Trend: Falling' : 'Trend: Stable'}
-                                                </span>
-                                              )}
-                                            </div>
-                                            <div className="text-sm text-txt-secondary mb-2">{med.recommendation.reason}</div>
-                                            {/* Explicit recommendation actions */}
-                                            {med.recommendation.action === 'order' && (
-                                              <div className="space-y-2">
-                                                {(() => {
-                                                  const targetMin = med.recommendation.secondaryAction ? med.recommendation.secondaryAction.suggestedMinLevel : med.currentMinLevel;
-                                                  const orderQty = Math.max(1, targetMin - med.currentBoxes);
-                                                  return (
-                                                    <div className="flex items-center gap-2">
-                                                      <span className="text-sm font-semibold text-danger-ghost-text">
-                                                        Order {orderQty} {orderQty === 1 ? 'box' : 'boxes'} to reach {med.recommendation.secondaryAction ? 'recommended' : ''} minimum level of {targetMin}
-                                                      </span>
-                                                    </div>
-                                                  );
-                                                })()}
-                                                {med.recommendation.secondaryAction && (
-                                                  <div className="bg-status-low-bg p-2 rounded border border-status-low-text mt-1">
-                                                    <div className="flex items-center gap-2">
-                                                      <span className="text-sm font-semibold text-status-low-text">
-                                                        Also: Reduce minimum level from {med.currentMinLevel} to {med.recommendation.secondaryAction.suggestedMinLevel} {med.recommendation.secondaryAction.suggestedMinLevel === 1 ? 'box' : 'boxes'} to optimise held stock
-                                                      </span>
-                                                      <button
-                                                        onClick={() => applyMinLevelRecommendation(
-                                                          med.medicationId,
-                                                          med.locationId,
-                                                          med.recommendation.secondaryAction.suggestedMinLevel,
-                                                          med.medicationName,
-                                                          med.currentMinLevel,
-                                                          med.locationName
-                                                        )}
-                                                        className="px-3 py-1 bg-status-low-text text-white text-xs font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
-                                                      >
-                                                        Apply Reduction
-                                                      </button>
-                                                    </div>
-                                                    <div className="text-xs text-status-low-text mt-1">{med.recommendation.secondaryAction.reason}</div>
-                                                  </div>
-                                                )}
-                                              </div>
-                                            )}
-                                            {med.recommendation.action === 'increase' && med.recommendation.suggestedMinLevel !== med.currentMinLevel && (
-                                              <div className="flex items-center gap-3">
-                                                <span className="text-sm font-semibold text-brand-deepest">
-                                                  Increase minimum level from {med.currentMinLevel} to {med.recommendation.suggestedMinLevel} {med.recommendation.suggestedMinLevel === 1 ? 'box' : 'boxes'}
-                                                </span>
-                                                <button
-                                                  onClick={() => applyMinLevelRecommendation(
-                                                    med.medicationId,
-                                                    med.locationId,
-                                                    med.recommendation.suggestedMinLevel,
-                                                    med.medicationName,
-                                                    med.currentMinLevel,
-                                                    med.locationName
-                                                  )}
-                                                  className="px-3 py-1 bg-brand-mid text-white text-xs font-medium rounded hover:bg-brand-dark transition-colors whitespace-nowrap"
-                                                >
-                                                  Apply Min Level Change
-                                                </button>
-                                              </div>
-                                            )}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Optimisation Opportunities (legacy — specific location view only) */}
-                          {!report.pipeline && optimizeMeds.length > 0 && (intelligenceTab === 'all' || intelligenceTab === 'optimise') && (
-                            <div className="mb-6">
-                              <div className="bg-status-low-bg border-l-4 border-status-low-text p-4 mb-4">
-                                <div className="flex items-center justify-between flex-wrap gap-2">
-                                  <div>
-                                    <h3 className="text-lg font-bold text-status-low-text">
-                                      Optimisation: {optimizeMeds.length} Medication{optimizeMeds.length !== 1 ? 's' : ''} With Excess Stock
-                                    </h3>
-                                    <p className="text-sm text-status-low-text">
-                                      Reducing minimum levels would free up {optimizeMeds.reduce((sum, m) => sum + Math.max(0, m.currentMinLevel - m.recommendation.suggestedMinLevel), 0)} boxes of held stock across {optimizeMeds.length} medication{optimizeMeds.length !== 1 ? 's' : ''}
-                                    </p>
-                                  </div>
-                                  {optimizeMeds.filter(m => m.recommendation.suggestedMinLevel !== m.currentMinLevel).length > 1 && (
-                                    <button
-                                      onClick={async () => {
-                                        const applicableMeds = optimizeMeds.filter(m => m.recommendation.suggestedMinLevel !== m.currentMinLevel);
-                                        if (!confirm(`Apply all ${applicableMeds.length} optimisation recommendations? This will reduce minimum levels for ${applicableMeds.length} medication${applicableMeds.length !== 1 ? 's' : ''}.`)) return;
-                                        for (const med of applicableMeds) {
-                                          await applyMinLevelRecommendation(
-                                            med.medicationId, med.locationId, med.recommendation.suggestedMinLevel,
-                                            med.medicationName, med.currentMinLevel, med.locationName
-                                          );
-                                        }
-                                      }}
-                                      className="px-4 py-1.5 bg-status-low-text text-white text-sm font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
-                                    >
-                                      Apply All ({optimizeMeds.filter(m => m.recommendation.suggestedMinLevel !== m.currentMinLevel).length})
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="space-y-3">
-                                {optimizeMeds.map(med => {
-                                  const stableKey = `${med.medicationId}|${med.locationId}`;
-                                  const maxUsage = Math.max(...(med.weeklyUsage.length > 0 ? med.weeklyUsage.map(w => w.totalOut) : [0]), 1);
-                                  return (
-                                    <div key={stableKey} className="bg-white rounded-lg border-2 border-status-low-bg p-4 shadow-sm">
-                                      <div className="flex justify-between items-start mb-2">
-                                        <div>
-                                          <h4 className="font-bold text-near-black">{med.medicationName}</h4>
-                                          <p className="text-xs text-txt-tertiary">{med.locationName}</p>
-                                          <div className="flex gap-3 mt-1 text-sm">
-                                            <span className="text-txt-tertiary">Current: {med.currentBoxes} boxes</span>
-                                            <span className="text-txt-tertiary">Min: {med.currentMinLevel} boxes</span>
-                                            <span className="text-status-ordered-text font-semibold">Avg: {med.avgWeeklyUsage} boxes/wk</span>
-                                          </div>
-                                        </div>
-                                        <span className="px-3 py-1 rounded-full text-sm font-semibold bg-status-low-bg text-status-low-text">
-                                          REDUCE MIN
-                                        </span>
-                                      </div>
-
-                                      {/* Weekly Usage Bars */}
-                                      {med.weeklyUsage.length > 0 && (
-                                        <div className="mb-2">
-                                          <div className="flex items-end gap-1 h-8">
-                                            {med.weeklyUsage.map((week, i) => (
-                                              <div key={i} className="flex-1">
-                                                <div
-                                                  className="w-full bg-status-low-text rounded-t"
-                                                  style={{ height: `${Math.max(2, (week.totalOut / maxUsage) * 28)}px` }}
-                                                  title={`Week of ${week.weekStart}: ${week.totalOut} units out`}
-                                                ></div>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      <div className="bg-status-low-bg p-3 rounded mt-2">
-                                        <div className="text-sm text-txt-secondary">{med.recommendation.reason}</div>
-                                        {med.recommendation.suggestedMinLevel !== med.currentMinLevel && (
-                                          <div className="flex items-center gap-3 mt-2">
-                                            <span className="text-sm font-semibold text-status-low-text">
-                                              Reduce minimum level from {med.currentMinLevel} to {med.recommendation.suggestedMinLevel} {med.recommendation.suggestedMinLevel === 1 ? 'box' : 'boxes'} — {med.currentMinLevel - med.recommendation.suggestedMinLevel} fewer {med.currentMinLevel - med.recommendation.suggestedMinLevel === 1 ? 'box' : 'boxes'} held
-                                            </span>
-                                            <button
-                                              onClick={() => applyMinLevelRecommendation(
-                                                med.medicationId,
-                                                med.locationId,
-                                                med.recommendation.suggestedMinLevel,
-                                                med.medicationName,
-                                                med.currentMinLevel,
-                                                med.locationName
-                                              )}
-                                              className="px-3 py-1 bg-status-low-text text-white text-xs font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
-                                            >
-                                              Apply Reduction
-                                            </button>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* ===== PIPELINE SECTIONS (All Locations view) ===== */}
-                          {report.pipeline && (intelligenceTab === 'all' || intelligenceTab === 'redistribute') && report.pipeline.transfers.length > 0 && (
-                            <div className="mb-6">
-                              <div className="bg-status-ok-bg border-l-4 border-status-ok-text p-4 mb-4">
-                                <div className="flex items-center justify-between flex-wrap gap-2">
-                                  <div>
-                                    <h3 className="text-lg font-bold text-status-ok-text flex items-center">
-                                      <span className="bg-status-ok-text text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-2">2</span>
-                                      Redistribute Stock — {report.pipeline.transfers.length} Transfer{report.pipeline.transfers.length !== 1 ? 's' : ''} Recommended
-                                    </h3>
-                                    <p className="text-sm text-status-ok-text mt-1">
-                                      {report.pipeline.summary.totalBoxesRedistributed} boxes can be moved from surplus to deficit locations (FEFO — earliest expiry first)
-                                    </p>
-                                  </div>
-                                  {report.pipeline.transfers.length > 1 && (
-                                    <button
-                                      onClick={async () => {
-                                        if (!confirm(`Execute all ${report.pipeline.transfers.length} recommended transfers?`)) return;
-                                        const currentUser = getCurrentUserInfo();
-                                        for (const t of report.pipeline.transfers) {
-                                          try {
-                                            await window.api.transferStock({
-                                              userId: currentUser?.id,
-                                              batchId: t.batchId,
-                                              sourceLocationId: t.sourceLoc,
-                                              targetLocationId: t.targetLoc,
-                                              quantity: t.quantity,
-                                              reason: 'Intelligence-recommended redistribution (FEFO)',
-                                              medicationName: t.medicationName,
-                                              batchCode: t.batchCode
-                                            });
-                                          } catch (err) {
-                                            alert(`Transfer failed for ${t.medicationName}: ${err.message}`);
-                                            break;
-                                          }
-                                        }
-                                        const data = await window.api.fetchAllData();
-                                        setMedications(data.medications || []);
-                                        setTransactions(data.transactions || []);
-                                        setLocations(data.locations || []);
-                                        fetchIntelligenceReport(null);
-                                      }}
-                                      className="px-4 py-1.5 bg-status-ok-text text-white text-sm font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
-                                    >
-                                      Execute All Transfers
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="bg-white rounded-lg border border-bdr-default overflow-hidden">
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-sm">
-                                    <thead className="bg-off-white">
-                                      <tr>
-                                        <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Medication</th>
-                                        <th className="px-4 py-3 text-left font-semibold text-txt-secondary">From</th>
-                                        <th className="px-4 py-3 text-left font-semibold text-txt-secondary">To</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Batch Expiry</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Qty</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Action</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-bdr-default">
-                                      {report.pipeline.transfers.map((t, i) => (
-                                        <tr key={`${t.batchId}-${t.sourceLoc}-${t.targetLoc}-${i}`} className="hover:bg-off-white">
-                                          <td className="px-4 py-3 font-medium text-near-black">{t.medicationName}</td>
-                                          <td className="px-4 py-3"><span className="text-txt-secondary">{t.sourceLocName}</span>{t.sourceStockBoxes != null && <span className="block text-xs text-txt-tertiary">{t.sourceStockBoxes} boxes (min: {t.sourceMinLevel})</span>}</td>
-                                          <td className="px-4 py-3"><span className="text-txt-secondary">{t.targetLocName}</span>{t.targetStockBoxes != null && <span className="block text-xs text-txt-tertiary">{t.targetStockBoxes} boxes (min: {t.targetMinLevel})</span>}</td>
-                                          <td className="px-4 py-3 text-center">
-                                            {t.expiryDate ? (
-                                              <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                                                new Date(t.expiryDate) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
-                                                  ? 'bg-status-expired-bg text-status-expired-text'
-                                                  : 'bg-off-white text-txt-secondary'
-                                              }`}>
-                                                {new Date(t.expiryDate).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
-                                              </span>
-                                            ) : <span className="text-txt-disabled">-</span>}
-                                          </td>
-                                          <td className="px-4 py-3 text-center font-semibold text-near-black">{t.quantityBoxes} {t.quantityBoxes === 1 ? 'box' : 'boxes'}</td>
-                                          <td className="px-4 py-3 text-center">
-                                            <button
-                                              onClick={async () => {
-                                                const currentUser = getCurrentUserInfo();
-                                                try {
-                                                  await window.api.transferStock({
-                                                    userId: currentUser?.id,
-                                                    batchId: t.batchId,
-                                                    sourceLocationId: t.sourceLoc,
-                                                    targetLocationId: t.targetLoc,
-                                                    quantity: t.quantity,
-                                                    reason: 'Intelligence-recommended redistribution (FEFO)',
-                                                    medicationName: t.medicationName,
-                                                    batchCode: t.batchCode
-                                                  });
-                                                  const data = await window.api.fetchAllData();
-                                                  setMedications(data.medications || []);
-                                                  setTransactions(data.transactions || []);
-                                                  setLocations(data.locations || []);
-                                                  fetchIntelligenceReport(null);
-                                                } catch (err) {
-                                                  alert(`Transfer failed: ${err.message}`);
-                                                }
-                                              }}
-                                              className="px-3 py-1 bg-status-ok-text text-white text-xs font-medium rounded hover:opacity-90 transition-colors"
-                                            >
-                                              Execute
-                                            </button>
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Pipeline Step 3: Pharmacy Supply */}
-                          {report.pipeline && (intelligenceTab === 'all' || intelligenceTab === 'pharmacy_supply') && (report.pipeline.pharmacySupplies || []).length > 0 && (
-                            <div className="mb-6">
-                              <div className="bg-brand-pale border-l-4 border-brand-mid p-4 mb-4">
-                                <h3 className="text-lg font-bold text-brand-dark flex items-center">
-                                  <span className="bg-brand-mid text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-2">3</span>
-                                  Pharmacy Supply — {report.pipeline.pharmacySupplies.length} Dispense{report.pipeline.pharmacySupplies.length !== 1 ? 's' : ''}
-                                </h3>
-                                <p className="text-sm text-brand-dark mt-1">
-                                  Pharmacy needs to supply {report.pipeline.summary.totalBoxesFromPharmacy} boxes to locations still below minimum after redistribution
-                                </p>
-                              </div>
-                              <div className="bg-white rounded-lg border border-bdr-default overflow-hidden">
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-sm">
-                                    <thead className="bg-off-white">
-                                      <tr>
-                                        <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Medication</th>
-                                        <th className="px-4 py-3 text-left font-semibold text-txt-secondary">From</th>
-                                        <th className="px-4 py-3 text-left font-semibold text-txt-secondary">To</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Batch Expiry</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Qty</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-bdr-default">
-                                      {report.pipeline.pharmacySupplies.map((s, i) => (
-                                        <tr key={`pharm-${s.batchId}-${s.targetLoc}-${i}`} className="hover:bg-off-white">
-                                          <td className="px-4 py-3 font-medium text-near-black">{s.medicationName}</td>
-                                          <td className="px-4 py-3"><span className="text-txt-secondary">{s.sourceLocName}</span>{s.sourceStockBoxes != null && <span className="block text-xs text-txt-tertiary">{s.sourceStockBoxes} boxes</span>}</td>
-                                          <td className="px-4 py-3 text-txt-secondary">{s.targetLocName}</td>
-                                          <td className="px-4 py-3 text-center">
-                                            {s.expiryDate ? (
-                                              <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                                                new Date(s.expiryDate) < new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
-                                                  ? 'bg-status-expired-bg text-status-expired-text'
-                                                  : 'bg-off-white text-txt-secondary'
-                                              }`}>
-                                                {new Date(s.expiryDate).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
-                                              </span>
-                                            ) : <span className="text-txt-disabled">-</span>}
-                                          </td>
-                                          <td className="px-4 py-3 text-center font-semibold text-near-black">{s.quantityBoxes} {s.quantityBoxes === 1 ? 'box' : 'boxes'}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Pipeline Step 4: External Orders (Pharmacy Only) */}
-                          {report.pipeline && (intelligenceTab === 'all' || intelligenceTab === 'order') && report.pipeline.orders.length > 0 && (
-                            <div className="mb-6">
-                              <div className="bg-danger-ghost-bg border-l-4 border-danger-solid p-4 mb-4">
-                                <h3 className="text-lg font-bold text-danger-ghost-text flex items-center">
-                                  <span className="bg-danger-solid text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-2">4</span>
-                                  External Orders — {report.pipeline.orders.filter(o => o.orderQuantityBoxes > 0).length} Medication{report.pipeline.orders.filter(o => o.orderQuantityBoxes > 0).length !== 1 ? 's' : ''} Need Ordering{report.pipeline.orders.some(o => o.alreadyOrderedBoxes > 0) ? ` (${report.pipeline.orders.filter(o => o.alreadyOrderedBoxes > 0).length} with orders pending)` : ''}
-                                </h3>
-                                <p className="text-sm text-danger-ghost-text mt-1">
-                                  {report.pipeline.summary.totalBoxesAlreadyOrdered > 0
-                                    ? `Total shortfall: ${report.pipeline.summary.totalShortfallBoxes} boxes — ${report.pipeline.summary.totalBoxesAlreadyOrdered} already on order — ${report.pipeline.summary.totalBoxesToOrder} boxes still to order`
-                                    : `Pharmacy needs to reorder ${report.pipeline.summary.totalBoxesToOrder} boxes to maintain hospital-wide supply levels`
-                                  }
-                                </p>
-                              </div>
-                              <div className="bg-white rounded-lg border border-bdr-default overflow-hidden">
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-sm">
-                                    <thead className="bg-off-white">
-                                      <tr>
-                                        <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Medication</th>
-                                        <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Supplies To</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Pharmacy Stock</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Derived Min</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Order Qty</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Urgency</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-bdr-default">
-                                      {report.pipeline.orders.map((o, i) => (
-                                        <tr key={`${o.medicationId}-${o.locationId}-${i}`} className="hover:bg-off-white">
-                                          <td className="px-4 py-3 font-medium text-near-black">{o.medicationName}</td>
-                                          <td className="px-4 py-3 text-txt-secondary text-sm">
-                                            {o.supplyDestinations && o.supplyDestinations.length > 0
-                                              ? o.supplyDestinations.map(d => d.locationName).join(', ')
-                                              : '-'}
-                                          </td>
-                                          <td className="px-4 py-3 text-center">
-                                            <span className="px-2 py-1 rounded text-xs font-semibold bg-status-critical-bg text-status-critical-text">
-                                              {o.currentSimulatedBoxes} boxes
-                                            </span>
-                                          </td>
-                                          <td className="px-4 py-3 text-center text-txt-secondary">{o.pharmacyDerivedMin || o.suggestedMinLevel} boxes</td>
-                                          <td className="px-4 py-3 text-center font-bold text-danger-ghost-text">{o.orderQuantityBoxes} {o.orderQuantityBoxes === 1 ? 'box' : 'boxes'}</td>
-                                          <td className="px-4 py-3 text-center">
-                                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                                              o.urgency === 'urgent' ? 'bg-status-critical-bg text-status-critical-text' : 'bg-status-ordered-bg text-status-ordered-text'
-                                            }`}>
-                                              {o.urgency === 'urgent' ? 'URGENT' : 'ROUTINE'}
-                                            </span>
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Pipeline Step 1: Adjust Min Levels */}
-                          {report.pipeline && (intelligenceTab === 'all' || intelligenceTab === 'adjustments') && report.pipeline.adjustments.length > 0 && (
-                            <div className="mb-6">
-                              <div className="bg-status-low-bg border-l-4 border-status-low-text p-4 mb-4">
-                                <div className="flex items-center justify-between flex-wrap gap-2">
-                                  <div>
-                                    <h3 className="text-lg font-bold text-status-low-text flex items-center">
-                                      <span className="bg-status-low-text text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-2">1</span>
-                                      Adjust Minimum Levels — {report.pipeline.adjustments.length} Change{report.pipeline.adjustments.length !== 1 ? 's' : ''} Recommended
-                                    </h3>
-                                    <p className="text-sm text-status-low-text mt-1">
-                                      Align minimum stock levels with actual usage patterns
-                                    </p>
-                                  </div>
-                                  {report.pipeline.adjustments.length > 1 && (
-                                    <button
-                                      onClick={async () => {
-                                        if (!confirm(`Apply all ${report.pipeline.adjustments.length} min level adjustments?`)) return;
-                                        for (const adj of report.pipeline.adjustments) {
-                                          await applyMinLevelRecommendation(
-                                            adj.medicationId, adj.locationId, adj.suggestedMinLevel,
-                                            adj.medicationName, adj.currentMinLevel, adj.locationName
-                                          );
-                                        }
-                                      }}
-                                      className="px-4 py-1.5 bg-status-low-text text-white text-sm font-medium rounded hover:opacity-90 transition-colors whitespace-nowrap"
-                                    >
-                                      Apply All ({report.pipeline.adjustments.length})
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="bg-white rounded-lg border border-bdr-default overflow-hidden">
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-sm">
-                                    <thead className="bg-off-white">
-                                      <tr>
-                                        <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Medication</th>
-                                        <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Location</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Current Min</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Suggested Min</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Change</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Action</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-bdr-default">
-                                      {report.pipeline.adjustments.map((adj, i) => (
-                                        <tr key={`${adj.medicationId}-${adj.locationId}-${i}`} className="hover:bg-off-white">
-                                          <td className="px-4 py-3 font-medium text-near-black">{adj.medicationName}</td>
-                                          <td className="px-4 py-3 text-txt-secondary">{adj.locationName}</td>
-                                          <td className="px-4 py-3 text-center text-txt-secondary">{adj.currentMinLevel} boxes</td>
-                                          <td className="px-4 py-3 text-center font-semibold text-near-black">{adj.suggestedMinLevel} boxes</td>
-                                          <td className="px-4 py-3 text-center">
-                                            <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                                              adj.direction === 'decrease' ? 'bg-status-ok-bg text-status-ok-text' : 'bg-status-expired-bg text-status-expired-text'
-                                            }`}>
-                                              {adj.direction === 'decrease' ? '-' : '+'}{adj.changeBoxes} {adj.changeBoxes === 1 ? 'box' : 'boxes'}
-                                            </span>
-                                          </td>
-                                          <td className="px-4 py-3 text-center">
-                                            <button
-                                              onClick={() => applyMinLevelRecommendation(
-                                                adj.medicationId, adj.locationId, adj.suggestedMinLevel,
-                                                adj.medicationName, adj.currentMinLevel, adj.locationName
-                                              )}
-                                              className="px-3 py-1 bg-brand-mid text-white text-xs font-medium rounded hover:bg-brand-dark transition-colors"
-                                            >
-                                              Apply
-                                            </button>
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Pipeline: No actions needed */}
-                          {report.pipeline && report.pipeline.summary.totalTransfers === 0 && report.pipeline.summary.totalOrderLines === 0 && report.pipeline.summary.totalAdjustments === 0 && (
-                            <div className="bg-status-ok-bg border border-status-ok-text rounded-lg p-8 text-center mb-6">
-                              <div className="text-4xl mb-3">&#10003;</div>
-                              <h3 className="text-lg font-bold text-status-ok-text mb-2">Stock Levels Are Optimal</h3>
-                              <p className="text-sm text-status-ok-text">No redistribution, orders, or min level adjustments are needed at this time.</p>
-                            </div>
-                          )}
-
-                          {/* All Tracked Medications Summary Table */}
-                          {allMeds.length > 0 && report.maturityLevel !== 'not_configured' && report.maturityLevel !== 'collecting' && (
-                            <div className="mb-6">
-                              <div className="bg-status-ordered-bg border-l-4 border-status-ordered-text p-4 mb-4">
-                                <h3 className="text-lg font-bold text-status-ordered-text mb-1">All Tracked Medications</h3>
-                                <p className="text-sm text-status-ordered-text">Full overview of stock levels, usage, and recommendations</p>
-                              </div>
-                              <div className="bg-white rounded-lg border border-bdr-default overflow-hidden">
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-sm">
-                                    <thead className="bg-off-white">
-                                      <tr>
-                                        <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Medication</th>
-                                        <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Location</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Stock</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Min Level</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Avg/Wk</th>
-                                        <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Trend</th>
-                                        <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Status</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-bdr-default">
-                                      {allMeds.map(med => {
-                                        const stableKey = `${med.medicationId}|${med.locationId}`;
-                                        return (
-                                          <tr key={stableKey} className="hover:bg-off-white">
-                                            <td className="px-4 py-3 font-medium text-near-black">{med.medicationName}</td>
-                                            <td className="px-4 py-3 text-txt-tertiary text-xs">{med.locationName}</td>
-                                            <td className="px-4 py-3 text-center">
-                                              <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                                                med.currentBoxes < med.currentMinLevel ? 'bg-status-critical-bg text-status-critical-text' : 'bg-status-ok-bg text-status-ok-text'
-                                              }`}>
-                                                {med.currentBoxes}
-                                              </span>
-                                            </td>
-                                            <td className="px-4 py-3 text-center text-txt-secondary">{med.currentMinLevel}</td>
-                                            <td className="px-4 py-3 text-center text-status-ordered-text font-semibold">{med.avgWeeklyUsage}</td>
-                                            <td className="px-4 py-3 text-center">
-                                              <span className={`text-xs ${
-                                                med.usageTrend === 'increasing' ? 'text-danger-ghost-text' :
-                                                med.usageTrend === 'decreasing' ? 'text-brand-mid' :
-                                                med.usageTrend === 'stable' ? 'text-txt-tertiary' :
-                                                'text-txt-disabled'
-                                              }`}>
-                                                {med.usageTrend === 'increasing' ? 'Rising' :
-                                                 med.usageTrend === 'decreasing' ? 'Falling' :
-                                                 med.usageTrend === 'stable' ? 'Stable' : '-'}
-                                              </span>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                              <span className={`text-xs px-2 py-1 rounded ${
-                                                med.recommendation.action === 'order' ? 'bg-danger-ghost-bg text-danger-ghost-text' :
-                                                med.recommendation.action === 'increase' ? 'bg-urgent-ghost-bg text-urgent-ghost-text' :
-                                                med.recommendation.action === 'decrease' ? 'bg-status-low-bg text-status-low-text' :
-                                                'bg-off-white text-txt-secondary'
-                                              }`}>
-                                                {med.recommendation.action === 'order' ? 'Needs Order' :
-                                                 med.recommendation.action === 'increase' ? 'High Demand' :
-                                                 med.recommendation.action === 'decrease' ? 'Low Usage' :
-                                                 med.recommendation.action === 'collecting_data' ? 'Collecting' :
-                                                 'Optimal'}
-                                              </span>
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Report Footer */}
-                          <div className="bg-white rounded-lg border border-bdr-default p-4 text-xs text-txt-tertiary">
-                            <div className="flex justify-between flex-wrap gap-2">
-                              <div><strong>Generated:</strong> {new Date().toLocaleString('en-GB')}</div>
-                              <div><strong>By:</strong> {getCurrentUserInfo()?.fullName || auth.currentUser}</div>
-                              <div><strong>Data Points:</strong> {report.weeksOfData} week{report.weeksOfData !== 1 ? 's' : ''}</div>
-                            </div>
-                          </div>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Footer Buttons */}
-                    <div className="px-6 py-4 border-t border-bdr-default flex-shrink-0 bg-off-white">
-                      <div className="flex gap-2">
-                        {report && !isLoading && (
-                          <button onClick={() => {
-                            const reportText = `MEDICANA WINCHESTER - STOCK INTELLIGENCE REPORT\n\nGenerated: ${new Date().toLocaleString('en-GB')}\nBy: ${getCurrentUserInfo()?.fullName || auth.currentUser}\nData: ${report.weeksOfData} weeks | Maturity: ${maturity.label}\n\n` +
-                              `SUMMARY:\n- Tracked: ${allMeds.length}\n- Attention: ${criticalMeds.length}\n- Can Be Optimised: ${optimizeMeds.length}\n\n` +
-                              (criticalMeds.length > 0 ? `REQUIRING ATTENTION:\n${criticalMeds.map(m => {
-                                const lines = [`  ${m.medicationName} @ ${m.locationName}:`];
-                                if (m.recommendation.action === 'order') {
-                                  const targetMin = m.recommendation.secondaryAction ? m.recommendation.secondaryAction.suggestedMinLevel : m.currentMinLevel;
-                                  lines.push(`    Order ${Math.max(1, targetMin - m.currentBoxes)} boxes to reach minimum level of ${targetMin}`);
-                                } else if (m.recommendation.action === 'increase') {
-                                  lines.push(`    Increase minimum level from ${m.currentMinLevel} to ${m.recommendation.suggestedMinLevel} boxes`);
-                                }
-                                if (m.recommendation.secondaryAction) {
-                                  lines.push(`    Also: Reduce minimum level from ${m.currentMinLevel} to ${m.recommendation.secondaryAction.suggestedMinLevel} boxes to optimise held stock`);
-                                }
-                                if (m.projectedStockoutDate) {
-                                  lines.push(`    Projected stock-out: ${new Date(m.projectedStockoutDate).toLocaleDateString('en-GB')}`);
-                                }
-                                lines.push(`    ${m.recommendation.reason}`);
-                                return lines.join('\n');
-                              }).join('\n')}\n\n` : '') +
-                              (optimizeMeds.length > 0 ? `OPTIMISATION:\n${optimizeMeds.map(m =>
-                                `  ${m.medicationName} @ ${m.locationName}: Reduce minimum level from ${m.currentMinLevel} to ${m.recommendation.suggestedMinLevel} boxes (${m.recommendation.excessBoxes} fewer boxes held)\n    ${m.recommendation.reason}`
-                              ).join('\n')}` : '');
-                            navigator.clipboard.writeText(reportText).then(() => alert('Report copied to clipboard!'));
-                          }} className="flex-1 bg-near-black text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium">
-                            Copy Summary
-                          </button>
-                        )}
-                        <button onClick={() => setModals(prev => ({ ...prev, showIntelligenceReport: false }))} className="px-6 bg-btn-secondary text-txt-secondary py-2 rounded-lg hover:bg-bdr-hover transition-colors font-medium">
-                          Close
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
+            {/* Intelligence Report Modal removed — functionality consolidated into pipeline wizard */}
 
             {/* New Medication Order Modal */}
             {modals.showNewMedicationOrder && (() => {
@@ -10026,6 +9399,30 @@ Medicana Stock Management System`;
                     </button>
                     <button
                       onClick={() => setSkipConfirm({ show: false, password: '', error: '', targetStep: null, loading: false })}
+                      className="flex-1 bg-btn-secondary text-txt-secondary py-2 rounded-lg hover:bg-bdr-hover transition-colors font-medium"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Pipeline Confirmation Modal */}
+            {pipelineConfirm.show && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50" onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setPipelineConfirm({ show: false, title: '', message: '', onConfirm: null }); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
+                <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-md w-full p-4 sm:p-6 m-2 sm:m-4">
+                  <h2 className="text-lg sm:text-xl font-bold text-near-black mb-2">{pipelineConfirm.title}</h2>
+                  <p className="text-sm text-txt-secondary mb-4">{pipelineConfirm.message}</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { if (pipelineConfirm.onConfirm) pipelineConfirm.onConfirm(); }}
+                      className="flex-1 bg-brand-mid text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium"
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      onClick={() => setPipelineConfirm({ show: false, title: '', message: '', onConfirm: null })}
                       className="flex-1 bg-btn-secondary text-txt-secondary py-2 rounded-lg hover:bg-bdr-hover transition-colors font-medium"
                     >
                       Cancel

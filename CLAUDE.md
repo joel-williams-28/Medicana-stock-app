@@ -139,6 +139,39 @@ Pharmaceutical inventory management system built with React (CDN), Netlify Funct
 | active | bool | NO | TRUE |
 | location | text | YES | |
 
+### pipeline_snapshots
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| id | int4 | NO | nextval('pipeline_snapshots_id_seq') |
+| snapshot | jsonb | NO | |
+| generated_at | timestamptz | NO | now() |
+| generated_by | int4 | YES | |
+
+### Key Constraints
+- `intelligence_config.key` — PRIMARY KEY (used in ON CONFLICT upserts)
+- `inventory (location_id, batch_id)` — composite PRIMARY KEY
+- `location_min_levels (medication_id, location_id)` — composite PRIMARY KEY
+- `batches (medication_id, batch_code)` — UNIQUE constraint
+- `users.username` — UNIQUE constraint
+
+### Performance Indexes
+- `idx_batches_medication_id` — `batches(medication_id)`
+- `idx_orders_status_medication` — `orders(status, medication_id)`
+- `idx_draft_orders_status_medication` — `draft_orders(status, medication_id)`
+- `idx_transactions_med_loc_date` — `transactions(medication_id, location_id, occurred_at DESC)`
+
+### Foreign Keys
+- `activity_log.user_id` → `users.id`
+- `batches.medication_id` → `medications.id`
+- `inventory.location_id` → `locations.id`
+- `inventory.batch_id` → `batches.id`
+- `orders.medication_id` → `medications.id`
+- `orders.user_id` → `users.id`
+- `transactions.user_id` → `users.id`
+- `transactions.location_id` → `locations.id`
+- `transactions.batch_id` → `batches.id`
+- `transactions.medication_id` → `medications.id`
+
 ## Key Type Notes
 - `medications.id` is **TEXT** (not integer)
 - `locations.id` is **TEXT** (not integer)
@@ -151,8 +184,15 @@ Pharmaceutical inventory management system built with React (CDN), Netlify Funct
 - `transactions.id` is **int8** (bigserial/bigint)
 
 ## Architecture
-- **Frontend:** React via CDN (single index.html ~7700 lines), Babel, TailwindCSS
+- **Frontend:** React via CDN (single index.html ~9400 lines), Babel, TailwindCSS
 - **Backend:** Netlify Functions (serverless), Node.js
-- **Database:** Neon PostgreSQL with SSL
-- **API Layer:** api.js (frontend abstraction)
+- **Database:** Neon PostgreSQL with SSL (30s statement timeout)
+- **API Layer:** api.js (frontend abstraction, 60s polling interval, skips when tab hidden)
 - **Shared helpers:** `_db.js` (pool + response helpers), `_activity-log.js`, `_intelligence-core.js`
+
+## Deliverable Requirements
+
+When completing any request that involves backend changes, always include at the end of your response:
+
+1. **Backend code changes** — The full implementation of any new or modified Netlify Functions, shared helpers, or other backend files.
+2. **Database migration SQL** — The `CREATE TABLE`, `ALTER TABLE`, `CREATE INDEX`, or other DDL statements needed to create or update the relevant tables/schema on the Neon PostgreSQL server. Present these as ready-to-run SQL so they can be executed directly against the production database.

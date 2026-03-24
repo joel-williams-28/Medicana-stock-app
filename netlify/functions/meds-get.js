@@ -99,9 +99,6 @@ exports.handler = async () => {
       med.numberOfBoxes = med.batches.reduce((sum, b) => sum + (b.numberOfBoxes || 0), 0);
     }
 
-    // Ensure quantity_fulfilled column exists (idempotent migration)
-    await db.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS quantity_fulfilled INTEGER DEFAULT 0').catch(() => {});
-
     // Query pending orders
     const ordersResult = await db.query(`
       SELECT
@@ -221,28 +218,13 @@ exports.handler = async () => {
     }));
 
     // Query pending draft order count for Purchase Orders tab badge
-    let draftOrderCount = 0;
-    try {
-      const draftCountResult = await db.query(
-        `SELECT COUNT(*)::int AS count FROM draft_orders WHERE status = 'pending_review'`
-      );
-      draftOrderCount = draftCountResult.rows[0]?.count || 0;
-    } catch (e) {
-      // Table may not exist yet
-      draftOrderCount = 0;
-    }
-
-    return db.json(200, { medications, transactions, locations, orders, draftOrderCount });
-  } catch (e) {
-    console.error('=== meds-get error ===');
-    console.error('Error:', e.message);
-    if (e.code) console.error('Code:', e.code);
-    if (e.detail) console.error('Detail:', e.detail);
-
-    const isDevelopment = process.env.NODE_ENV !== 'production';
-    return db.fail(500,
-      isDevelopment ? `Server error: ${e.message}` : 'Server error. Please try again or contact support.',
-      isDevelopment && e.code ? { errorCode: e.code } : {}
+    const draftCountResult = await db.query(
+      `SELECT COUNT(*)::int AS count FROM draft_orders WHERE status = 'pending_review'`
     );
+    const draftOrderCount = draftCountResult.rows[0]?.count || 0;
+
+    return db.ok({ medications, transactions, locations, orders, draftOrderCount });
+  } catch (e) {
+    return db.serverError('meds-get', e);
   }
 };

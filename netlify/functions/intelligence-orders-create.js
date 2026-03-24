@@ -16,18 +16,17 @@ exports.handler = async (event) => {
       return db.fail(400, 'pharmacistEmail is required');
     }
 
-    // Get items_per_box for quantity conversion
+    // Get items_per_box for quantity conversion (filtered to relevant medications only)
+    const medIds = orders.map(o => o.medicationId).filter(Boolean);
     const ipbResult = await db.query(`
-      SELECT medication_id, items_per_box
+      SELECT DISTINCT ON (medication_id) medication_id, items_per_box
       FROM batches
-      WHERE items_per_box IS NOT NULL AND items_per_box > 0
+      WHERE medication_id = ANY($1) AND items_per_box IS NOT NULL AND items_per_box > 0
       ORDER BY medication_id
-    `);
+    `, [medIds]);
     const itemsPerBoxByMed = {};
     for (const row of ipbResult.rows) {
-      if (!itemsPerBoxByMed[row.medication_id]) {
-        itemsPerBoxByMed[row.medication_id] = row.items_per_box;
-      }
+      itemsPerBoxByMed[row.medication_id] = row.items_per_box;
     }
 
     const createdOrders = [];
@@ -57,7 +56,7 @@ exports.handler = async (event) => {
 
       const order = orderResult.rows[0];
 
-      // Log activity
+      // Log activity with full pipeline context
       await logActivity({
         userId: userId || null,
         actionType: 'order_placed',
@@ -69,7 +68,10 @@ exports.handler = async (event) => {
           quantityBoxes,
           quantityInItems,
           urgency: urgency || 'routine',
-          source: 'intelligence_pipeline'
+          source: 'intelligence_pipeline',
+          currentSimulatedBoxes: item.currentSimulatedBoxes != null ? Number(item.currentSimulatedBoxes) : null,
+          pharmacyDerivedMin: item.pharmacyDerivedMin != null ? Number(item.pharmacyDerivedMin) : null,
+          supplyDestinations: item.supplyDestinations || []
         }
       });
 
@@ -91,7 +93,7 @@ exports.handler = async (event) => {
       return db.fail(400, 'No valid orders to create');
     }
 
-    // Log bulk activity
+    // Log bulk activity with medication details
     await logActivity({
       userId: userId || null,
       actionType: 'bulk_order_approved',
@@ -100,7 +102,12 @@ exports.handler = async (event) => {
         count: createdOrders.length,
         totalBoxes: createdOrders.reduce((sum, o) => sum + o.quantityBoxes, 0),
         pharmacistEmail,
-        source: 'intelligence_pipeline'
+        source: 'intelligence_pipeline',
+        medications: createdOrders.map(o => ({
+          name: o.medicationName,
+          boxes: o.quantityBoxes,
+          urgency: o.urgency
+        }))
       }
     });
 
