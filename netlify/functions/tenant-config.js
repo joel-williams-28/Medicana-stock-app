@@ -8,7 +8,11 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'GET') return db.methodNotAllowed();
 
   const tenant = resolveTenant(event);
-  if (!tenant) return db.tenantNotFound();
+
+  // Bare domain (clinitrack.co.uk) — no tenant, return landing flag
+  if (!tenant) {
+    return db.ok({ landing: true });
+  }
 
   return db.ok({
     tenant: {

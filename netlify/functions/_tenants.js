@@ -34,6 +34,11 @@ const DEFAULT_TENANT = 'medicana';
 function resolveTenant(event) {
   const host = (event.headers.host || event.headers.Host || '').toLowerCase();
 
+  // Bare domain (clinitrack.co.uk or www.clinitrack.co.uk) → no tenant (landing page)
+  if (host === 'clinitrack.co.uk' || host === 'www.clinitrack.co.uk') {
+    return null;
+  }
+
   // Match <slug>.clinitrack.co.uk
   const match = host.match(/^([a-z0-9-]+)\.clinitrack\.co\.uk$/);
   if (match) {
