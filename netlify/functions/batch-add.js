@@ -17,6 +17,9 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const {
       medicationId,
       existingBatchId,
@@ -50,7 +53,7 @@ exports.handler = async (event) => {
       return db.fail(400, 'Total quantity must be greater than zero');
     }
 
-    await db.query('BEGIN');
+    await tdb.query('BEGIN');
 
     try {
       let batchIdResult;
@@ -59,13 +62,13 @@ exports.handler = async (event) => {
       // Batch integrity safeguard -- do not remove.
       if (existingBatchId) {
         // Use existing batch - fetch its canonical metadata
-        const existingBatch = await db.query(
+        const existingBatch = await tdb.query(
           `SELECT id, medication_id FROM batches WHERE id = $1`,
           [existingBatchId]
         );
 
         if (existingBatch.rows.length === 0) {
-          await db.query('ROLLBACK');
+          await tdb.query('ROLLBACK');
           return db.fail(400, 'Existing batch not found');
         }
 
@@ -77,7 +80,7 @@ exports.handler = async (event) => {
 
         if (batchCodeToUse && batchCodeToUse.trim()) {
           // Check if batch_code already exists
-          const existingBatch = await db.query(
+          const existingBatch = await tdb.query(
             `SELECT id, medication_id FROM batches WHERE batch_code = $1`,
             [batchCodeToUse.trim()]
           );
@@ -93,11 +96,11 @@ exports.handler = async (event) => {
           } else {
             // Create new batch
             if (!medicationId) {
-              await db.query('ROLLBACK');
+              await tdb.query('ROLLBACK');
               return db.fail(400, 'medicationId is required when creating a new batch');
             }
 
-            const insertBatch = await db.query(
+            const insertBatch = await tdb.query(
               `INSERT INTO batches (medication_id, batch_code, expiry_date, brand, items_per_box, serial)
                VALUES ($1, $2, $3, $4, $5, $6)
                RETURNING id, medication_id`,
@@ -109,11 +112,11 @@ exports.handler = async (event) => {
         } else {
           // No batch number provided - create a generic batch with unique timestamp
           if (!medicationId) {
-            await db.query('ROLLBACK');
+            await tdb.query('ROLLBACK');
             return db.fail(400, 'medicationId is required when creating a new batch');
           }
 
-          const insertBatch = await db.query(
+          const insertBatch = await tdb.query(
             `INSERT INTO batches (medication_id, batch_code, expiry_date, brand, items_per_box, serial)
              VALUES ($1, $2, $3, $4, $5, $6)
              RETURNING id, medication_id`,
@@ -125,14 +128,14 @@ exports.handler = async (event) => {
       }
 
       // Upsert inventory row (atomic — avoids race condition)
-      await db.query(
+      await tdb.query(
         `INSERT INTO inventory (location_id, batch_id, on_hand) VALUES ($1, $2, $3)
          ON CONFLICT (location_id, batch_id) DO UPDATE SET on_hand = inventory.on_hand + $3`,
         [locationId, batchIdResult, finalTotal]
       );
 
       // Insert transaction record for delivery
-      await db.query(
+      await tdb.query(
         `INSERT INTO transactions
          (batch_id, location_id, medication_id, user_id, delta, type, reason)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -140,7 +143,7 @@ exports.handler = async (event) => {
          transactionNote || `Delivery received - ${finalTotal} units`]
       );
 
-      await db.query('COMMIT');
+      await tdb.query('COMMIT');
 
       const batchCodeUsed = batchNumber || batchCode || null;
       const expiryDate = buildExpiryDate(expiryMonth, expiryYear);
@@ -161,12 +164,13 @@ exports.handler = async (event) => {
           itemsPerBox: itemsPerBox || null,
           reason: transactionNote || `Delivery received - ${finalTotal} units`,
           isNewBatch: !existingBatchId
-        }
+        },
+        queryFn: tdb.query
       });
 
       return db.ok();
     } catch (err) {
-      await db.query('ROLLBACK');
+      await tdb.query('ROLLBACK');
       throw err;
     }
   } catch (e) {

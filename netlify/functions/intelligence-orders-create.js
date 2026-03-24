@@ -7,6 +7,9 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const { orders, userId, pharmacistEmail } = db.parseBody(event);
 
     if (!orders || !Array.isArray(orders) || orders.length === 0) {
@@ -18,7 +21,7 @@ exports.handler = async (event) => {
 
     // Get items_per_box for quantity conversion (filtered to relevant medications only)
     const medIds = orders.map(o => o.medicationId).filter(Boolean);
-    const ipbResult = await db.query(`
+    const ipbResult = await tdb.query(`
       SELECT DISTINCT ON (medication_id) medication_id, items_per_box
       FROM batches
       WHERE medication_id = ANY($1) AND items_per_box IS NOT NULL AND items_per_box > 0
@@ -39,7 +42,7 @@ exports.handler = async (event) => {
       const quantityInItems = quantityBoxes * itemsPerBox;
 
       // Create real order in the orders table
-      const orderResult = await db.query(
+      const orderResult = await tdb.query(
         `INSERT INTO orders
          (medication_id, user_id, quantity, urgency, notes, pharmacist_email, status, ordered_at)
          VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW())
@@ -72,7 +75,8 @@ exports.handler = async (event) => {
           currentSimulatedBoxes: item.currentSimulatedBoxes != null ? Number(item.currentSimulatedBoxes) : null,
           pharmacyDerivedMin: item.pharmacyDerivedMin != null ? Number(item.pharmacyDerivedMin) : null,
           supplyDestinations: item.supplyDestinations || []
-        }
+        },
+        queryFn: tdb.query
       });
 
       createdOrders.push({
@@ -108,7 +112,8 @@ exports.handler = async (event) => {
           boxes: o.quantityBoxes,
           urgency: o.urgency
         }))
-      }
+      },
+      queryFn: tdb.query
     });
 
     // Generate consolidated email content

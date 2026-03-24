@@ -3,9 +3,10 @@
 // Import this in any Netlify function that needs to record an audit event.
 const db = require('./_db');
 
-async function logActivity({ userId, actionType, entityType, entityId, locationId, details }) {
+async function logActivity({ userId, actionType, entityType, entityId, locationId, details, queryFn }) {
   try {
-    await db.query(
+    const query = queryFn || db.query;
+    await query(
       `INSERT INTO activity_log (user_id, action_type, entity_type, entity_id, location_id, details)
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-    <title>Medicana - Medication Stock Management</title>
+    <title>CliniTrack - Medication Stock Management</title>
     <link rel="icon" type="image/png" href="assets/branding/favicon.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -86,6 +86,8 @@
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <!-- GS1 DataMatrix Parser: Extracts product code, batch, expiry from 2D medicine barcodes -->
     <script src="./utils/parseGs1Data.js?v=6"></script>
+    <!-- API layer must load before React app -->
+    <script src="api.js"></script>
 
   <script type="text/babel">
       const { useState, useEffect, useRef } = React;
@@ -608,6 +610,34 @@
         }
       };
       const [auth, setAuth] = useState({ currentUser: '', password: '', isLoggedIn: false, error: '' });
+
+      // Tenant branding config — fetched from backend on mount
+      const [tenantConfig, setTenantConfig] = useState(null);
+      useEffect(() => {
+        window.api.fetchTenantConfig()
+          .then(cfg => {
+            setTenantConfig(cfg);
+            document.title = cfg.name + ' - Medication Stock Management';
+            // Apply brand colors as CSS custom properties for dynamic theming
+            const root = document.documentElement;
+            if (cfg.brandColors) {
+              root.style.setProperty('--brand-light', cfg.brandColors.light);
+              root.style.setProperty('--brand-mid', cfg.brandColors.mid);
+              root.style.setProperty('--brand-dark', cfg.brandColors.dark);
+              root.style.setProperty('--brand-deepest', cfg.brandColors.deepest);
+              root.style.setProperty('--brand-pale', cfg.brandColors.pale);
+            }
+          })
+          .catch(err => console.warn('Failed to load tenant config:', err.message));
+      }, []);
+
+      // Helper to get tenant-specific values with fallbacks
+      const tc = {
+        logo: (key) => tenantConfig?.logos?.[key] || `assets/branding/${key === 'login' ? 'logo-login' : key === 'header' ? 'logo-header' : 'hospital-logo'}.png`,
+        email: () => tenantConfig?.pharmacistEmail || 'Aasit.Badiani@Medicana.co.uk',
+        name: () => tenantConfig?.name || 'Medicana Winchester'
+      };
+
       const [ui, setUi] = useState({
         searchTerm: '',
         selectedMed: null,
@@ -702,7 +732,7 @@
         quantity: '',
         urgency: 'routine',
         notes: '',
-        pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk'
+        pharmacistEmail: tc.email()
       });
 
       // Sub-tab state for Intelligent Stock tab
@@ -716,7 +746,7 @@
         error: null,
         summary: null,
         approvalResult: null,
-        pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk'
+        pharmacistEmail: tc.email()
       });
       const [draftSelections, setDraftSelections] = useState(new Set());
       const [draftAdjustments, setDraftAdjustments] = useState({});
@@ -772,7 +802,7 @@
         bagSize: '',
         urgency: 'routine',
         notes: '',
-        pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk',
+        pharmacistEmail: tc.email(),
         error: ''
       });
         const [activityLogFilters, setActivityLogFilters] = useState(ACTIVITY_FILTERS.map(f => f.id));
@@ -844,7 +874,7 @@
           orderQuantity: '',
           orderUrgency: 'routine',
           orderNotes: '',
-          orderPharmacistEmail: 'Aasit.Badiani@Medicana.co.uk',
+          orderPharmacistEmail: tc.email(),
           // Manual mode fields (for Add New Stock button without scanner)
           manualMode: false, // true when opened via Add New Stock button (not scan)
           stockMode: 'new', // 'new' | 'existing' — for the Add Stock tab toggle
@@ -1822,7 +1852,7 @@
           orderQuantity: '',
           orderUrgency: 'routine',
           orderNotes: '',
-          orderPharmacistEmail: 'Aasit.Badiani@Medicana.co.uk',
+          orderPharmacistEmail: tc.email(),
           manualMode: false,
           stockMode: 'new',
           searchTerm: ''
@@ -2680,7 +2710,7 @@
             setChangePasswordForm(prev => ({ ...prev, error: 'User session not found. Please log in again.' }));
             return;
           }
-          const emailSubject = 'Password Change Confirmation - Medicana Stock Management';
+          const emailSubject = `Password Change Confirmation - ${tc.name()} Stock Management`;
           const emailBody = `Dear ${userInfo.firstName},
 
 This is an automated email to confirm that the password for your account has been successfully changed.
@@ -2689,7 +2719,7 @@ If you made this change, no further action is required.
 If you did not request this change, please reset your password immediately or contact our support team for assistance.
 
 Kind regards,
-Medicana Stock Management System`;
+${tc.name()} Stock Management System`;
           
           const mailtoLink = `mailto:${userInfo.email}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
           window.location.href = mailtoLink;
@@ -2911,7 +2941,7 @@ Medicana Stock Management System`;
             orderQuantity: '',
             orderUrgency: 'routine',
             orderNotes: '',
-            orderPharmacistEmail: 'Aasit.Badiani@Medicana.co.uk'
+            orderPharmacistEmail: tc.email()
           });
           setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100);
         } catch (err) {
@@ -4475,7 +4505,7 @@ Medicana Stock Management System`;
             await navigator.clipboard.writeText(fullText);
 
             // Close the modal
-            setOrderForm({ med: null, quantity: '', urgency: 'routine', notes: '', pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk' });
+            setOrderForm({ med: null, quantity: '', urgency: 'routine', notes: '', pharmacistEmail: tc.email() });
 
             // Refresh data to show updated order status
             const data = await window.api.fetchAllData();
@@ -4524,7 +4554,7 @@ Medicana Stock Management System`;
 
             // Close the modal after a short delay
             setTimeout(async () => {
-              setOrderForm({ med: null, quantity: '', urgency: 'routine', notes: '', pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk' });
+              setOrderForm({ med: null, quantity: '', urgency: 'routine', notes: '', pharmacistEmail: tc.email() });
 
               // Refresh data to show updated order status
               try {
@@ -4550,7 +4580,7 @@ Medicana Stock Management System`;
             return `${med.name}\n   Current Stock: ${currentBoxes} ${currentBoxes === 1 ? 'box' : 'boxes'}\n   Minimum Level: ${med.minLevelBoxes} ${med.minLevelBoxes === 1 ? 'box' : 'boxes'}\n   Suggested Order: ${suggestedBoxes} ${suggestedBoxes === 1 ? 'box' : 'boxes'}`;
           }).join('\n\n');
         const subject = `LOW STOCK ALERT - ${lowStockMedications.length} Medication${lowStockMedications.length !== 1 ? 's' : ''} Below Minimum Level`;
-          const body = `Dear Ash,\n\nPlease find below the low stock alert report for Medicana Winchester.\n\nMEDICATION LOW STOCK REPORT\n\nGenerated: ${reportDate}\nReported by: ${auth.currentUser}\n\nSUMMARY:\n${lowStockMedications.length} medication${lowStockMedications.length !== 1 ? 's are' : ' is'} currently below minimum stock level and require${lowStockMedications.length === 1 ? 's' : ''} immediate attention.\n\nMEDICATIONS REQUIRING ORDER:\n\n${itemsList}\n\nACTIONS REQUIRED:\nPlease review and process orders for the above medications at your earliest convenience.`;
+          const body = `Dear Ash,\n\nPlease find below the low stock alert report for ${tc.name()}.\n\nMEDICATION LOW STOCK REPORT\n\nGenerated: ${reportDate}\nReported by: ${auth.currentUser}\n\nSUMMARY:\n${lowStockMedications.length} medication${lowStockMedications.length !== 1 ? 's are' : ' is'} currently below minimum stock level and require${lowStockMedications.length === 1 ? 's' : ''} immediate attention.\n\nMEDICATIONS REQUIRING ORDER:\n\n${itemsList}\n\nACTIONS REQUIRED:\nPlease review and process orders for the above medications at your earliest convenience.`;
         return { subject, body };
       };
 
@@ -4566,7 +4596,7 @@ Medicana Stock Management System`;
         }
         
         const subject = `NEW MEDICATION ORDER REQUEST - ${medicationName}`;
-        const body = `Dear Ash,\n\nPlease find below a new medication order request for Medicana Winchester.\n\nNEW MEDICATION ORDER REQUEST\n\nGenerated: ${orderDate}\nRequested by: ${getCurrentUserInfo()?.fullName || auth.currentUser}\n\nMEDICATION DETAILS:\n\nMedication: ${medicationName}\nType: ${newMedicationOrderForm.type}\nStrength: ${newMedicationOrderForm.strength}\nQuantity Requested: ${quantityText}\nUrgency: ${newMedicationOrderForm.urgency.toUpperCase()}${newMedicationOrderForm.notes ? `\nAdditional Notes: ${newMedicationOrderForm.notes}` : ''}\n\nACTION REQUIRED:\nPlease review and process this new medication order at your earliest convenience. This medication is not currently in our stock system and needs to be added to our inventory.\n\nThank you for your attention to this matter.`;
+        const body = `Dear Ash,\n\nPlease find below a new medication order request for ${tc.name()}.\n\nNEW MEDICATION ORDER REQUEST\n\nGenerated: ${orderDate}\nRequested by: ${getCurrentUserInfo()?.fullName || auth.currentUser}\n\nMEDICATION DETAILS:\n\nMedication: ${medicationName}\nType: ${newMedicationOrderForm.type}\nStrength: ${newMedicationOrderForm.strength}\nQuantity Requested: ${quantityText}\nUrgency: ${newMedicationOrderForm.urgency.toUpperCase()}${newMedicationOrderForm.notes ? `\nAdditional Notes: ${newMedicationOrderForm.notes}` : ''}\n\nACTION REQUIRED:\nPlease review and process this new medication order at your earliest convenience. This medication is not currently in our stock system and needs to be added to our inventory.\n\nThank you for your attention to this matter.`;
         
         return { subject, body };
       };
@@ -4608,7 +4638,7 @@ Medicana Stock Management System`;
         const { subject, body } = generateNewMedicationEmailContent();
         const fullText = `To: ${newMedicationOrderForm.pharmacistEmail}\nSubject: ${subject}\n\n${body}`;
         navigator.clipboard.writeText(fullText).then(() => {
-          setNewMedicationOrderForm({ name: '', type: 'Tablet', strength: '', quantityNeeded: '', bagSize: '', urgency: 'routine', notes: '', pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk', error: '' });
+          setNewMedicationOrderForm({ name: '', type: 'Tablet', strength: '', quantityNeeded: '', bagSize: '', urgency: 'routine', notes: '', pharmacistEmail: tc.email(), error: '' });
           setModals(prev => ({ ...prev, showNewMedicationOrder: false }));
         }).catch(() => { alert('Failed to copy to clipboard. Please try selecting and copying the text manually.'); });
       };
@@ -4637,7 +4667,7 @@ Medicana Stock Management System`;
         const mailtoLink = `mailto:${newMedicationOrderForm.pharmacistEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
         window.location.href = mailtoLink;
         setTimeout(() => {
-          setNewMedicationOrderForm({ name: '', type: 'Tablet', strength: '', quantityNeeded: '', bagSize: '', urgency: 'routine', notes: '', pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk', error: '' });
+          setNewMedicationOrderForm({ name: '', type: 'Tablet', strength: '', quantityNeeded: '', bagSize: '', urgency: 'routine', notes: '', pharmacistEmail: tc.email(), error: '' });
           setModals(prev => ({ ...prev, showNewMedicationOrder: false }));
         }, 1000);
       };
@@ -4665,10 +4695,10 @@ Medicana Stock Management System`;
             <div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 max-w-md w-full mx-2 sm:mx-0">
               <div className="flex flex-col items-center justify-center mb-4 sm:mb-6">
                 <div className="mb-3 sm:mb-4">
-                  <img src="assets/branding/logo-login.png" alt="Company Logo" className="h-16 sm:h-20 w-auto mx-auto" />
+                  <img src={tc.logo('login')} alt="Company Logo" className="h-16 sm:h-20 w-auto mx-auto" />
                 </div>
                 <div className="mb-2 mt-4 sm:mt-6">
-                  <img src="assets/branding/hospital-logo.png" alt="Hospital Logo" className="h-10 sm:h-12 w-auto mx-auto" />
+                  <img src={tc.logo('hospital')} alt="Hospital Logo" className="h-10 sm:h-12 w-auto mx-auto" />
                 </div>
               </div>
                 {!storageAvailable && (
@@ -4696,7 +4726,7 @@ Medicana Stock Management System`;
             <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-3 sm:py-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-0 relative z-10">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-0">
                 <div className="mr-0 sm:mr-4">
-                  <img src="assets/branding/logo-header.png" alt="Company Logo" className="h-10 sm:h-12 w-auto" />
+                  <img src={tc.logo('header')} alt="Company Logo" className="h-10 sm:h-12 w-auto" />
                 </div>
                 <div className="border-l-0 sm:border-l border-t sm:border-t-0 border-gray-500 pl-0 sm:pl-4 pt-3 sm:pt-0">
                   <p className="text-xs sm:text-sm font-medium text-white">Medication Stock Management</p>
@@ -7271,7 +7301,7 @@ Medicana Stock Management System`;
                           </button>
                           <button
                             type="button"
-                            onClick={() => setNewMedicationOrderForm({ name: '', type: 'Tablet', strength: '', quantityNeeded: '', bagSize: '', urgency: 'routine', notes: '', pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk', error: '' })}
+                            onClick={() => setNewMedicationOrderForm({ name: '', type: 'Tablet', strength: '', quantityNeeded: '', bagSize: '', urgency: 'routine', notes: '', pharmacistEmail: tc.email(), error: '' })}
                             className="px-6 bg-btn-secondary text-txt-secondary py-3 rounded-lg hover:bg-bdr-hover transition-colors font-medium"
                           >
                             Clear Form
@@ -9237,7 +9267,7 @@ Medicana Stock Management System`;
                     <div className="flex gap-2">
                       <button onClick={handleOpenOutlook} className="flex-1 bg-brand-mid text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium">Open in Outlook</button>
                       <button onClick={handleCopyToClipboard} className="flex-1 bg-near-black text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium">Copy to Clipboard</button>
-                      <button onClick={() => setOrderForm({ med: null, quantity: '', urgency: 'routine', notes: '', pharmacistEmail: 'Aasit.Badiani@Medicana.co.uk' })} className="px-6 bg-btn-secondary text-txt-secondary py-2 rounded-lg hover:bg-bdr-hover transition-colors font-medium">Cancel</button>
+                      <button onClick={() => setOrderForm({ med: null, quantity: '', urgency: 'routine', notes: '', pharmacistEmail: tc.email() })} className="px-6 bg-btn-secondary text-txt-secondary py-2 rounded-lg hover:bg-bdr-hover transition-colors font-medium">Cancel</button>
                     </div>
                   </div>
                 </div>
@@ -9600,6 +9630,5 @@ Medicana Stock Management System`;
       const root = ReactDOM.createRoot(document.getElementById('root'));
       root.render(<MedicationStockApp />);
   </script>
-  <script src="api.js"></script>
 </body>
 </html>

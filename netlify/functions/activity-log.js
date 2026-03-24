@@ -16,6 +16,9 @@ exports.handler = async (event) => {
 
 async function handleGet(event) {
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const params = event.queryStringParameters || {};
     const limit = Math.min(parseInt(params.limit) || 50, 200);
     const beforeId = parseInt(params.before_id) || null;
@@ -59,7 +62,7 @@ async function handleGet(event) {
     // Fetch limit + 1 to determine if there are more entries
     values.push(limit + 1);
 
-    const result = await db.query(`
+    const result = await tdb.query(`
       SELECT
         al.id,
         al.action_type,
@@ -103,6 +106,9 @@ async function handleGet(event) {
 
 async function handlePost(event) {
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const body = JSON.parse(event.body || '{}');
     const { userId, actionType, entityType, entityId, locationId, details } = body;
 
@@ -110,7 +116,7 @@ async function handlePost(event) {
       return db.fail(400, 'actionType is required');
     }
 
-    await logActivity({ userId, actionType, entityType, entityId, locationId, details });
+    await logActivity({ userId, actionType, entityType, entityId, locationId, details, queryFn: tdb.query });
     return db.ok({ message: 'Activity logged' });
   } catch (err) {
     return db.serverError('activity-log-post', err);

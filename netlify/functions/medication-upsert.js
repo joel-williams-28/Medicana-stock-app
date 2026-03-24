@@ -5,8 +5,8 @@ const db = require('./_db');
 const { logActivity } = require('./_activity-log');
 
 // Generates next sequential ID for medications
-async function getNextMedicationId() {
-  const result = await db.query(
+async function getNextMedicationId(queryFn) {
+  const result = await queryFn(
     "SELECT COALESCE(MAX(id::integer), 0) + 1 AS next_id FROM medications WHERE id ~ '^[0-9]+$'"
   );
   return String(result.rows[0].next_id);
@@ -16,6 +16,9 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const {
       name,
       strength,
@@ -40,7 +43,7 @@ exports.handler = async (event) => {
 
     // Strategy 1: Find or create by barcode
     if (barcode && barcode.trim()) {
-      const barcodeResult = await db.query(
+      const barcodeResult = await tdb.query(
         'SELECT id FROM medications WHERE barcode = $1',
         [barcode.trim()]
       );
@@ -48,11 +51,11 @@ exports.handler = async (event) => {
       if (barcodeResult.rows.length > 0) {
         medicationId = barcodeResult.rows[0].id;
         if (minProvided) {
-          await db.query('UPDATE medications SET min_level_boxes = $1 WHERE id = $2', [minBoxes, medicationId]);
+          await tdb.query('UPDATE medications SET min_level_boxes = $1 WHERE id = $2', [minBoxes, medicationId]);
         }
       } else {
-        medicationId = await getNextMedicationId();
-        await db.query(
+        medicationId = await getNextMedicationId(tdb.query);
+        await tdb.query(
           `INSERT INTO medications
            (id, name, strength, form, barcode, min_level_boxes, standard_items_per_box, fefo, is_active)
            VALUES ($1, $2, $3, $4, $5, $6, $7, true, true)`,
@@ -65,7 +68,7 @@ exports.handler = async (event) => {
       const strengthValue = strength && strength !== 'N/A' ? strength : null;
       const formValue = form || 'stock';
 
-      const slugResult = await db.query(
+      const slugResult = await tdb.query(
         `SELECT id FROM medications
          WHERE name = $1
            AND (strength = $2 OR (strength IS NULL AND $2 IS NULL))
@@ -77,11 +80,11 @@ exports.handler = async (event) => {
       if (slugResult.rows.length > 0) {
         medicationId = slugResult.rows[0].id;
         if (minProvided) {
-          await db.query('UPDATE medications SET min_level_boxes = $1 WHERE id = $2', [minBoxes, medicationId]);
+          await tdb.query('UPDATE medications SET min_level_boxes = $1 WHERE id = $2', [minBoxes, medicationId]);
         }
       } else {
-        medicationId = await getNextMedicationId();
-        await db.query(
+        medicationId = await getNextMedicationId(tdb.query);
+        await tdb.query(
           `INSERT INTO medications
            (id, name, strength, form, barcode, min_level_boxes, standard_items_per_box, fefo, is_active)
            VALUES ($1, $2, $3, $4, $5, $6, $7, true, true)`,
@@ -104,7 +107,8 @@ exports.handler = async (event) => {
           barcode: barcode || null,
           minLevelBoxes: minBoxes,
           standardItemsPerBox: standardItemsPerBox || null
-        }
+        },
+        queryFn: tdb.query
       });
     }
 

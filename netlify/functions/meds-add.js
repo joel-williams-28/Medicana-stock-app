@@ -7,6 +7,9 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const body = JSON.parse(event.body || '{}');
     const {
       id,
@@ -29,7 +32,7 @@ exports.handler = async (event) => {
 
     // Check if medication already exists by barcode
     if (barcode && barcode.trim()) {
-      const check = await db.query(
+      const check = await tdb.query(
         'SELECT id FROM medications WHERE barcode = $1 LIMIT 1',
         [barcode.trim()]
       );
@@ -38,14 +41,15 @@ exports.handler = async (event) => {
         const medicationId = check.rows[0].id;
 
         // Update min_level_boxes for existing medication
-        await db.query('UPDATE medications SET min_level_boxes = $1 WHERE id = $2', [minBoxes, medicationId]);
+        await tdb.query('UPDATE medications SET min_level_boxes = $1 WHERE id = $2', [minBoxes, medicationId]);
 
         await logActivity({
           userId: null,
           actionType: 'med_updated',
           entityType: 'medication',
           entityId: medicationId,
-          details: { minLevelBoxes: minBoxes, reused: true, barcode: barcode.trim() }
+          details: { minLevelBoxes: minBoxes, reused: true, barcode: barcode.trim() },
+          queryFn: tdb.query
         });
 
         return db.ok({ reused: true, medicationId });
@@ -53,7 +57,7 @@ exports.handler = async (event) => {
     }
 
     // No matching barcode - upsert medication
-    await db.query(
+    await tdb.query(
       `INSERT INTO medications
         (id, name, strength, form, barcode, min_level_boxes, standard_items_per_box, fefo)
        VALUES ($1, $2, $3, $4, $5, $6, $7, true)
@@ -73,7 +77,8 @@ exports.handler = async (event) => {
       actionType: 'med_upserted',
       entityType: 'medication',
       entityId: id,
-      details: { name, strength, form: type, barcode, minLevelBoxes: minBoxes, standardItemsPerBox }
+      details: { name, strength, form: type, barcode, minLevelBoxes: minBoxes, standardItemsPerBox },
+      queryFn: tdb.query
     });
 
     return db.ok({ medicationId: id });

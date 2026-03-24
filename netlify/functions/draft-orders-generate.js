@@ -15,22 +15,25 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const { userId, locationId } = db.parseBody(event);
 
     // Get maturity info
-    const { weeksOfData, maturityLevel } = await getMaturityInfo();
+    const { weeksOfData, maturityLevel } = await getMaturityInfo(tdb.query);
 
     // Get stock levels
-    const stockRows = await getStockLevels(locationId || null);
+    const stockRows = await getStockLevels(locationId || null, tdb.query);
 
     // Get usage data (if mature enough)
     const weeksToAnalyze = Math.min(Math.max(weeksOfData, 1), 12);
     const usageByMedLoc = (maturityLevel !== 'not_configured' && maturityLevel !== 'collecting')
-      ? await getWeeklyUsageData(locationId || null, weeksToAnalyze)
+      ? await getWeeklyUsageData(locationId || null, weeksToAnalyze, tdb.query)
       : {};
 
     // Get items per box
-    const itemsPerBoxByMed = await getItemsPerBoxMap();
+    const itemsPerBoxByMed = await getItemsPerBoxMap(tdb.query);
 
     // Aggregate stock rows by medication_id (sum boxes across all locations)
     // This prevents duplicate drafts when a medication exists at multiple locations
@@ -57,7 +60,7 @@ exports.handler = async (event) => {
     }
 
     // Get existing pending drafts and pending orders to avoid duplicates (single query)
-    const existingResult = await db.query(`
+    const existingResult = await tdb.query(`
       SELECT DISTINCT medication_id, 'draft' AS source FROM draft_orders WHERE status = 'pending_review'
       UNION
       SELECT DISTINCT medication_id, 'order' AS source FROM orders WHERE status = 'pending'
@@ -150,7 +153,7 @@ exports.handler = async (event) => {
       };
 
       // Insert with location_id as NULL (org-wide order)
-      const insertResult = await db.query(
+      const insertResult = await tdb.query(
         `INSERT INTO draft_orders
          (medication_id, location_id, current_stock_boxes, min_level_boxes,
           suggested_quantity, urgency, intelligence_snapshot, source,
@@ -199,7 +202,8 @@ exports.handler = async (event) => {
           locationId: locationId || 'all',
           skippedAlreadyDrafted: skippedDrafted,
           skippedAlreadyOrdered: skippedOrdered
-        }
+        },
+        queryFn: tdb.query
       });
     }
 

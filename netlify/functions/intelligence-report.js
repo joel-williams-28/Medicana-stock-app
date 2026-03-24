@@ -15,13 +15,13 @@ const {
 
 // Reconcile cached adjustments against current DB min levels.
 // Filters out adjustments that have already been applied (or manually changed).
-async function reconcileAdjustments(adjustments) {
+async function reconcileAdjustments(adjustments, queryFn) {
   if (!adjustments || adjustments.length === 0) return adjustments;
 
   const medIds = adjustments.map(a => a.medicationId);
   const locIds = adjustments.map(a => a.locationId);
 
-  const result = await db.query(`
+  const result = await queryFn(`
     SELECT t.m_id AS medication_id, t.l_id AS location_id,
            COALESCE(lml.min_level_boxes, m.min_level_boxes, 0) AS current_min_level
     FROM UNNEST($1::text[], $2::text[]) AS t(m_id, l_id)
@@ -47,6 +47,9 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'GET') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const params = event.queryStringParameters || {};
     const locationId = params.location_id || null;
     const forceRegenerate = params.force === 'true';
@@ -56,7 +59,7 @@ exports.handler = async (event) => {
     // Check generation lock status
     let lockedUntil = null;
     try {
-      const lockResult = await db.query("SELECT value FROM intelligence_config WHERE key = 'pipeline_lock_until'");
+      const lockResult = await tdb.query("SELECT value FROM intelligence_config WHERE key = 'pipeline_lock_until'");
       if (lockResult.rows.length > 0) lockedUntil = lockResult.rows[0].value;
     } catch (_) {}
     const isLocked = lockedUntil && new Date(lockedUntil) > new Date();
@@ -64,7 +67,7 @@ exports.handler = async (event) => {
     // Check for pipeline completion summary
     let completionSummary = null;
     try {
-      const csResult = await db.query("SELECT value FROM intelligence_config WHERE key = 'pipeline_completion_summary'");
+      const csResult = await tdb.query("SELECT value FROM intelligence_config WHERE key = 'pipeline_completion_summary'");
       if (csResult.rows.length > 0 && csResult.rows[0].value) {
         completionSummary = JSON.parse(csResult.rows[0].value);
       }
@@ -72,13 +75,13 @@ exports.handler = async (event) => {
     // Only return completion summary while pipeline is locked — once lock expires, clear it
     if (!isLocked && completionSummary) {
       completionSummary = null;
-      db.query("DELETE FROM intelligence_config WHERE key = 'pipeline_completion_summary'").catch(() => {});
+      tdb.query("DELETE FROM intelligence_config WHERE key = 'pipeline_completion_summary'").catch(() => {});
     }
 
     // For org-wide requests (no locationId), check for cached pipeline snapshot
     if (!locationId && !forceRegenerate) {
       try {
-        const cached = await db.query(
+        const cached = await tdb.query(
           `SELECT snapshot, generated_at FROM pipeline_snapshots
            WHERE generated_at > NOW() - INTERVAL '7 days'
            ORDER BY generated_at DESC LIMIT 1`
@@ -90,7 +93,7 @@ exports.handler = async (event) => {
           // Reconcile adjustments against current DB state — filter out
           // adjustments that have already been applied since the snapshot was generated
           if (snapshot.pipeline && snapshot.pipeline.adjustments) {
-            snapshot.pipeline.adjustments = await reconcileAdjustments(snapshot.pipeline.adjustments);
+            snapshot.pipeline.adjustments = await reconcileAdjustments(snapshot.pipeline.adjustments, tdb.query);
             if (snapshot.pipeline.summary) {
               snapshot.pipeline.summary.totalAdjustments = snapshot.pipeline.adjustments.length;
             }
@@ -110,10 +113,10 @@ exports.handler = async (event) => {
     }
 
     // 1. Get maturity info
-    const { goLiveDate, weeksOfData, maturityLevel } = await getMaturityInfo();
+    const { goLiveDate, weeksOfData, maturityLevel } = await getMaturityInfo(tdb.query);
 
     // 2. Get current stock levels
-    const stockRows = await getStockLevels(locationId);
+    const stockRows = await getStockLevels(locationId, tdb.query);
 
     // 3. If not configured or collecting, return early with basic data
     if (maturityLevel === 'not_configured' || maturityLevel === 'collecting') {
@@ -154,10 +157,10 @@ exports.handler = async (event) => {
 
     // 4. Get weekly usage data
     const weeksToAnalyze = Math.min(weeksOfData, 12);
-    const usageByMedLoc = await getWeeklyUsageData(locationId, weeksToAnalyze);
+    const usageByMedLoc = await getWeeklyUsageData(locationId, weeksToAnalyze, tdb.query);
 
     // 5. Get items_per_box mapping
-    const itemsPerBoxByMed = await getItemsPerBoxMap();
+    const itemsPerBoxByMed = await getItemsPerBoxMap(tdb.query);
 
     // 6. Generate recommendations for each medication+location
     const medications = stockRows.map(row => {
@@ -194,7 +197,7 @@ exports.handler = async (event) => {
 
       // Fetch pending orders BEFORE running the pipeline so it can subtract already-ordered quantities
       let pendingOrderMap = {};
-      const pendingResult = await db.query(
+      const pendingResult = await tdb.query(
         `SELECT o.medication_id, COUNT(*)::int AS order_count, SUM(o.quantity)::int AS total_quantity_items
          FROM orders o WHERE o.status = 'pending'
          GROUP BY o.medication_id`
@@ -211,7 +214,7 @@ exports.handler = async (event) => {
       // Run optimisation pipeline (redistribute → order → adjust)
       // When useCurrentMinLevels=true (mid-workflow regeneration after Step 1),
       // use actual DB min levels instead of re-computed suggested levels
-      const batchInventory = await getBatchInventory();
+      const batchInventory = await getBatchInventory(tdb.query);
       pipeline = runOptimisationPipeline(medications, batchInventory, pendingOrderMap, useCurrentMinLevels);
 
       // Save pipeline snapshot to database for cross-device access
@@ -221,24 +224,24 @@ exports.handler = async (event) => {
       lastPipelineRun = new Date().toISOString();
       if (saveSnapshot) {
         try {
-          await db.query(
+          await tdb.query(
             `INSERT INTO pipeline_snapshots (snapshot, generated_at)
              VALUES ($1, $2)`,
             [JSON.stringify(snapshotData), lastPipelineRun]
           );
           // Also update intelligence_config for backward compatibility
-          await db.query(
+          await tdb.query(
             `INSERT INTO intelligence_config (key, value, updated_at)
              VALUES ('last_pipeline_run', $1, NOW())
              ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
             [lastPipelineRun]
           );
           // Clear completion summary on fresh generation
-          await db.query("DELETE FROM intelligence_config WHERE key = 'pipeline_completion_summary'");
+          await tdb.query("DELETE FROM intelligence_config WHERE key = 'pipeline_completion_summary'");
           completionSummary = null;
           // Set 7-day generation lock
           lockedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-          await db.query(
+          await tdb.query(
             `INSERT INTO intelligence_config (key, value, updated_at)
              VALUES ('pipeline_lock_until', $1, NOW())
              ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
@@ -256,14 +259,15 @@ exports.handler = async (event) => {
               pharmacySupplies: pipeline?.summary?.totalPharmacySupplies || 0,
               orders: pipeline?.summary?.totalOrders || 0,
               forced: forceRegenerate
-            }
+            },
+            queryFn: tdb.query
           });
         } catch (_) { /* non-critical */ }
       }
     } else {
       // For location-specific reports, fetch last pipeline run timestamp
       try {
-        const lpResult = await db.query("SELECT value FROM intelligence_config WHERE key = 'last_pipeline_run'");
+        const lpResult = await tdb.query("SELECT value FROM intelligence_config WHERE key = 'last_pipeline_run'");
         if (lpResult.rows.length > 0) lastPipelineRun = lpResult.rows[0].value;
       } catch (_) {}
     }

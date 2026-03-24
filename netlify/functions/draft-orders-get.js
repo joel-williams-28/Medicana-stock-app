@@ -6,10 +6,13 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'GET') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const params = event.queryStringParameters || {};
     const status = params.status || 'pending_review';
 
-    const result = await db.query(`
+    const result = await tdb.query(`
       SELECT
         d.id,
         d.medication_id,
