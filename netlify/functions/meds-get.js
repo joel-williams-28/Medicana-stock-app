@@ -3,11 +3,14 @@
 // Uses inventory_full view as the primary source
 const db = require('./_db');
 
-exports.handler = async () => {
+exports.handler = async (event) => {
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     // Query medication/stock snapshot from inventory_full view
     // Include medications with on_hand = 0 if they have pending orders
-    const medsResult = await db.query(`
+    const medsResult = await tdb.query(`
       SELECT DISTINCT ON (medication_id, location_id, batch_id) *
       FROM inventory_full
       WHERE on_hand > 0 OR medication_id IN (
@@ -17,7 +20,7 @@ exports.handler = async () => {
     `);
 
     // Get medication details (fefo, min_level_boxes, is_active) from medications table
-    const medicationDetailsResult = await db.query(`
+    const medicationDetailsResult = await tdb.query(`
       SELECT id, name, strength, fefo, min_level_boxes, is_active
       FROM medications
       WHERE is_active = true
@@ -100,7 +103,7 @@ exports.handler = async () => {
     }
 
     // Query pending orders
-    const ordersResult = await db.query(`
+    const ordersResult = await tdb.query(`
       SELECT
         o.id,
         o.medication_id,
@@ -146,7 +149,7 @@ exports.handler = async () => {
     );
 
     // Query recent transactions for Activity tab
-    const txResult = await db.query(`
+    const txResult = await tdb.query(`
       SELECT
         t.id,
         t.medication_id,
@@ -202,7 +205,7 @@ exports.handler = async () => {
     });
 
     // Query all locations for UI dropdowns
-    const locationsResult = await db.query(`
+    const locationsResult = await tdb.query(`
       SELECT id, display_name, group_name
       FROM locations
       ORDER BY
@@ -218,7 +221,7 @@ exports.handler = async () => {
     }));
 
     // Query pending draft order count for Purchase Orders tab badge
-    const draftCountResult = await db.query(
+    const draftCountResult = await tdb.query(
       `SELECT COUNT(*)::int AS count FROM draft_orders WHERE status = 'pending_review'`
     );
     const draftOrderCount = draftCountResult.rows[0]?.count || 0;

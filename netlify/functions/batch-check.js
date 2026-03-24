@@ -7,6 +7,9 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const { batchCode } = JSON.parse(event.body || '{}');
 
     if (!batchCode || !batchCode.trim()) {
@@ -14,7 +17,7 @@ exports.handler = async (event) => {
     }
 
     // Batch integrity safeguard -- do not remove.
-    const result = await db.query(
+    const result = await tdb.query(
       `SELECT
          b.id,
          b.medication_id,

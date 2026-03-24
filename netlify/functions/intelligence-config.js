@@ -5,11 +5,14 @@ const { logActivity } = require('./_activity-log');
 
 exports.handler = async (event) => {
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     if (event.httpMethod === 'GET') {
       // Return all config values
       let config = {};
       try {
-        const result = await db.query('SELECT key, value FROM intelligence_config');
+        const result = await tdb.query('SELECT key, value FROM intelligence_config');
         for (const row of result.rows) {
           config[row.key] = row.value;
         }
@@ -36,11 +39,11 @@ exports.handler = async (event) => {
       // Fetch current value for audit trail
       let oldValue = null;
       try {
-        const current = await db.query('SELECT value FROM intelligence_config WHERE key = $1', [key]);
+        const current = await tdb.query('SELECT value FROM intelligence_config WHERE key = $1', [key]);
         if (current.rows.length > 0) oldValue = current.rows[0].value;
       } catch (_) { /* table may not exist yet */ }
 
-      await db.query(
+      await tdb.query(
         `INSERT INTO intelligence_config (key, value, updated_at)
          VALUES ($1, $2, NOW())
          ON CONFLICT (key)
@@ -53,7 +56,8 @@ exports.handler = async (event) => {
         actionType: 'config_changed',
         entityType: 'config',
         entityId: key,
-        details: { key, oldValue, newValue: value || '' }
+        details: { key, oldValue, newValue: value || '' },
+        queryFn: tdb.query
       });
 
       return db.ok({ key, value });

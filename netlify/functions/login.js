@@ -8,13 +8,16 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const { username, password } = JSON.parse(event.body || '{}');
 
     if (!username || !password) {
       return db.fail(400, 'Username and password are required.');
     }
 
-    const result = await db.query(
+    const result = await tdb.query(
       'SELECT id, username, password_hash, email, first_name, full_name, role, active, location FROM users WHERE username = $1',
       [username]
     );
@@ -39,7 +42,8 @@ exports.handler = async (event) => {
       actionType: 'login',
       entityType: 'user',
       entityId: user.id,
-      details: { username: user.username, fullName: user.full_name }
+      details: { username: user.username, fullName: user.full_name },
+      queryFn: tdb.query
     });
 
     return db.ok({

@@ -7,13 +7,16 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const { orderId, userId, medicationName, quantityDelivered } = JSON.parse(event.body || '{}');
 
     if (!orderId) {
       return db.fail(400, 'Missing required field: orderId');
     }
 
-    const checkResult = await db.query(
+    const checkResult = await tdb.query(
       'SELECT id, status, quantity, COALESCE(quantity_fulfilled, 0) AS quantity_fulfilled FROM orders WHERE id = $1',
       [orderId]
     );
@@ -33,7 +36,7 @@ exports.handler = async (event) => {
       const newFulfilled = existing.quantity_fulfilled + quantityDelivered;
       const isComplete = newFulfilled >= existing.quantity;
 
-      const result = await db.query(
+      const result = await tdb.query(
         `UPDATE orders
          SET quantity_fulfilled = $2,
              status = CASE WHEN $2 >= quantity THEN 'fulfilled' ELSE status END,
@@ -58,7 +61,8 @@ exports.handler = async (event) => {
           quantityOrdered: existing.quantity,
           autoFulfilled: true,
           partial: !isComplete
-        }
+        },
+        queryFn: tdb.query
       });
 
       return db.ok({
@@ -73,7 +77,7 @@ exports.handler = async (event) => {
       });
     } else {
       // Full fulfillment mode (immediate)
-      const result = await db.query(
+      const result = await tdb.query(
         `UPDATE orders
          SET status = 'fulfilled', fulfilled_at = NOW(), quantity_fulfilled = quantity
          WHERE id = $1
@@ -91,7 +95,8 @@ exports.handler = async (event) => {
         details: {
           medicationName: medicationName || null,
           orderId: order.id
-        }
+        },
+        queryFn: tdb.query
       });
 
       return db.ok({

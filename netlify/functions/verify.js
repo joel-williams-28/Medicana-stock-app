@@ -7,13 +7,16 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const { username, password } = JSON.parse(event.body || '{}');
 
     if (!username || !password) {
       return db.fail(400, 'Username and password are required.');
     }
 
-    const result = await db.query(
+    const result = await tdb.query(
       'SELECT password_hash, active FROM users WHERE username = $1',
       [username]
     );

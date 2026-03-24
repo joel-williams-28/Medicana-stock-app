@@ -10,11 +10,14 @@ const bcrypt = require('bcryptjs');
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
+  const tdb = db.forTenant(event);
+  if (!tdb) return db.tenantNotFound();
+
   const body = db.parseBody(event);
   const clean = body.clean === true;
 
   try {
-    const result = await seed(clean);
+    const result = await seed(clean, tdb);
     return db.ok(result);
   } catch (err) {
     console.error('seed-demo-data error:', err);
@@ -158,9 +161,9 @@ function weekdayTs(weekStart, dayOffset) {
 // ---------------------------------------------------------------------------
 // Main seed function — wrapped in a DB transaction for safety
 // ---------------------------------------------------------------------------
-async function seed(clean) {
+async function seed(clean, tdb) {
   const stats = {};
-  const client = await db.pool.connect();
+  const client = await tdb.pool.connect();
 
   try {
     await client.query('BEGIN');

@@ -8,6 +8,9 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const { medicationId, locationId, minLevel, userId, medicationName, oldMinLevel, locationName } = JSON.parse(event.body || '{}');
 
     if (!medicationId) {
@@ -18,7 +21,7 @@ exports.handler = async (event) => {
 
     if (locationId) {
       // Per-location min level: upsert into location_min_levels
-      await db.query(
+      await tdb.query(
         `INSERT INTO location_min_levels (medication_id, location_id, min_level_boxes, updated_by, updated_at)
          VALUES ($1, $2, $3, $4, NOW())
          ON CONFLICT (medication_id, location_id)
@@ -27,7 +30,7 @@ exports.handler = async (event) => {
       );
     } else {
       // Global fallback: update medications table (existing behaviour)
-      const result = await db.query(
+      const result = await tdb.query(
         'UPDATE medications SET min_level_boxes = $1 WHERE id = $2 RETURNING id',
         [minBoxes, medicationId]
       );
@@ -49,7 +52,8 @@ exports.handler = async (event) => {
         newMinLevel: minBoxes,
         locationId: locationId || null,
         locationName: locationName || null
-      }
+      },
+      queryFn: tdb.query
     });
 
     return db.ok();

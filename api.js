@@ -100,8 +100,17 @@ window.api = (function () {
     return out;
   }
 
+  async function fetchTenantConfig() {
+    const res = await fetch('/.netlify/functions/tenant-config');
+    const out = await res.json();
+    if (!res.ok || !out.success) throw new Error(out.message || 'Failed to fetch tenant config');
+    window.tenantConfig = out.tenant;
+    return out.tenant;
+  }
+
   return {
     fetchAllData,
+    fetchTenantConfig,
     adjustStock:          (payload)  => postJSON('/.netlify/functions/stock-adjust', payload),
     addMedication:        (payload)  => postJSON('/.netlify/functions/meds-add', payload),
     addBatch:             (payload)  => postJSON('/.netlify/functions/batch-add', payload),

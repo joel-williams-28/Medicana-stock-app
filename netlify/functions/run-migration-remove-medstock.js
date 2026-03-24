@@ -8,16 +8,19 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const results = [];
 
     // Step 1: Move inventory from med-stock-l1 to cupboard-1
-    const inv = await db.query(
+    const inv = await tdb.query(
       `UPDATE inventory SET location_id = 'cupboard-1' WHERE location_id = 'med-stock-l1'`
     );
     results.push(`Inventory rows moved: ${inv.rowCount}`);
 
     // Step 2: Move location_min_levels (skip duplicates)
-    const lml = await db.query(`
+    const lml = await tdb.query(`
       UPDATE location_min_levels
       SET location_id = 'cupboard-1'
       WHERE location_id = 'med-stock-l1'
@@ -30,35 +33,35 @@ exports.handler = async (event) => {
     results.push(`Min level rows moved: ${lml.rowCount}`);
 
     // Delete any remaining duplicates
-    const lmlDel = await db.query(
+    const lmlDel = await tdb.query(
       `DELETE FROM location_min_levels WHERE location_id = 'med-stock-l1'`
     );
     results.push(`Min level duplicate rows deleted: ${lmlDel.rowCount}`);
 
     // Step 3: Update transactions
-    const tx = await db.query(
+    const tx = await tdb.query(
       `UPDATE transactions SET location_id = 'cupboard-1' WHERE location_id = 'med-stock-l1'`
     );
     results.push(`Transaction rows updated: ${tx.rowCount}`);
 
     // Step 4: Update activity_log
-    const al = await db.query(
+    const al = await tdb.query(
       `UPDATE activity_log SET location_id = 'cupboard-1' WHERE location_id = 'med-stock-l1'`
     );
     results.push(`Activity log rows updated: ${al.rowCount}`);
 
     // Step 5: Update users
-    const usr = await db.query(
+    const usr = await tdb.query(
       `UPDATE users SET location = 'cupboard-1' WHERE location = 'med-stock-l1'`
     );
     results.push(`User rows updated: ${usr.rowCount}`);
 
     // Step 6: Delete the location
-    const del = await db.query(`DELETE FROM locations WHERE id = 'med-stock-l1'`);
+    const del = await tdb.query(`DELETE FROM locations WHERE id = 'med-stock-l1'`);
     results.push(`Location deleted: ${del.rowCount}`);
 
     // Verify
-    const verify = await db.query(
+    const verify = await tdb.query(
       `SELECT id, display_name, group_name FROM locations ORDER BY group_name, display_name`
     );
 

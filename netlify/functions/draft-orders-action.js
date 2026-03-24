@@ -7,6 +7,9 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const {
       action,       // 'approve' | 'reject' | 'approve-all'
       draftIds,     // array of draft IDs (ignored for approve-all)
@@ -29,7 +32,7 @@ exports.handler = async (event) => {
         return db.fail(400, 'Missing required field: draftIds');
       }
 
-      const result = await db.query(
+      const result = await tdb.query(
         `WITH rejected AS (
            UPDATE draft_orders
            SET status = 'rejected', rejected_at = NOW(), approved_by = $1
@@ -50,7 +53,8 @@ exports.handler = async (event) => {
           actionType: 'draft_rejected',
           entityType: 'draft_order',
           entityId: row.id,
-          details: { draftId: row.id, medicationId: row.medication_id, medicationName: row.medication_name }
+          details: { draftId: row.id, medicationId: row.medication_id, medicationName: row.medication_name },
+          queryFn: tdb.query
         });
       }
 
@@ -68,7 +72,7 @@ exports.handler = async (event) => {
     // Get drafts to approve
     let draftsToApprove;
     if (action === 'approve-all') {
-      const result = await db.query(
+      const result = await tdb.query(
         `SELECT d.*,
            CASE WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
                 ELSE m.name || ' ' || m.strength END AS medication_name,
@@ -83,7 +87,7 @@ exports.handler = async (event) => {
       if (!draftIds || draftIds.length === 0) {
         return db.fail(400, 'Missing required field: draftIds');
       }
-      const result = await db.query(
+      const result = await tdb.query(
         `SELECT d.*,
            CASE WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
                 ELSE m.name || ' ' || m.strength END AS medication_name,
@@ -103,7 +107,7 @@ exports.handler = async (event) => {
 
     // Get items_per_box for quantity conversion (filtered to relevant medications only)
     const medIds = draftsToApprove.map(d => d.medication_id);
-    const ipbResult = await db.query(`
+    const ipbResult = await tdb.query(`
       SELECT DISTINCT ON (medication_id) medication_id, items_per_box
       FROM batches
       WHERE medication_id = ANY($1) AND items_per_box IS NOT NULL AND items_per_box > 0
@@ -118,7 +122,7 @@ exports.handler = async (event) => {
     const adj = adjustments || {};
 
     // Wrap all approvals in a transaction for atomicity
-    await db.query('BEGIN');
+    await tdb.query('BEGIN');
     try {
       for (const draft of draftsToApprove) {
         // Determine final quantity (boxes)
@@ -130,7 +134,7 @@ exports.handler = async (event) => {
         const quantityInItems = finalBoxes * itemsPerBox;
 
         // Create real order
-        const orderResult = await db.query(
+        const orderResult = await tdb.query(
           `INSERT INTO orders
            (medication_id, user_id, quantity, urgency, notes, pharmacist_email, status, ordered_at)
            VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW())
@@ -148,7 +152,7 @@ exports.handler = async (event) => {
         const order = orderResult.rows[0];
 
         // Update draft
-        await db.query(
+        await tdb.query(
           `UPDATE draft_orders
            SET status = 'approved', approved_quantity = $1, approved_by = $2,
                approved_at = NOW(), order_id = $3
@@ -169,7 +173,8 @@ exports.handler = async (event) => {
             approvedQuantity: finalBoxes,
             quantityInItems,
             orderId: order.id
-          }
+          },
+          queryFn: tdb.query
         });
 
         approvedOrders.push({
@@ -186,9 +191,9 @@ exports.handler = async (event) => {
           orderedAt: order.ordered_at
         });
       }
-      await db.query('COMMIT');
+      await tdb.query('COMMIT');
     } catch (err) {
-      await db.query('ROLLBACK');
+      await tdb.query('ROLLBACK');
       throw err;
     }
 
@@ -202,7 +207,8 @@ exports.handler = async (event) => {
           count: approvedOrders.length,
           totalBoxes: approvedOrders.reduce((sum, o) => sum + o.quantityBoxes, 0),
           pharmacistEmail: email
-        }
+        },
+        queryFn: tdb.query
       });
     }
 

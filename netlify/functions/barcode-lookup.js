@@ -6,13 +6,16 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const { barcode } = JSON.parse(event.body || '{}');
 
     if (!barcode || !barcode.trim()) {
       return db.fail(400, 'Barcode is required');
     }
 
-    const medResult = await db.query(
+    const medResult = await tdb.query(
       `SELECT id, name, strength, form, standard_items_per_box, barcode
        FROM medications
        WHERE barcode = $1`,
@@ -28,7 +31,7 @@ exports.handler = async (event) => {
       ? medication.strength
       : null;
 
-    const batchesResult = await db.query(
+    const batchesResult = await tdb.query(
       `SELECT id, batch_code, expiry_date, brand, items_per_box
        FROM batches
        WHERE medication_id = $1

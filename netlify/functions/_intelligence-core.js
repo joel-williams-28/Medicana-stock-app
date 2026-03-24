@@ -8,10 +8,11 @@ const PHARMACY_BUFFER_MULTIPLIER = 1.5;
 /**
  * Get go-live date and maturity info from intelligence_config
  */
-async function getMaturityInfo() {
+async function getMaturityInfo(queryFn) {
+  const query = queryFn || db.query;
   let goLiveDate = '';
   try {
-    const configResult = await db.query(
+    const configResult = await query(
       "SELECT value FROM intelligence_config WHERE key = 'go_live_date'"
     );
     if (configResult.rows.length > 0) {
@@ -51,7 +52,8 @@ async function getMaturityInfo() {
 /**
  * Get current stock levels and min levels per medication+location
  */
-async function getStockLevels(locationId) {
+async function getStockLevels(locationId, queryFn) {
+  const query = queryFn || db.query;
   const stockQuery = locationId
     ? `SELECT
          m.id AS medication_id,
@@ -92,7 +94,7 @@ async function getStockLevels(locationId) {
        GROUP BY m.id, m.name, m.strength, m.form, m.min_level_boxes, l.id, l.display_name, lml.min_level_boxes
        ORDER BY m.name, l.display_name`;
 
-  const result = await db.query(stockQuery, locationId ? [locationId] : []);
+  const result = await query(stockQuery, locationId ? [locationId] : []);
   return result.rows;
 }
 
@@ -101,7 +103,8 @@ async function getStockLevels(locationId) {
  * Only counts actual patient/clinical usage — excludes transfers, deliveries,
  * batch removals, and intelligence-recommended redistributions.
  */
-async function getWeeklyUsageData(locationId, weeksBack) {
+async function getWeeklyUsageData(locationId, weeksBack, queryFn) {
+  const query = queryFn || db.query;
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - (weeksBack * 7));
 
@@ -140,7 +143,7 @@ async function getWeeklyUsageData(locationId, weeksBack) {
        GROUP BY t.medication_id, t.location_id, date_trunc('week', t.occurred_at)
        ORDER BY t.medication_id, t.location_id, week_start`;
 
-  const result = await db.query(txQuery, locationId ? [locationId, startDate] : [startDate]);
+  const result = await query(txQuery, locationId ? [locationId, startDate] : [startDate]);
 
   // Build lookup: { "medId|locId" => [{ weekStart, totalOut, totalIn }] }
   const usageByMedLoc = {};
@@ -159,8 +162,9 @@ async function getWeeklyUsageData(locationId, weeksBack) {
 /**
  * Get items_per_box for each medication (first known value)
  */
-async function getItemsPerBoxMap() {
-  const result = await db.query(`
+async function getItemsPerBoxMap(queryFn) {
+  const query = queryFn || db.query;
+  const result = await query(`
     SELECT medication_id, items_per_box
     FROM batches
     WHERE items_per_box IS NOT NULL AND items_per_box > 0
@@ -369,8 +373,9 @@ function analyzeMedication(row, weeklyUsage, itemsPerBox) {
 /**
  * Get batch-level inventory with expiry dates for FEFO redistribution
  */
-async function getBatchInventory() {
-  const result = await db.query(`
+async function getBatchInventory(queryFn) {
+  const query = queryFn || db.query;
+  const result = await query(`
     SELECT i.location_id, i.batch_id, b.medication_id, b.expiry_date,
            b.items_per_box, b.batch_code, i.on_hand,
            l.display_name AS location_name,

@@ -9,6 +9,9 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const {
       medicationId,
       userId,
@@ -31,7 +34,7 @@ exports.handler = async (event) => {
       return db.fail(400, 'Invalid urgency value. Must be: urgent, routine, or non-urgent');
     }
 
-    const result = await db.query(
+    const result = await tdb.query(
       `INSERT INTO orders
        (medication_id, user_id, quantity, urgency, notes, pharmacist_email, status, ordered_at)
        VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW())
@@ -53,7 +56,8 @@ exports.handler = async (event) => {
         urgency,
         notes: notes || null,
         pharmacistEmail
-      }
+      },
+      queryFn: tdb.query
     });
 
     return db.ok({

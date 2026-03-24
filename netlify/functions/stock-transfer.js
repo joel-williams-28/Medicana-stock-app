@@ -8,6 +8,9 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
   try {
+    const tdb = db.forTenant(event);
+    if (!tdb) return db.tenantNotFound();
+
     const body = db.parseBody(event);
     console.log('[stock-transfer] body:', JSON.stringify(body));
 
@@ -46,24 +49,24 @@ exports.handler = async (event) => {
       return db.fail(400, 'Quantity must be a positive integer');
     }
 
-    await db.query('BEGIN');
+    await tdb.query('BEGIN');
 
     try {
       // Security: Derive medication_id from batch_id
-      const batchQuery = await db.query(
+      const batchQuery = await tdb.query(
         'SELECT medication_id FROM batches WHERE id = $1',
         [batchId]
       );
 
       if (batchQuery.rows.length === 0) {
-        await db.query('ROLLBACK');
+        await tdb.query('ROLLBACK');
         return db.fail(400, 'Batch not found');
       }
 
       const medicationId = batchQuery.rows[0].medication_id;
 
       // Get location display names for clean transaction notes
-      const locationsQuery = await db.query(
+      const locationsQuery = await tdb.query(
         'SELECT id, display_name FROM locations WHERE id IN ($1, $2)',
         [sourceLocationId, targetLocationId]
       );
@@ -75,29 +78,29 @@ exports.handler = async (event) => {
       const targetLocationName = locationMap[targetLocationId] || targetLocationId;
 
       // Check source has enough stock
-      const checkSource = await db.query(
+      const checkSource = await tdb.query(
         'SELECT on_hand FROM inventory WHERE location_id = $1 AND batch_id = $2',
         [sourceLocationId, batchId]
       );
 
       if (checkSource.rows.length === 0) {
-        await db.query('ROLLBACK');
+        await tdb.query('ROLLBACK');
         return db.fail(400, 'Source location does not have this batch in inventory');
       }
 
       if (checkSource.rows[0].on_hand < quantity) {
-        await db.query('ROLLBACK');
+        await tdb.query('ROLLBACK');
         return db.fail(400, 'Not enough stock at source');
       }
 
       // Decrease stock at source
-      await db.query(
+      await tdb.query(
         'UPDATE inventory SET on_hand = on_hand - $1 WHERE location_id = $2 AND batch_id = $3',
         [quantity, sourceLocationId, batchId]
       );
 
       // Record outgoing transaction
-      await db.query(
+      await tdb.query(
         `INSERT INTO transactions
          (batch_id, location_id, medication_id, user_id, delta, type, reason)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -105,27 +108,27 @@ exports.handler = async (event) => {
       );
 
       // Ensure target inventory row exists, then increase stock
-      await db.query(
+      await tdb.query(
         `INSERT INTO inventory (location_id, batch_id, on_hand)
          VALUES ($1, $2, 0)
          ON CONFLICT (location_id, batch_id) DO NOTHING`,
         [targetLocationId, batchId]
       );
 
-      await db.query(
+      await tdb.query(
         'UPDATE inventory SET on_hand = on_hand + $1 WHERE location_id = $2 AND batch_id = $3',
         [quantity, targetLocationId, batchId]
       );
 
       // Record incoming transaction
-      await db.query(
+      await tdb.query(
         `INSERT INTO transactions
          (batch_id, location_id, medication_id, user_id, delta, type, reason)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [batchId, targetLocationId, medicationId, userId, quantity, 'in', `Transfer from ${sourceLocationName}`]
       );
 
-      await db.query('COMMIT');
+      await tdb.query('COMMIT');
 
       await logActivity({
         userId,
@@ -144,12 +147,13 @@ exports.handler = async (event) => {
           targetLocationName,
           reason: reason || '',
           ...pipelineContext
-        }
+        },
+        queryFn: tdb.query
       });
 
       return db.ok();
     } catch (err) {
-      await db.query('ROLLBACK');
+      await tdb.query('ROLLBACK');
       throw err;
     }
   } catch (e) {
