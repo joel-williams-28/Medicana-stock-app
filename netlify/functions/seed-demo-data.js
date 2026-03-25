@@ -169,12 +169,32 @@ async function seed(clean, tdb) {
     await client.query('BEGIN');
 
     // ---- Clean (optional) ----
+    // Protects pre-populated medications (added via Med Database tab) from being wiped.
+    // Only deletes demo data; user-created medications with numeric IDs are preserved.
     if (clean) {
-      for (const t of ['pipeline_snapshots', 'activity_log', 'draft_orders', 'orders', 'transactions', 'inventory', 'batches', 'location_min_levels', 'medications', 'users', 'locations', 'intelligence_config']) {
+      const demoMedIds = MEDICATIONS.map(m => m.id);
+
+      // Tables safe to fully clear (only contain demo-generated data or are re-seeded)
+      for (const t of ['pipeline_snapshots', 'activity_log', 'draft_orders', 'orders', 'transactions', 'inventory', 'batches', 'location_min_levels', 'intelligence_config']) {
         await client.query(`SAVEPOINT clean_${t}`);
         try { await client.query(`DELETE FROM ${t}`); } catch (_) { await client.query(`ROLLBACK TO SAVEPOINT clean_${t}`); }
         await client.query(`RELEASE SAVEPOINT clean_${t}`);
       }
+
+      // Medications: only delete demo medications, preserve user-created ones
+      await client.query(`SAVEPOINT clean_medications`);
+      try { await client.query(`DELETE FROM medications WHERE id = ANY($1)`, [demoMedIds]); } catch (_) { await client.query(`ROLLBACK TO SAVEPOINT clean_medications`); }
+      await client.query(`RELEASE SAVEPOINT clean_medications`);
+
+      // Users: only delete demo users, preserve admin accounts
+      await client.query(`SAVEPOINT clean_users`);
+      try { await client.query(`DELETE FROM users WHERE username NOT LIKE 'admin%'`); } catch (_) { await client.query(`ROLLBACK TO SAVEPOINT clean_users`); }
+      await client.query(`RELEASE SAVEPOINT clean_users`);
+
+      // Locations: safe to fully clear and re-seed
+      await client.query(`SAVEPOINT clean_locations`);
+      try { await client.query(`DELETE FROM locations`); } catch (_) { await client.query(`ROLLBACK TO SAVEPOINT clean_locations`); }
+      await client.query(`RELEASE SAVEPOINT clean_locations`);
     }
 
     // ---- 1. Locations (bulk upsert) ----

@@ -167,8 +167,10 @@
       );
 
     const MEDICATION_TYPES = [
-      'Ampule', 'Box Kit', 'Capsule', 'Cream', 'Fluid bag', 'Inhaler', 'Liquid', 
-      'Ointment', 'Patch', 'Pre Filled Syringe', 'Suppository', 'Tablet', 'Vial'
+      'Ampule', 'Box Kit', 'Capsule', 'Cream', 'Drops', 'Enema', 'Fluid Bag',
+      'Inhaler', 'Liquid', 'Nasal Spray', 'Nebuliser Solution', 'Ointment', 'Patch',
+      'Pessary', 'Powder', 'Pre Filled Syringe', 'Suppository', 'Suspension',
+      'Tablet', 'Topical', 'Vial'
     ];
 
     const CONTAINER_TYPES = [
@@ -870,8 +872,11 @@
         barcode: '',
         name: '',
         strength: '',
-        form: 'Tablets',
+        form: 'Tablet',
+        brand: '',
         standardItemsPerBox: '',
+        fefo: true,
+        minLevelBoxes: '',
         error: '',
         successMessage: '',
         isSubmitting: false,
@@ -2498,7 +2503,10 @@
             name: existing.name,
             strength: existing.strength || '',
             form: existing.form || '',
+            brand: existing.brand || '',
             standardItemsPerBox: existing.standard_items_per_box || '',
+            fefo: existing.fefo !== undefined ? existing.fefo : true,
+            minLevelBoxes: existing.minLevelBoxes || '',
             existingMed: existing,
             error: '',
             successMessage: '',
@@ -2510,8 +2518,11 @@
             barcode: cleanBarcode,
             name: '',
             strength: '',
-            form: 'Tablets',
+            form: 'Tablet',
+            brand: '',
             standardItemsPerBox: '',
+            fefo: true,
+            minLevelBoxes: '',
             existingMed: null,
             error: '',
             successMessage: '',
@@ -2539,9 +2550,12 @@
           const result = await window.api.medicationUpsert({
             name: medDbForm.name.trim(),
             strength: medDbForm.strength.trim() || null,
-            form: medDbForm.form || 'Tablets',
+            form: medDbForm.form || 'Tablet',
+            brand: medDbForm.brand.trim() || null,
             barcode: medDbForm.barcode.trim() || null,
             standardItemsPerBox: medDbForm.standardItemsPerBox ? Number(medDbForm.standardItemsPerBox) : null,
+            fefo: medDbForm.fefo,
+            minLevelBoxes: medDbForm.minLevelBoxes ? Number(medDbForm.minLevelBoxes) : 0,
             userId: auth.userId || null
           });
 
@@ -2550,6 +2564,7 @@
             name: medDbForm.name.trim(),
             strength: medDbForm.strength.trim(),
             form: medDbForm.form,
+            brand: medDbForm.brand.trim(),
             barcode: medDbForm.barcode.trim(),
             wasCreated: result.wasCreated
           };
@@ -2565,8 +2580,11 @@
             barcode: '',
             name: '',
             strength: '',
-            form: 'Tablets',
+            form: 'Tablet',
+            brand: '',
             standardItemsPerBox: '',
+            fefo: true,
+            minLevelBoxes: '',
             existingMed: null,
             manualEntry: false,
             error: ''
@@ -2597,8 +2615,11 @@
           barcode: '',
           name: '',
           strength: '',
-          form: 'Tablets',
+          form: 'Tablet',
+          brand: '',
           standardItemsPerBox: '',
+          fefo: true,
+          minLevelBoxes: '',
           existingMed: null,
           error: '',
           successMessage: '',
@@ -7719,8 +7740,12 @@ ${tc.name()} Stock Management System`;
                               <span className="font-medium text-near-black">{medDbForm.existingMed.strength || '—'}</span>
                               <span className="text-txt-tertiary">Form:</span>
                               <span className="font-medium text-near-black">{medDbForm.existingMed.form || '—'}</span>
+                              <span className="text-txt-tertiary">Brand:</span>
+                              <span className="font-medium text-near-black">{medDbForm.existingMed.brand || '—'}</span>
                               <span className="text-txt-tertiary">Barcode:</span>
                               <span className="font-medium text-near-black font-mono">{medDbForm.barcode}</span>
+                              <span className="text-txt-tertiary">FEFO:</span>
+                              <span className="font-medium text-near-black">{medDbForm.existingMed.fefo !== false ? 'Enabled' : 'Disabled'}</span>
                             </div>
                           </div>
                         </div>
@@ -7807,23 +7832,76 @@ ${tc.name()} Stock Management System`;
                               onChange={(e) => setMedDbForm(prev => ({ ...prev, form: e.target.value }))}
                               className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
                             >
-                              {['Tablets', 'Capsules', 'Liquid', 'Injection', 'Cream', 'Inhaler', 'Drops', 'Patches', 'Suppository', 'Other'].map(f => (
+                              {MEDICATION_TYPES.map(f => (
                                 <option key={f} value={f}>{f}</option>
                               ))}
                             </select>
                           </div>
                         </div>
 
-                        <div className="mb-6">
-                          <label className="block text-sm font-medium text-txt-secondary mb-1">Standard Items Per Box</label>
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-txt-secondary mb-1">Brand</label>
                           <input
-                            type="number"
-                            min="1"
-                            value={medDbForm.standardItemsPerBox}
-                            onChange={(e) => setMedDbForm(prev => ({ ...prev, standardItemsPerBox: e.target.value }))}
+                            type="text"
+                            value={medDbForm.brand}
+                            onChange={(e) => setMedDbForm(prev => ({ ...prev, brand: e.target.value }))}
                             className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
-                            placeholder="e.g. 28"
+                            placeholder="e.g. Panadol, Nurofen"
                           />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                          <div>
+                            <label className="block text-sm font-medium text-txt-secondary mb-1">Standard Items Per Box</label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={medDbForm.standardItemsPerBox}
+                              onChange={(e) => setMedDbForm(prev => ({ ...prev, standardItemsPerBox: e.target.value }))}
+                              className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
+                              placeholder="e.g. 28"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-txt-secondary mb-1">Min Level (Boxes)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={medDbForm.minLevelBoxes}
+                              onChange={(e) => setMedDbForm(prev => ({ ...prev, minLevelBoxes: e.target.value }))}
+                              className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
+                              placeholder="e.g. 5"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="mb-6">
+                          <label className="block text-sm font-medium text-txt-secondary mb-1">FEFO (First Expiry First Out)</label>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setMedDbForm(prev => ({ ...prev, fefo: true }))}
+                              className={`flex-1 px-3 py-2 rounded-lg border-2 text-sm font-medium transition-colors ${
+                                medDbForm.fefo
+                                  ? 'border-brand-mid bg-brand-pale text-brand-dark'
+                                  : 'border-bdr-default bg-white text-txt-tertiary hover:border-bdr-hover'
+                              }`}
+                            >
+                              Enabled
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setMedDbForm(prev => ({ ...prev, fefo: false }))}
+                              className={`flex-1 px-3 py-2 rounded-lg border-2 text-sm font-medium transition-colors ${
+                                !medDbForm.fefo
+                                  ? 'border-brand-mid bg-brand-pale text-brand-dark'
+                                  : 'border-bdr-default bg-white text-txt-tertiary hover:border-bdr-hover'
+                              }`}
+                            >
+                              Disabled
+                            </button>
+                          </div>
+                          <p className="text-xs text-txt-tertiary mt-1">When enabled, stock is dispensed by earliest expiry date first.</p>
                         </div>
 
                         <div className="flex gap-3">
@@ -7870,6 +7948,7 @@ ${tc.name()} Stock Management System`;
                                 <span className="font-medium text-near-black">{med.name}</span>
                                 {med.strength && <span className="text-txt-tertiary ml-2">{med.strength}</span>}
                                 {med.form && <span className="text-txt-tertiary ml-2">({med.form})</span>}
+                                {med.brand && <span className="text-txt-tertiary ml-2">— {med.brand}</span>}
                               </div>
                               {med.barcode && <span className="font-mono text-xs text-txt-tertiary">{med.barcode}</span>}
                             </div>
