@@ -16,7 +16,7 @@ exports.handler = async (event) => {
     }
 
     const medResult = await tdb.query(
-      `SELECT id, name, strength, form, standard_items_per_box, barcode
+      `SELECT id, name, strength, form, standard_items_per_box, barcode, brand, fefo, min_level_boxes
        FROM medications
        WHERE barcode = $1`,
       [barcode.trim()]
@@ -57,7 +57,10 @@ exports.handler = async (event) => {
         strength_raw: strengthRaw,
         type: medication.form || 'Tablet',
         standard_items_per_box: medication.standard_items_per_box || null,
-        barcode: medication.barcode
+        barcode: medication.barcode,
+        brand: medication.brand || null,
+        fefo: medication.fefo !== false,
+        min_level_boxes: medication.min_level_boxes || 0
       },
       existingBatches
     });

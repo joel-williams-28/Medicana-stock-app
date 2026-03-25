@@ -167,8 +167,10 @@
       );
 
     const MEDICATION_TYPES = [
-      'Ampule', 'Box Kit', 'Capsule', 'Cream', 'Fluid bag', 'Inhaler', 'Liquid', 
-      'Ointment', 'Patch', 'Pre Filled Syringe', 'Suppository', 'Tablet', 'Vial'
+      'Ampule', 'Box Kit', 'Capsule', 'Cream', 'Drops', 'Enema', 'Fluid Bag',
+      'Inhaler', 'Liquid', 'Nasal Spray', 'Nebuliser Solution', 'Ointment', 'Patch',
+      'Pessary', 'Powder', 'Pre Filled Syringe', 'Suppository', 'Suspension',
+      'Tablet', 'Topical', 'Vial'
     ];
 
     const CONTAINER_TYPES = [
@@ -525,6 +527,11 @@
         return role === 'Administrator' || role === 'Pharmacist';
       }
 
+      // Med Database tab: Admin only
+      if (tabName === 'meddatabase') {
+        return role === 'Administrator';
+      }
+
       // Administrator and Pharmacist have access to all tabs
       if (role === 'Administrator' || role === 'Pharmacist') {
         return true;
@@ -860,6 +867,22 @@
         types: [],
         locations: [],
         statuses: []
+      });
+      const [medDbForm, setMedDbForm] = useState({
+        barcode: '',
+        name: '',
+        strength: '',
+        form: 'Tablet',
+        brand: '',
+        standardItemsPerBox: '',
+        error: '',
+        successMessage: '',
+        isSubmitting: false,
+        isLookingUp: false,
+        existingMed: null,
+        sessionCount: 0,
+        sessionMeds: [],
+        manualEntry: false
       });
       const [modals, setModals] = useState({
         showLowStockReport: false,
@@ -2409,6 +2432,14 @@
        * @param {string} rawValue - Raw barcode string from scanner library
        */
       const handleScanDetected = (rawValue) => {
+        // Route to Med Database handler when on that tab
+        if (ui.activeTab === 'meddatabase') {
+          const gs1 = window.parseGs1Data(rawValue);
+          const lookupBarcode = gs1.isGs1 ? (gs1.gtin || rawValue) : rawValue;
+          handleMedDbBarcodeScan(lookupBarcode);
+          return;
+        }
+
         const parsed = window.parseGs1Data(rawValue);
 
         // GS1 with batch/expiry data = medicine pack, otherwise generic barcode
@@ -2453,6 +2484,171 @@
 
         // Delegate to centralized scan handler
         handleScanDetected(barcode);
+      };
+
+      // ── Med Database Tab: Barcode scan handler ──
+      const handleMedDbBarcodeScan = async (barcode) => {
+        const cleanBarcode = barcode.trim().replace(/\s+/g, '');
+        if (!cleanBarcode) return;
+
+        // Show loading state
+        setMedDbForm(prev => ({
+          ...prev,
+          barcode: cleanBarcode,
+          isLookingUp: true,
+          existingMed: null,
+          error: '',
+          successMessage: '',
+          manualEntry: false
+        }));
+
+        try {
+          // Check database directly (local array only has meds with stock)
+          const result = await window.api.lookupByBarcode(cleanBarcode);
+
+          if (result.found && result.medication) {
+            const med = result.medication;
+            setMedDbForm(prev => ({
+              ...prev,
+              isLookingUp: false,
+              name: med.name,
+              strength: med.strength_raw || '',
+              form: med.type || '',
+              brand: med.brand || '',
+              standardItemsPerBox: med.standard_items_per_box || '',
+              existingMed: {
+                name: med.name,
+                strength: med.strength_raw || '',
+                form: med.type || '',
+                brand: med.brand || '',
+                barcode: med.barcode || cleanBarcode
+              }
+            }));
+          } else {
+            setMedDbForm(prev => ({
+              ...prev,
+              isLookingUp: false,
+              name: '',
+              strength: '',
+              form: 'Tablet',
+              brand: '',
+              standardItemsPerBox: '',
+              existingMed: null
+            }));
+            // Focus name field after render
+            setTimeout(() => {
+              const nameInput = document.getElementById('meddb-name-input');
+              if (nameInput) nameInput.focus();
+            }, 100);
+          }
+        } catch (err) {
+          // Fallback: check local array if API fails
+          const existing = medications.find(med => med.barcode === cleanBarcode);
+          if (existing) {
+            setMedDbForm(prev => ({
+              ...prev,
+              isLookingUp: false,
+              name: existing.name,
+              strength: existing.strength || '',
+              form: existing.form || '',
+              brand: existing.brand || '',
+              standardItemsPerBox: existing.standard_items_per_box || '',
+              existingMed: existing
+            }));
+          } else {
+            setMedDbForm(prev => ({
+              ...prev,
+              isLookingUp: false,
+              existingMed: null,
+              error: 'Barcode lookup failed. You can still register manually.'
+            }));
+          }
+        }
+      };
+
+      // ── Med Database Tab: Submit new medication ──
+      const handleMedDbSubmit = async (e) => {
+        e.preventDefault();
+        if (!medDbForm.name.trim()) {
+          setMedDbForm(prev => ({ ...prev, error: 'Medication name is required.' }));
+          return;
+        }
+
+        setMedDbForm(prev => ({ ...prev, isSubmitting: true, error: '', successMessage: '' }));
+
+        try {
+          const result = await window.api.medicationUpsert({
+            name: medDbForm.name.trim(),
+            strength: medDbForm.strength.trim() || null,
+            form: medDbForm.form || 'Tablet',
+            brand: medDbForm.brand.trim() || null,
+            barcode: medDbForm.barcode.trim() || null,
+            standardItemsPerBox: medDbForm.standardItemsPerBox ? Number(medDbForm.standardItemsPerBox) : null,
+            userId: auth.userId || null
+          });
+
+          const newMed = {
+            id: result.medicationId,
+            name: medDbForm.name.trim(),
+            strength: medDbForm.strength.trim(),
+            form: medDbForm.form,
+            brand: medDbForm.brand.trim(),
+            barcode: medDbForm.barcode.trim(),
+            wasCreated: result.wasCreated
+          };
+
+          setMedDbForm(prev => ({
+            ...prev,
+            isSubmitting: false,
+            successMessage: result.wasCreated
+              ? `"${medDbForm.name.trim()}" registered successfully!`
+              : `"${medDbForm.name.trim()}" already exists (updated).`,
+            sessionCount: prev.sessionCount + (result.wasCreated ? 1 : 0),
+            sessionMeds: result.wasCreated ? [newMed, ...prev.sessionMeds] : prev.sessionMeds,
+            barcode: '',
+            name: '',
+            strength: '',
+            form: 'Tablet',
+            brand: '',
+            standardItemsPerBox: '',
+            existingMed: null,
+            manualEntry: false,
+            error: ''
+          }));
+
+          // Refresh medications list to include new entry
+          if (result.wasCreated) {
+            try {
+              const data = await window.api.fetchAllData();
+              if (data && data.medications) setMedications(data.medications);
+            } catch (refreshErr) {
+              // Non-critical — list will refresh on next poll
+            }
+          }
+        } catch (err) {
+          setMedDbForm(prev => ({
+            ...prev,
+            isSubmitting: false,
+            error: err.message || 'Failed to register medication.'
+          }));
+        }
+      };
+
+      // ── Med Database Tab: Reset form for next scan ──
+      const handleMedDbReset = () => {
+        setMedDbForm(prev => ({
+          ...prev,
+          barcode: '',
+          name: '',
+          strength: '',
+          form: 'Tablet',
+          brand: '',
+          standardItemsPerBox: '',
+          existingMed: null,
+          error: '',
+          successMessage: '',
+          manualEntry: false
+        }));
       };
 
       // Handle existing batch selection
@@ -2692,6 +2888,14 @@
          * Supported AIs: (01) GTIN, (10) Batch, (17) Expiry YYMMDD, (21) Serial
          */
         const handleBarcodeScanned = (barcode) => {
+          // Route to Med Database handler when on that tab
+          if (ui.activeTab === 'meddatabase') {
+            const gs1 = window.parseGs1Data(barcode);
+            const lookupBarcode = gs1.isGs1 ? (gs1.gtin || barcode) : barcode.trim().replace(/\s+/g, '');
+            handleMedDbBarcodeScan(lookupBarcode);
+            return;
+          }
+
           const gs1Data = window.parseGs1Data(barcode);
 
           // Determine lookup barcode and extract GS1 fields if present
@@ -5004,6 +5208,11 @@ ${tc.name()} Stock Management System`;
                     {canAccessTab('newmedication') && (
                       <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'newmedication' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'newmedication' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>
                       New Medication Order
+                    </button>
+                    )}
+                    {canAccessTab('meddatabase') && (
+                      <button onClick={() => setUi(prev => ({ ...prev, activeTab: 'meddatabase' }))} className={`px-4 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative ${ui.activeTab === 'meddatabase' ? 'border-brand-mid text-brand-mid shadow-lg z-20' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}>
+                      Med Database
                     </button>
                     )}
                 </nav>
@@ -7484,6 +7693,257 @@ ${tc.name()} Stock Management System`;
                           </button>
                         </div>
                       </form>
+                  </div>
+                </>
+              )}
+
+              {/* ── Med Database Tab ── */}
+              {ui.activeTab === 'meddatabase' && (
+                <>
+                  <div className="p-3 sm:p-4 md:p-6 border-b border-brand-pale bg-gradient-to-r from-brand-pale to-brand-pale">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <h2 className="text-xl sm:text-2xl font-bold text-near-black mb-1">Medication Database</h2>
+                        <p className="text-sm text-txt-tertiary">Scan or manually add medications to pre-populate the database before go-live.</p>
+                      </div>
+                      {medDbForm.sessionCount > 0 && (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-status-ok-bg text-status-ok-text">
+                          {medDbForm.sessionCount} added this session
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-3 sm:p-4 md:p-6">
+                    {/* Action buttons */}
+                    <div className="flex flex-col sm:flex-row gap-3 mb-6">
+                      <button
+                        onClick={() => { handleMedDbReset(); startCameraScanner(); }}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-brand-mid text-white rounded-lg hover:bg-brand-dark transition-colors font-medium text-sm"
+                      >
+                        <Camera className="w-5 h-5" />
+                        Scan with Camera
+                      </button>
+                      <button
+                        onClick={() => { handleMedDbReset(); setMedDbForm(prev => ({ ...prev, manualEntry: true })); setTimeout(() => { const el = document.getElementById('meddb-name-input'); if (el) el.focus(); }, 100); }}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-btn-secondary text-txt-secondary rounded-lg hover:bg-bdr-hover transition-colors font-medium text-sm"
+                      >
+                        <Plus className="w-5 h-5" />
+                        Manual Entry
+                      </button>
+                    </div>
+
+                    {/* Success message */}
+                    {medDbForm.successMessage && (
+                      <div className="mb-4 p-3 bg-status-ok-bg border border-status-ok-text rounded-lg text-sm text-brand-dark flex items-center justify-between">
+                        <span>{medDbForm.successMessage}</span>
+                        <button onClick={() => setMedDbForm(prev => ({ ...prev, successMessage: '' }))} className="text-brand-dark hover:text-near-black ml-2">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Error message */}
+                    {medDbForm.error && (
+                      <div className="mb-4 p-3 bg-danger-ghost-bg border border-status-critical-text rounded-lg text-sm text-danger-ghost-text">
+                        {medDbForm.error}
+                      </div>
+                    )}
+
+                    {/* Existing medication card (barcode already registered) */}
+                    {!medDbForm.isLookingUp && medDbForm.existingMed && (
+                      <div className="mb-6 p-4 bg-status-ok-bg border border-status-ok-text rounded-lg">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <h3 className="font-bold text-brand-dark text-lg mb-1">Already Registered</h3>
+                            <p className="text-sm text-brand-dark mb-2">This barcode is already linked to a medication in the database.</p>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                              <span className="text-txt-tertiary">Name:</span>
+                              <span className="font-medium text-near-black">{medDbForm.existingMed.name}</span>
+                              <span className="text-txt-tertiary">Strength:</span>
+                              <span className="font-medium text-near-black">{medDbForm.existingMed.strength || '—'}</span>
+                              <span className="text-txt-tertiary">Form:</span>
+                              <span className="font-medium text-near-black">{medDbForm.existingMed.form || '—'}</span>
+                              <span className="text-txt-tertiary">Brand:</span>
+                              <span className="font-medium text-near-black">{medDbForm.existingMed.brand || '—'}</span>
+                              <span className="text-txt-tertiary">Barcode:</span>
+                              <span className="font-medium text-near-black font-mono">{medDbForm.barcode}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex gap-3">
+                          <button
+                            onClick={() => { handleMedDbReset(); startCameraScanner(); }}
+                            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-brand-mid text-white rounded-lg hover:bg-brand-dark transition-colors font-medium text-sm"
+                          >
+                            <Camera className="w-4 h-4" />
+                            Scan Next
+                          </button>
+                          <button
+                            onClick={handleMedDbReset}
+                            className="px-4 py-2 bg-btn-secondary text-txt-secondary rounded-lg hover:bg-bdr-hover transition-colors font-medium text-sm"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* New medication form (shown when barcode scanned and not found, or manual entry) */}
+                    {!medDbForm.isLookingUp && !medDbForm.existingMed && (medDbForm.barcode || medDbForm.manualEntry) && (
+                      <form onSubmit={handleMedDbSubmit} className="bg-off-white border border-bdr-default rounded-lg p-4 sm:p-6 mb-6">
+                        <h3 className="font-bold text-near-black mb-4">
+                          {medDbForm.barcode ? 'Register New Medication' : 'Add Medication Manually'}
+                        </h3>
+
+                        {medDbForm.barcode && (
+                          <div className="mb-4">
+                            <label className="block text-sm font-medium text-txt-secondary mb-1">Barcode</label>
+                            <input
+                              type="text"
+                              value={medDbForm.barcode}
+                              readOnly
+                              className="w-full px-3 py-2 border border-bdr-default rounded-lg bg-white text-near-black font-mono text-sm cursor-not-allowed"
+                            />
+                          </div>
+                        )}
+
+                        {!medDbForm.barcode && medDbForm.manualEntry && (
+                          <div className="mb-4">
+                            <label className="block text-sm font-medium text-txt-secondary mb-1">Barcode <span className="text-txt-tertiary font-normal">(optional)</span></label>
+                            <input
+                              type="text"
+                              value={medDbForm.barcode}
+                              onChange={(e) => setMedDbForm(prev => ({ ...prev, barcode: e.target.value }))}
+                              className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
+                              placeholder="Enter barcode if available"
+                            />
+                          </div>
+                        )}
+
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-txt-secondary mb-1">
+                            Medication Name <span className="text-danger-ghost-text">*</span>
+                          </label>
+                          <input
+                            id="meddb-name-input"
+                            type="text"
+                            value={medDbForm.name}
+                            onChange={(e) => setMedDbForm(prev => ({ ...prev, name: e.target.value, error: '' }))}
+                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
+                            placeholder="e.g. Paracetamol"
+                            required
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                          <div>
+                            <label className="block text-sm font-medium text-txt-secondary mb-1">Strength</label>
+                            <input
+                              type="text"
+                              value={medDbForm.strength}
+                              onChange={(e) => setMedDbForm(prev => ({ ...prev, strength: e.target.value }))}
+                              className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
+                              placeholder="e.g. 500mg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-txt-secondary mb-1">Form</label>
+                            <select
+                              value={medDbForm.form}
+                              onChange={(e) => setMedDbForm(prev => ({ ...prev, form: e.target.value }))}
+                              className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
+                            >
+                              {MEDICATION_TYPES.map(f => (
+                                <option key={f} value={f}>{f}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-txt-secondary mb-1">Brand</label>
+                          <input
+                            type="text"
+                            value={medDbForm.brand}
+                            onChange={(e) => setMedDbForm(prev => ({ ...prev, brand: e.target.value }))}
+                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
+                            placeholder="e.g. Panadol, Nurofen"
+                          />
+                        </div>
+
+                        <div className="mb-6">
+                          <label className="block text-sm font-medium text-txt-secondary mb-1">Items Per Box</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={medDbForm.standardItemsPerBox}
+                            onChange={(e) => setMedDbForm(prev => ({ ...prev, standardItemsPerBox: e.target.value }))}
+                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
+                            placeholder="e.g. 28"
+                          />
+                        </div>
+
+                        <div className="flex gap-3">
+                          <button
+                            type="submit"
+                            disabled={medDbForm.isSubmitting || !medDbForm.name.trim()}
+                            className="flex-1 bg-brand-mid text-white py-2.5 rounded-lg hover:bg-brand-dark transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {medDbForm.isSubmitting ? 'Registering...' : 'Register Medication'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleMedDbReset}
+                            className="px-6 bg-btn-secondary text-txt-secondary py-2.5 rounded-lg hover:bg-bdr-hover transition-colors font-medium text-sm"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* Loading state — looking up barcode */}
+                    {medDbForm.isLookingUp && (
+                      <div className="text-center py-12 text-txt-tertiary">
+                        <div className="animate-spin w-8 h-8 border-2 border-brand-mid border-t-transparent rounded-full mx-auto mb-4"></div>
+                        <p className="text-sm font-medium">Looking up barcode...</p>
+                      </div>
+                    )}
+
+                    {/* Waiting state — no barcode scanned yet and not manual entry */}
+                    {!medDbForm.isLookingUp && !medDbForm.existingMed && !medDbForm.barcode && !medDbForm.manualEntry && (
+                      <div className="text-center py-12 text-txt-tertiary">
+                        <div className="mb-4">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 mx-auto text-bdr-default" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5z" />
+                          </svg>
+                        </div>
+                        <p className="text-lg font-medium text-txt-secondary mb-2">Ready to scan</p>
+                        <p className="text-sm">Use the hardware scanner or tap "Scan with Camera" above to begin adding medications.</p>
+                      </div>
+                    )}
+
+                    {/* Session history */}
+                    {medDbForm.sessionMeds.length > 0 && (
+                      <div className="mt-6">
+                        <h3 className="text-sm font-bold text-txt-secondary mb-3">Added This Session ({medDbForm.sessionMeds.length})</h3>
+                        <div className="space-y-2">
+                          {medDbForm.sessionMeds.map((med, idx) => (
+                            <div key={idx} className="flex items-center justify-between bg-off-white border border-bdr-default rounded-lg px-4 py-2.5 text-sm">
+                              <div>
+                                <span className="font-medium text-near-black">{med.name}</span>
+                                {med.strength && <span className="text-txt-tertiary ml-2">{med.strength}</span>}
+                                {med.form && <span className="text-txt-tertiary ml-2">({med.form})</span>}
+                                {med.brand && <span className="text-txt-tertiary ml-2">— {med.brand}</span>}
+                              </div>
+                              {med.barcode && <span className="font-mono text-xs text-txt-tertiary">{med.barcode}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               )}

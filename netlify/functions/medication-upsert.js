@@ -24,15 +24,18 @@ exports.handler = async (event) => {
       strength,
       form,
       barcode,
+      brand,
       standardItemsPerBox,
       minLevel,
       minLevelBoxes,
+      fefo,
       userId
     } = JSON.parse(event.body || '{}');
 
     const rawMin = (minLevelBoxes !== undefined ? minLevelBoxes : minLevel);
     const minBoxes = Number.isFinite(Number(rawMin)) ? Number(rawMin) : 0;
     const minProvided = (minLevelBoxes !== undefined || minLevel !== undefined);
+    const fefoValue = fefo !== undefined ? fefo : true;
 
     if (!name) {
       return db.fail(400, 'Missing required field: name');
@@ -57,9 +60,9 @@ exports.handler = async (event) => {
         medicationId = await getNextMedicationId(tdb.query);
         await tdb.query(
           `INSERT INTO medications
-           (id, name, strength, form, barcode, min_level_boxes, standard_items_per_box, fefo, is_active)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, true, true)`,
-          [medicationId, name, strength || '', form || 'stock', barcode.trim(), minBoxes, standardItemsPerBox || null]
+           (id, name, strength, form, barcode, brand, min_level_boxes, standard_items_per_box, fefo, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)`,
+          [medicationId, name, strength || '', form || 'stock', barcode.trim(), brand || null, minBoxes, standardItemsPerBox || null, fefoValue]
         );
         wasCreated = true;
       }
@@ -86,9 +89,9 @@ exports.handler = async (event) => {
         medicationId = await getNextMedicationId(tdb.query);
         await tdb.query(
           `INSERT INTO medications
-           (id, name, strength, form, barcode, min_level_boxes, standard_items_per_box, fefo, is_active)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, true, true)`,
-          [medicationId, name, strengthValue || '', formValue, '', minBoxes, standardItemsPerBox || null]
+           (id, name, strength, form, barcode, brand, min_level_boxes, standard_items_per_box, fefo, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)`,
+          [medicationId, name, strengthValue || '', formValue, '', brand || null, minBoxes, standardItemsPerBox || null, fefoValue]
         );
         wasCreated = true;
       }
@@ -104,9 +107,11 @@ exports.handler = async (event) => {
           medicationName: name,
           strength: strength || null,
           form: form || null,
+          brand: brand || null,
           barcode: barcode || null,
           minLevelBoxes: minBoxes,
-          standardItemsPerBox: standardItemsPerBox || null
+          standardItemsPerBox: standardItemsPerBox || null,
+          fefo: fefoValue
         },
         queryFn: tdb.query
       });
