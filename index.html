@@ -585,8 +585,8 @@
           padding: '2rem',
           fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
         }}>
-          <div style={{ textAlign: 'center', maxWidth: '600px' }}>
-            <img src="assets/branding/logo-login.png" alt="CliniTrack" style={{ width: '180px', marginBottom: '2.5rem' }} />
+          <div style={{ textAlign: 'center', maxWidth: '600px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <img src="assets/branding/logo-clinitrack.png" alt="CliniTrack" style={{ width: '320px', marginBottom: '2.5rem' }} />
             <h1 style={{ fontSize: '2.5rem', fontWeight: 700, marginBottom: '1rem', letterSpacing: '-0.02em' }}>Under Construction</h1>
             <div style={{ width: '60px', height: '3px', background: '#5DCAA5', margin: '1.5rem auto', borderRadius: '2px' }}></div>
             <p style={{ fontSize: '1.15rem', lineHeight: 1.7, color: '#B8D8CC', marginBottom: '1rem' }}>
@@ -4933,7 +4933,10 @@ ${tc.name()} Stock Management System`;
 
       if (!auth.isLoggedIn) {
         return (
-          <div className="min-h-screen bg-gradient-to-br from-off-white to-brand-pale flex items-center justify-center p-3 sm:p-4">
+          <div className="min-h-screen bg-gradient-to-br from-off-white to-brand-pale flex flex-col items-center justify-center p-3 sm:p-4">
+            <div className="mb-8 sm:mb-10">
+              <img src="assets/branding/logo-clinitrack.png" alt="CliniTrack" className="h-16 sm:h-20 w-auto mx-auto" />
+            </div>
             <div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 max-w-md w-full mx-2 sm:mx-0">
               <div className="flex flex-col items-center justify-center mb-4 sm:mb-6">
                 <div className="mb-3 sm:mb-4">
