@@ -175,7 +175,8 @@ async function seed(clean, tdb) {
       const demoMedIds = MEDICATIONS.map(m => m.id);
 
       // Tables safe to fully clear (only contain demo-generated data or are re-seeded)
-      for (const t of ['pipeline_snapshots', 'activity_log', 'draft_orders', 'orders', 'transactions', 'inventory', 'batches', 'location_min_levels', 'intelligence_config']) {
+      // Note: pipeline_snapshots and intelligence_config are preserved to retain pipeline completion state
+      for (const t of ['activity_log', 'draft_orders', 'orders', 'transactions', 'inventory', 'batches', 'location_min_levels']) {
         await client.query(`SAVEPOINT clean_${t}`);
         try { await client.query(`DELETE FROM ${t}`); } catch (_) { await client.query(`ROLLBACK TO SAVEPOINT clean_${t}`); }
         await client.query(`RELEASE SAVEPOINT clean_${t}`);
