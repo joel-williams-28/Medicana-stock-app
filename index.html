@@ -4623,6 +4623,7 @@ ${tc.name()} Stock Management System`;
       useEffect(() => {
         if (!reviewPipeline.data?.pipeline) return;
         if (reviewPipeline.loading) return;
+        if (pipelineCompleteSummary) return; // Don't auto-advance when pipeline is complete
         const pp = reviewPipeline.data.pipeline;
         const step = wizardState.currentStep;
         const stepKey = WIZARD_STEPS[step]?.key;
