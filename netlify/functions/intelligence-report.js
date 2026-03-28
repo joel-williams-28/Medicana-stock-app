@@ -143,6 +143,7 @@ exports.handler = async (event) => {
     const locationId = params.location_id || null;
     const forceRegenerate = params.force === 'true';
     const saveSnapshot = params.nosave !== 'true'; // Skip snapshot save for Step 1/2/3 internal regeneration
+    const updateSnapshotOnly = params.update_snapshot === 'true'; // Update cached snapshot pipeline data in-place
     const useCurrentMinLevels = params.use_current_mins === 'true'; // Use DB min levels instead of suggested
 
     // Check generation lock status
@@ -380,7 +381,24 @@ exports.handler = async (event) => {
             },
             queryFn: tdb.query
           });
-        } catch (_) { /* non-critical */ }
+        } catch (saveErr) {
+          console.error('[intelligence-report] Snapshot save failed:', saveErr.message);
+        }
+      } else if (updateSnapshotOnly && !locationId && pipeline) {
+        // Mid-workflow regeneration: update the cached snapshot's pipeline data in-place
+        // so that hard resets / device switches return the correct pipeline items.
+        // Does NOT touch generated_at, lock, completion summary, or activity log.
+        try {
+          await tdb.query(
+            `UPDATE pipeline_snapshots
+             SET snapshot = $1
+             WHERE id = (SELECT id FROM pipeline_snapshots ORDER BY generated_at DESC LIMIT 1)`,
+            [JSON.stringify(snapshotData)]
+          );
+          console.log('[intelligence-report] Snapshot pipeline data updated in-place');
+        } catch (updateErr) {
+          console.error('[intelligence-report] Snapshot pipeline update failed:', updateErr.message);
+        }
       }
     } else {
       // For location-specific reports, fetch last pipeline run timestamp

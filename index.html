@@ -4297,7 +4297,7 @@ ${tc.name()} Stock Management System`;
       // =============================================
       // PIPELINE-BASED REVIEW & ORDER HANDLERS
       // =============================================
-      const loadReviewPipeline = async (preserveWizardStep = false, forceRegenerate = false, skipSnapshotSave = false, useCurrentMins = false) => {
+      const loadReviewPipeline = async (preserveWizardStep = false, forceRegenerate = false, skipSnapshotSave = false, useCurrentMins = false, updateSnapshot = false) => {
         setReviewPipeline({ loading: true, data: null, error: null });
         setMinLevelOverrides({});
         setAppliedMinLevels(new Set());
@@ -4310,7 +4310,7 @@ ${tc.name()} Stock Management System`;
           // or generates fresh pipeline if expired or force=true
           // skipSnapshotSave=true for mid-workflow regeneration (don't overwrite the cached snapshot or lock)
           // useCurrentMins=true after Step 1 to use applied min levels for redistribution calculations
-          const data = await window.api.fetchIntelligenceReport(null, forceRegenerate, skipSnapshotSave, useCurrentMins);
+          const data = await window.api.fetchIntelligenceReport(null, forceRegenerate, skipSnapshotSave, useCurrentMins, updateSnapshot);
           // Restore or clear completion summary from backend response
           if (data.completionSummary && !forceRegenerate) {
             setPipelineCompleteSummary(data.completionSummary);
@@ -4424,7 +4424,7 @@ ${tc.name()} Stock Management System`;
           setOrders(data.orders || []);
           // Regenerate pipeline using actual DB min levels (useCurrentMins=true)
           // so Steps 2-4 honour the levels the user applied in Step 1
-          const freshData = await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
+          const freshData = await loadReviewPipeline(true, true, true, true, true); // preserveStep, force, nosave, useCurrentMins
           if (isFinal) {
             setMinLevelRefreshDone(true);
             // Ensure step 1 is marked reviewed so user can advance without password
@@ -4493,7 +4493,7 @@ ${tc.name()} Stock Management System`;
                 setLocations(data.locations || []);
                 setOrders(data.orders || []);
               });
-              loadReviewPipeline(true, true, true, true); // useCurrentMins=true
+              loadReviewPipeline(true, true, true, true, true); // useCurrentMins=true
             }
           } else {
             setWizardState(prev => ({ ...prev, currentStep: targetIndex }));
@@ -4533,7 +4533,7 @@ ${tc.name()} Stock Management System`;
           setSkipConfirm({ show: false, password: '', error: '', targetStep: null, loading: false });
           // If we skipped past step 1, trigger recalculation with current DB min levels
           if (wizardState.currentStep === 0 && targetIndex > 0) {
-            loadReviewPipeline(true, true, true, true); // useCurrentMins=true
+            loadReviewPipeline(true, true, true, true, true); // useCurrentMins=true
           }
         } catch (err) {
           setSkipConfirm(prev => ({ ...prev, loading: false, error: 'Network error. Please try again.' }));
@@ -6933,7 +6933,7 @@ ${tc.name()} Stock Management System`;
                                         } catch (_) {}
                                         // Regenerate pipeline server-side to recalculate Steps 3-4
                                         // with current inventory (post-transfer)
-                                        await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
+                                        await loadReviewPipeline(true, true, true, true, true); // preserveStep, force, nosave, useCurrentMins
                                         // Mark step 2 as reviewed
                                         setWizardState(prev => ({
                                           ...prev,
@@ -7013,7 +7013,7 @@ ${tc.name()} Stock Management System`;
                                                   setLocations(data.locations || []);
                                                   // If this was the last transfer, regenerate pipeline for Steps 3-4
                                                   if (pp.transfers.length <= 1) {
-                                                    await loadReviewPipeline(true, true, true, true);
+                                                    await loadReviewPipeline(true, true, true, true, true);
                                                     setWizardState(prev => ({
                                                       ...prev,
                                                       stepStatus: { ...prev.stepStatus, redistribute: { ...prev.stepStatus.redistribute, reviewed: true } }
@@ -7132,7 +7132,7 @@ ${tc.name()} Stock Management System`;
                                         } catch (_) {}
                                         // Regenerate pipeline server-side to recalculate Step 4
                                         // with current inventory (post-pharmacy-supply)
-                                        await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
+                                        await loadReviewPipeline(true, true, true, true, true); // preserveStep, force, nosave, useCurrentMins
                                         // Mark step 3 as reviewed
                                         setWizardState(prev => ({
                                           ...prev,
@@ -7227,7 +7227,7 @@ ${tc.name()} Stock Management System`;
                                                   setLocations(data.locations || []);
                                                   // If this was the last supply, regenerate pipeline for Step 4
                                                   if ((pp.pharmacySupplies || []).length <= 1) {
-                                                    await loadReviewPipeline(true, true, true, true);
+                                                    await loadReviewPipeline(true, true, true, true, true);
                                                     setWizardState(prev => ({
                                                       ...prev,
                                                       stepStatus: { ...prev.stepStatus, pharmacy_supply: { ...prev.stepStatus.pharmacy_supply, reviewed: true } }
