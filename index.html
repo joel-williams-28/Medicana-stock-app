@@ -802,7 +802,7 @@
       });
 
       // Sub-tab state for Intelligent Stock tab
-      const [orderingSubTab, setOrderingSubTab] = useState('alerts');
+      const [orderingSubTab, setOrderingSubTab] = useState('review');
 
       // Draft orders state for Review & Order sub-tab
       const [draftOrders, setDraftOrders] = useState({
@@ -5764,10 +5764,23 @@ ${tc.name()} Stock Management System`;
                       }
 
                       if (at === 'bulk_order_approved') {
+                        const isExpanded = expandedBulkEntries.has(entry.id);
+                        const meds = d.medications || [];
                         return (
                           <div className="text-sm text-txt-tertiary">
-                            <p><span className="font-medium">{d.count || '?'}</span> order{(d.count || 0) !== 1 ? 's' : ''} created — <span className="font-medium">{d.totalBoxes || '?'} boxes</span> total</p>
-                            {d.pharmacistEmail && <p><span className="font-medium">Sent to:</span> {d.pharmacistEmail}</p>}
+                            <button onClick={(e) => { e.stopPropagation(); setExpandedBulkEntries(prev => { const next = new Set(prev); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; }); }} className="flex items-center gap-1 hover:text-txt-secondary transition-colors text-left">
+                              <span className="text-xs">{isExpanded ? '\u25BE' : '\u25B8'}</span>
+                              <span><span className="font-medium">{d.count || '?'}</span> order{(d.count || 0) !== 1 ? 's' : ''} created — <span className="font-medium">{d.totalBoxes || '?'} boxes</span> total</span>
+                            </button>
+                            {d.pharmacistEmail && <p className="ml-4"><span className="font-medium">Sent to:</span> {d.pharmacistEmail}</p>}
+                            {isExpanded && meds.length > 0 && (
+                              <div className="mt-2 ml-4 space-y-1 border-l-2 border-bdr-default pl-3">
+                                {meds.map((m, i) => (
+                                  <p key={i}><span className="font-medium">{m.name}</span> — {m.boxes} {m.boxes === 1 ? 'box' : 'boxes'} <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ml-1 ${m.urgency === 'urgent' ? 'bg-danger-ghost-bg text-danger-ghost-text' : 'bg-status-ordered-bg text-status-ordered-text'}`}>{m.urgency}</span></p>
+                                ))}
+                              </div>
+                            )}
+                            {isExpanded && meds.length === 0 && <p className="mt-1 ml-4 text-txt-disabled text-xs">Detailed breakdown not available for this entry</p>}
                           </div>
                         );
                       }
@@ -5987,20 +6000,10 @@ ${tc.name()} Stock Management System`;
                     </div>
                   </div>
 
-                  {/* Sub-tabs: Stock Alerts / Review & Order */}
+                  {/* Sub-tabs: Review & Order / Stock Alerts / Order History */}
                   {canAccessTab('purchaseorders') && (
                     <div className="border-b border-bdr-default bg-off-white px-4">
                       <nav className="flex gap-1 -mb-px">
-                        <button
-                          onClick={() => setOrderingSubTab('alerts')}
-                          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${orderingSubTab === 'alerts' ? 'border-brand-mid text-brand-mid' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}
-                        >
-                          Stock Alerts
-                          {(() => {
-                            const count = reviewPipeline.data?.pipeline?.orders?.length ?? lowStockMedications.length;
-                            return count > 0 ? <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-critical-bg text-status-critical-text">{count}</span> : null;
-                          })()}
-                        </button>
                         <button
                           onClick={() => { setOrderingSubTab('review'); if (!reviewPipeline.data && !reviewPipeline.loading) loadReviewPipeline(); }}
                           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${orderingSubTab === 'review' ? 'border-brand-mid text-brand-mid' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}
@@ -6012,6 +6015,23 @@ ${tc.name()} Stock Management System`;
                             const actionCount = pipelineCompleteSummary ? 0 : (pp ? (pp.summary.totalTransfers + pp.summary.totalOrderLines + pendingAdj) : 0);
                             return actionCount > 0 ? <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">{actionCount}</span> : null;
                           })()}
+                        </button>
+                        <button
+                          onClick={() => setOrderingSubTab('alerts')}
+                          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${orderingSubTab === 'alerts' ? 'border-brand-mid text-brand-mid' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}
+                        >
+                          Stock Alerts
+                          {(() => {
+                            const count = reviewPipeline.data?.pipeline?.orders?.length ?? lowStockMedications.length;
+                            return count > 0 ? <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-critical-bg text-status-critical-text">{count}</span> : null;
+                          })()}
+                        </button>
+                        <button
+                          onClick={() => setOrderingSubTab('history')}
+                          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${orderingSubTab === 'history' ? 'border-brand-mid text-brand-mid' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}
+                        >
+                          Order History
+                          {orders.length > 0 ? <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">{orders.length}</span> : null}
                         </button>
                       </nav>
                     </div>
@@ -6168,6 +6188,69 @@ ${tc.name()} Stock Management System`;
                       </div>
                     );
                   })()}
+
+                  {/* Order History Sub-tab */}
+                  {orderingSubTab === 'history' && (
+                    <div className="p-4 sm:p-6">
+                      <h3 className="text-lg font-semibold text-txt-primary mb-4">Order History</h3>
+                      {orders.length === 0 ? (
+                        <div className="p-8 text-center text-txt-tertiary">
+                          <p className="text-lg font-medium">No orders placed yet</p>
+                          <p className="text-sm mt-1">Orders created through the pipeline will appear here</p>
+                        </div>
+                      ) : (
+                        <div className="border border-bdr-default rounded-lg overflow-hidden">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead className="bg-off-white sticky top-0 z-10">
+                                <tr>
+                                  <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Date & Time</th>
+                                  <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Medication</th>
+                                  <th className="px-4 py-3 text-right font-semibold text-txt-secondary">Quantity</th>
+                                  <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Urgency</th>
+                                  <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Status</th>
+                                  <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Ordered By</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-bdr-default">
+                                {orders.map(o => {
+                                  const ipb = medications.find(m => m.internalId === o.medId)?.batches?.[0]?.itemsPerBox || null;
+                                  const boxes = ipb ? Math.floor(o.quantity / ipb) : null;
+                                  return (
+                                    <tr key={o.id} className="hover:bg-off-white">
+                                      <td className="px-4 py-3 text-txt-secondary whitespace-nowrap">
+                                        {new Date(o.orderedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                        <span className="text-txt-disabled ml-1">{new Date(o.orderedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                                      </td>
+                                      <td className="px-4 py-3 font-medium text-near-black">{o.medName}</td>
+                                      <td className="px-4 py-3 text-right text-near-black">
+                                        {boxes != null ? `${boxes} ${boxes === 1 ? 'box' : 'boxes'} (${o.quantity} items)` : `${o.quantity} items`}
+                                      </td>
+                                      <td className="px-4 py-3 text-center">
+                                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                                          o.urgency === 'urgent' ? 'bg-danger-ghost-bg text-danger-ghost-text' :
+                                          o.urgency === 'non-urgent' ? 'bg-status-ok-bg text-status-ok-text' :
+                                          'bg-status-ordered-bg text-status-ordered-text'
+                                        }`}>{o.urgency}</span>
+                                      </td>
+                                      <td className="px-4 py-3 text-center">
+                                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                                          o.status === 'fulfilled' ? 'bg-status-ok-bg text-status-ok-text' :
+                                          o.status === 'pending' ? 'bg-status-ordered-bg text-status-ordered-text' :
+                                          'bg-status-expired-bg text-status-expired-text'
+                                        }`}>{o.status}</span>
+                                      </td>
+                                      <td className="px-4 py-3 text-txt-secondary">{o.user}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Review & Order Sub-tab (Admin/Pharmacist only) — Pipeline-based */}
                   {orderingSubTab === 'review' && canAccessTab('purchaseorders') && (

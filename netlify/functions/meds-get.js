@@ -102,7 +102,7 @@ exports.handler = async (event) => {
       med.numberOfBoxes = med.batches.reduce((sum, b) => sum + (b.numberOfBoxes || 0), 0);
     }
 
-    // Query pending orders
+    // Query all orders (pending + fulfilled) for order history
     const ordersResult = await tdb.query(`
       SELECT
         o.id,
@@ -123,7 +123,6 @@ exports.handler = async (event) => {
       FROM orders o
       LEFT JOIN medications m ON m.id = o.medication_id
       LEFT JOIN users u ON u.id = o.user_id
-      WHERE o.status = 'pending'
       ORDER BY o.ordered_at DESC;
     `);
 
