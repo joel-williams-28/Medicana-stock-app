@@ -10,9 +10,9 @@ exports.handler = async (event) => {
     const tdb = db.forTenant(event);
     if (!tdb) return db.tenantNotFound();
 
-    const body = db.parseBody(event);
-    const { orders, userId, pharmacistEmail } = body;
-    const skipIndividualLogs = body.skipIndividualLogs === true;
+    const parsedBody = db.parseBody(event);
+    const { orders, userId, pharmacistEmail } = parsedBody;
+    const skipIndividualLogs = parsedBody.skipIndividualLogs === true;
 
     if (!orders || !Array.isArray(orders) || orders.length === 0) {
       return db.fail(400, 'orders array is required and must not be empty');
