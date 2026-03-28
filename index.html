@@ -878,6 +878,7 @@
       const [activityUserFilter, setActivityUserFilter] = useState('');
       const [activityUsers, setActivityUsers] = useState([]);
       const [collapsedDates, setCollapsedDates] = useState([]);
+      const [expandedBulkEntries, setExpandedBulkEntries] = useState(new Set());
       const activityLoadRef = useRef(0);
         const [changePasswordForm, setChangePasswordForm] = useState({
           currentPassword: '',
@@ -5586,8 +5587,8 @@ ${tc.name()} Stock Management System`;
                       bulk_order_approved:{ label: 'BULK ORDER',  css: 'bg-[#F5F0E1] text-[#6B5A2A]', icon: Download },
                       pipeline_generated: { label: 'PIPELINE',    css: 'bg-status-ordered-bg text-status-ordered-text', icon: null },
                       pipeline_completed: { label: 'COMPLETED',   css: 'bg-status-ok-bg text-status-ok-text', icon: null },
-                      bulk_transfers_executed:       { label: 'TRANSFERS', css: 'bg-status-ordered-bg text-status-ordered-text', icon: Download },
-                      bulk_pharmacy_supplies_executed:{ label: 'SUPPLIES',  css: 'bg-[#E8F0E8] text-[#3D6B4F]', icon: Download }
+                      bulk_transfers_executed:       { label: 'BULK TRANSFER', css: 'bg-status-ordered-bg text-status-ordered-text', icon: Download },
+                      bulk_pharmacy_supplies_executed:{ label: 'BULK SUPPLY',  css: 'bg-[#E8F0E8] text-[#3D6B4F]', icon: Download }
                     };
 
                     const renderEntryDetails = (entry) => {
@@ -5785,19 +5786,45 @@ ${tc.name()} Stock Management System`;
                       }
 
                       if (at === 'bulk_transfers_executed') {
+                        const isExpanded = expandedBulkEntries.has(entry.id);
+                        const items = d.items || [];
                         return (
                           <div className="text-sm text-txt-tertiary">
-                            <p><span className="font-medium">{d.totalTransfers || '?'}</span> transfer{(d.totalTransfers || 0) !== 1 ? 's' : ''} executed — <span className="font-medium">{d.totalBoxesMoved || '?'} boxes</span> moved</p>
-                            {d.totalFailed > 0 && <p className="text-status-critical-text">{d.totalFailed} failed</p>}
+                            <button onClick={(e) => { e.stopPropagation(); setExpandedBulkEntries(prev => { const next = new Set(prev); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; }); }} className="flex items-center gap-1 hover:text-txt-secondary transition-colors text-left">
+                              <span className="text-xs">{isExpanded ? '\u25BE' : '\u25B8'}</span>
+                              <span><span className="font-medium">{d.totalTransfers || '?'}</span> transfer{(d.totalTransfers || 0) !== 1 ? 's' : ''} executed — <span className="font-medium">{d.totalBoxesMoved || '?'} boxes</span> moved</span>
+                            </button>
+                            {d.totalFailed > 0 && <p className="text-status-critical-text ml-4">{d.totalFailed} failed</p>}
+                            {isExpanded && items.length > 0 && (
+                              <div className="mt-2 ml-4 space-y-1 border-l-2 border-bdr-default pl-3">
+                                {items.map((item, i) => (
+                                  <p key={i}><span className="font-medium">{item.medicationName}</span>: {item.from} → {item.to} — {item.quantityBoxes} {item.quantityBoxes === 1 ? 'box' : 'boxes'}{item.batchCode ? ` (${item.batchCode})` : ''}</p>
+                                ))}
+                              </div>
+                            )}
+                            {isExpanded && items.length === 0 && <p className="mt-1 ml-4 text-txt-disabled text-xs">Detailed breakdown not available for this entry</p>}
                           </div>
                         );
                       }
 
                       if (at === 'bulk_pharmacy_supplies_executed') {
+                        const isExpanded = expandedBulkEntries.has(entry.id);
+                        const items = d.items || [];
                         return (
                           <div className="text-sm text-txt-tertiary">
-                            <p><span className="font-medium">{d.totalSupplies || '?'}</span> pharmacy {(d.totalSupplies || 0) !== 1 ? 'supplies' : 'supply'} executed — <span className="font-medium">{d.totalBoxesSupplied || '?'} boxes</span> dispensed</p>
-                            {d.totalFailed > 0 && <p className="text-status-critical-text">{d.totalFailed} failed</p>}
+                            <button onClick={(e) => { e.stopPropagation(); setExpandedBulkEntries(prev => { const next = new Set(prev); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; }); }} className="flex items-center gap-1 hover:text-txt-secondary transition-colors text-left">
+                              <span className="text-xs">{isExpanded ? '\u25BE' : '\u25B8'}</span>
+                              <span><span className="font-medium">{d.totalSupplies || '?'}</span> pharmacy {(d.totalSupplies || 0) !== 1 ? 'supplies' : 'supply'} executed — <span className="font-medium">{d.totalBoxesSupplied || '?'} boxes</span> dispensed</span>
+                            </button>
+                            {d.totalFailed > 0 && <p className="text-status-critical-text ml-4">{d.totalFailed} failed</p>}
+                            {isExpanded && items.length > 0 && (
+                              <div className="mt-2 ml-4 space-y-1 border-l-2 border-bdr-default pl-3">
+                                {items.map((item, i) => (
+                                  <p key={i}><span className="font-medium">{item.medicationName}</span>: {item.from} → {item.to} — {item.quantityBoxes} {item.quantityBoxes === 1 ? 'box' : 'boxes'}{item.batchCode ? ` (${item.batchCode})` : ''}</p>
+                                ))}
+                              </div>
+                            )}
+                            {isExpanded && items.length === 0 && <p className="mt-1 ml-4 text-txt-disabled text-xs">Detailed breakdown not available for this entry</p>}
                           </div>
                         );
                       }
@@ -5827,7 +5854,7 @@ ${tc.name()} Stock Management System`;
                               {!isCollapsed && groupedByDate[dateKey].map(entry => {
                                 const badge = badgeConfig[entry.actionType] || { label: entry.actionType.toUpperCase(), css: 'bg-off-white text-near-black', icon: null };
                                 const BadgeIcon = badge.icon;
-                                const NON_MED_ACTIONS = ['login', 'logout', 'config_changed', 'bulk_order_approved', 'drafts_generated'];
+                                const NON_MED_ACTIONS = ['login', 'logout', 'config_changed', 'bulk_order_approved', 'drafts_generated', 'bulk_transfers_executed', 'bulk_pharmacy_supplies_executed', 'pipeline_generated', 'pipeline_completed'];
                                 const medName = entry.details?.medicationName || (NON_MED_ACTIONS.includes(entry.actionType) ? '' : 'Unknown Medication');
                                 const delta = entry.details?.delta ? Math.abs(entry.details.delta) : null;
                                 return (
@@ -5840,7 +5867,13 @@ ${tc.name()} Stock Management System`;
                                             ? (entry.details?.key || 'Configuration')
                                             : entry.actionType === 'drafts_generated' || entry.actionType === 'bulk_order_approved'
                                               ? (entry.details?.count ? `${entry.details.count} item${entry.details.count !== 1 ? 's' : ''}` : '')
-                                              : ''
+                                              : entry.actionType === 'bulk_transfers_executed'
+                                                ? `Bulk Transfer — ${entry.details?.totalTransfers || '?'} transfers`
+                                                : entry.actionType === 'bulk_pharmacy_supplies_executed'
+                                                  ? `Bulk Supply — ${entry.details?.totalSupplies || '?'} supplies`
+                                                  : entry.actionType === 'pipeline_generated' || entry.actionType === 'pipeline_completed'
+                                                    ? 'Intelligence Pipeline'
+                                                    : ''
                                       )}</span>
                                       <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${badge.css}`}>
                                         {BadgeIcon && <BadgeIcon className="w-3 h-3 mr-1" />}
@@ -6961,7 +6994,14 @@ ${tc.name()} Stock Management System`;
                                               totalTransfers: succeeded,
                                               totalFailed: failures.length,
                                               totalBoxesMoved: pp.transfers.reduce((sum, t) => sum + t.quantityBoxes, 0),
-                                              source: 'intelligence_pipeline'
+                                              source: 'intelligence_pipeline',
+                                              items: pp.transfers.map(t => ({
+                                                medicationName: t.medicationName,
+                                                from: t.sourceLocName,
+                                                to: t.targetLocName,
+                                                quantityBoxes: t.quantityBoxes,
+                                                batchCode: t.batchCode
+                                              }))
                                             }
                                           });
                                         } catch (_) {}
@@ -7160,7 +7200,14 @@ ${tc.name()} Stock Management System`;
                                               totalSupplies: succeeded,
                                               totalFailed: failures.length,
                                               totalBoxesSupplied: pp.pharmacySupplies.reduce((sum, s, idx) => sum + (pharmacySupplyAdjustments[idx] != null ? Number(pharmacySupplyAdjustments[idx]) : s.quantityBoxes), 0),
-                                              source: 'intelligence_pipeline'
+                                              source: 'intelligence_pipeline',
+                                              items: pp.pharmacySupplies.map((s, idx) => ({
+                                                medicationName: s.medicationName,
+                                                from: s.sourceLocName || 'Pharmacy',
+                                                to: s.targetLocName,
+                                                quantityBoxes: pharmacySupplyAdjustments[idx] != null ? Number(pharmacySupplyAdjustments[idx]) : s.quantityBoxes,
+                                                batchCode: s.batchCode
+                                              }))
                                             }
                                           });
                                         } catch (_) {}
