@@ -4686,7 +4686,8 @@ ${tc.name()} Stock Management System`;
           const result = await window.api.createIntelligenceOrders({
             orders: selectedOrders,
             userId: userInfo?.id,
-            pharmacistEmail: draftOrders.pharmacistEmail
+            pharmacistEmail: draftOrders.pharmacistEmail,
+            skipIndividualLogs: true
           });
           // Reuse existing email preview UI via draftOrders.approvalResult
           setDraftOrders(prev => ({ ...prev, approvalResult: result }));
@@ -5773,11 +5774,10 @@ ${tc.name()} Stock Management System`;
 
                       if (at === 'pipeline_completed') {
                         const st = d.stepTotals || {};
+                        const total = (st.adjustments || 0) + (st.redistribute || 0) + (st.pharmacy_supply || 0) + (st.order || 0);
                         return (
                           <div className="text-sm text-txt-tertiary">
-                            <p><span className="font-medium">Pipeline completed</span> — {st.adjustments || 0} min levels, {st.redistribute || 0} transfers, {st.pharmacy_supply || 0} supplies, {st.order || 0} orders</p>
-                            {d.ordersPlaced > 0 && <p><span className="font-medium">{d.ordersPlaced}</span> purchase order{d.ordersPlaced !== 1 ? 's' : ''} placed</p>}
-                            {d.maturityLevel && <p><span className="font-medium">Maturity:</span> {d.maturityLevel} ({d.weeksOfData || 0} weeks of data)</p>}
+                            <p>Pipeline completed — {total} action{total !== 1 ? 's' : ''} executed</p>
                           </div>
                         );
                       }
@@ -6976,7 +6976,8 @@ ${tc.name()} Stock Management System`;
                                               sourceMinLevel: t.sourceMinLevel,
                                               targetMinLevel: t.targetMinLevel,
                                               quantityBoxes: t.quantityBoxes,
-                                              pipelineStep: 'redistribute'
+                                              pipelineStep: 'redistribute',
+                                              skipActivityLog: true
                                             });
                                             succeeded++;
                                           } catch (err) {
@@ -7181,7 +7182,8 @@ ${tc.name()} Stock Management System`;
                                               batchCode: s.batchCode,
                                               sourceStockBoxes: s.sourceStockBoxes,
                                               quantityBoxes: adjBoxes,
-                                              pipelineStep: 'pharmacy_supply'
+                                              pipelineStep: 'pharmacy_supply',
+                                              skipActivityLog: true
                                             });
                                             succeeded++;
                                             successIndices.push(si);

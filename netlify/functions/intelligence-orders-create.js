@@ -10,7 +10,9 @@ exports.handler = async (event) => {
     const tdb = db.forTenant(event);
     if (!tdb) return db.tenantNotFound();
 
-    const { orders, userId, pharmacistEmail } = db.parseBody(event);
+    const body = db.parseBody(event);
+    const { orders, userId, pharmacistEmail } = body;
+    const skipIndividualLogs = body.skipIndividualLogs === true;
 
     if (!orders || !Array.isArray(orders) || orders.length === 0) {
       return db.fail(400, 'orders array is required and must not be empty');
@@ -59,8 +61,8 @@ exports.handler = async (event) => {
 
       const order = orderResult.rows[0];
 
-      // Log activity with full pipeline context
-      await logActivity({
+      // Log activity with full pipeline context (skip during bulk operations)
+      if (!skipIndividualLogs) await logActivity({
         userId: userId || null,
         actionType: 'order_placed',
         entityType: 'order',
