@@ -5577,7 +5577,11 @@ ${tc.name()} Stock Management System`;
                       drafts_generated:   { label: 'DRAFTS',      css: 'bg-status-ordered-bg text-status-ordered-text', icon: Download },
                       draft_approved:     { label: 'APPROVED',    css: 'bg-status-ok-bg text-status-ok-text', icon: null },
                       draft_rejected:     { label: 'REJECTED',    css: 'bg-status-critical-bg text-status-critical-text', icon: AlertTriangle },
-                      bulk_order_approved:{ label: 'BULK ORDER',  css: 'bg-status-fulfilled-bg text-status-fulfilled-text', icon: Download }
+                      bulk_order_approved:{ label: 'BULK ORDER',  css: 'bg-status-fulfilled-bg text-status-fulfilled-text', icon: Download },
+                      pipeline_generated: { label: 'PIPELINE',    css: 'bg-status-ordered-bg text-status-ordered-text', icon: null },
+                      pipeline_completed: { label: 'COMPLETED',   css: 'bg-status-ok-bg text-status-ok-text', icon: null },
+                      bulk_transfers_executed:       { label: 'TRANSFERS', css: 'bg-status-ordered-bg text-status-ordered-text', icon: Download },
+                      bulk_pharmacy_supplies_executed:{ label: 'SUPPLIES',  css: 'bg-status-ordered-bg text-status-ordered-text', icon: Download }
                     };
 
                     const renderEntryDetails = (entry) => {
@@ -5740,6 +5744,26 @@ ${tc.name()} Stock Management System`;
                           <div className="text-sm text-txt-tertiary">
                             <p><span className="font-medium">{d.count || '?'}</span> order{(d.count || 0) !== 1 ? 's' : ''} created — <span className="font-medium">{d.totalBoxes || '?'} boxes</span> total</p>
                             {d.pharmacistEmail && <p><span className="font-medium">Sent to:</span> {d.pharmacistEmail}</p>}
+                          </div>
+                        );
+                      }
+
+                      if (at === 'pipeline_completed') {
+                        const st = d.stepTotals || {};
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <p><span className="font-medium">Pipeline completed</span> — {st.adjustments || 0} min levels, {st.redistribute || 0} transfers, {st.pharmacy_supply || 0} supplies, {st.order || 0} orders</p>
+                            {d.ordersPlaced > 0 && <p><span className="font-medium">{d.ordersPlaced}</span> purchase order{d.ordersPlaced !== 1 ? 's' : ''} placed</p>}
+                            {d.maturityLevel && <p><span className="font-medium">Maturity:</span> {d.maturityLevel} ({d.weeksOfData || 0} weeks of data)</p>}
+                          </div>
+                        );
+                      }
+
+                      if (at === 'pipeline_generated') {
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <p><span className="font-medium">Pipeline generated</span> — {d.medicationCount || '?'} medications analysed</p>
+                            <p>{d.adjustments || 0} adjustments, {d.transfers || 0} transfers, {d.pharmacySupplies || 0} supplies, {d.orders || 0} orders</p>
                           </div>
                         );
                       }
@@ -6206,7 +6230,7 @@ ${tc.name()} Stock Management System`;
                         <button onClick={handleDraftCopyToClipboard} className="flex-1 bg-near-black text-white py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium text-sm">
                           Copy to Clipboard
                         </button>
-                        <button onClick={() => {
+                        <button onClick={async () => {
                           // Capture summary before clearing
                           const summary = {
                             completedAt: new Date().toISOString(),
@@ -6229,12 +6253,32 @@ ${tc.name()} Stock Management System`;
                             weeksOfData: reviewPipeline.data?.weeksOfData,
                           };
                           setPipelineCompleteSummary(summary);
-                          // Persist to backend
-                          window.api.setIntelligenceConfig({
-                            key: 'pipeline_completion_summary',
-                            value: JSON.stringify(summary),
-                            userId: getCurrentUserInfo()?.id
-                          }).catch(() => {});
+                          // Persist completion summary and activity log to backend (awaited for reliability)
+                          try {
+                            await window.api.setIntelligenceConfig({
+                              key: 'pipeline_completion_summary',
+                              value: JSON.stringify(summary),
+                              userId: getCurrentUserInfo()?.id
+                            });
+                          } catch (err) {
+                            console.error('Failed to persist pipeline completion summary:', err);
+                          }
+                          try {
+                            await window.api.postActivityLog({
+                              actionType: 'pipeline_completed',
+                              entityType: 'pipeline_snapshot',
+                              userId: getCurrentUserInfo()?.id,
+                              details: {
+                                stepTotals: summary.stepTotals,
+                                ordersPlaced: summary.orders.length,
+                                orders: summary.orders,
+                                maturityLevel: summary.maturityLevel,
+                                weeksOfData: summary.weeksOfData,
+                              },
+                            });
+                          } catch (err) {
+                            console.error('Failed to log pipeline completion activity:', err);
+                          }
                           // Clear approval and zero out pipeline
                           setDraftOrders(prev => ({ ...prev, approvalResult: null }));
                           setReviewPipeline(prev => ({
