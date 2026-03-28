@@ -82,11 +82,12 @@ window.api = (function () {
     return out;
   }
 
-  async function fetchIntelligenceReport(locationId, force = false, nosave = false, useCurrentMins = false) {
+  async function fetchIntelligenceReport(locationId, force = false, nosave = false, useCurrentMins = false, updateSnapshot = false) {
     let qs = locationId ? `?location_id=${locationId}` : '';
     if (force) qs += (qs ? '&' : '?') + 'force=true';
     if (nosave) qs += (qs ? '&' : '?') + 'nosave=true';
     if (useCurrentMins) qs += (qs ? '&' : '?') + 'use_current_mins=true';
+    if (updateSnapshot) qs += (qs ? '&' : '?') + 'update_snapshot=true';
     const res = await fetch(`/.netlify/functions/intelligence-report${qs}`);
     const out = await res.json();
     if (!res.ok || !out.success) throw new Error(out.message || 'Failed to fetch intelligence report');

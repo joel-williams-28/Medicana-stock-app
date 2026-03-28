@@ -13,6 +13,95 @@ const {
   runOptimisationPipeline
 } = require('./_intelligence-core');
 
+// Reconcile cached transfers against transactions table — filter out transfers already executed.
+// Uses the transactions table (written inside the DB transaction, guaranteed to exist)
+// rather than activity_log (written after commit with silent error handling).
+async function reconcileTransfers(transfers, snapshotGeneratedAt, queryFn) {
+  if (!transfers || transfers.length === 0) return transfers;
+
+  // Query outgoing transfer transactions since the snapshot was generated.
+  // Each executed transfer creates an 'out' transaction at the source location.
+  const result = await queryFn(`
+    SELECT batch_id::text AS batch_id,
+           location_id AS source_loc,
+           medication_id
+    FROM transactions
+    WHERE type = 'out'
+      AND reason LIKE 'Transfer to %'
+      AND occurred_at >= $1
+  `, [snapshotGeneratedAt]);
+
+  if (result.rows.length === 0) return transfers;
+
+  // Build a frequency map (same batch+source+med could appear multiple times)
+  const executed = {};
+  for (const row of result.rows) {
+    const key = `${row.batch_id}|${row.source_loc}|${row.medication_id}`;
+    executed[key] = (executed[key] || 0) + 1;
+  }
+
+  return transfers.filter(t => {
+    const key = `${t.batchId}|${t.sourceLoc}|${t.medicationId}`;
+    if (executed[key] && executed[key] > 0) {
+      executed[key]--;
+      return false; // Already executed — filter out
+    }
+    return true;
+  });
+}
+
+// Reconcile cached pharmacy supplies against transactions table — filter out supplies already executed.
+async function reconcilePharmacySupplies(supplies, snapshotGeneratedAt, queryFn) {
+  if (!supplies || supplies.length === 0) return supplies;
+
+  // Pharmacy supplies also use transferStock, creating 'out' transactions at the pharmacy.
+  // Match by batch_id + source (pharmacy) + medication.
+  const result = await queryFn(`
+    SELECT batch_id::text AS batch_id,
+           location_id AS source_loc,
+           medication_id
+    FROM transactions
+    WHERE type = 'out'
+      AND reason LIKE 'Transfer to %'
+      AND occurred_at >= $1
+  `, [snapshotGeneratedAt]);
+
+  if (result.rows.length === 0) return supplies;
+
+  const executed = {};
+  for (const row of result.rows) {
+    const key = `${row.batch_id}|${row.source_loc}|${row.medication_id}`;
+    executed[key] = (executed[key] || 0) + 1;
+  }
+
+  return supplies.filter(s => {
+    const key = `${s.batchId}|${s.sourceLoc}|${s.medicationId}`;
+    if (executed[key] && executed[key] > 0) {
+      executed[key]--;
+      return false;
+    }
+    return true;
+  });
+}
+
+// Reconcile cached orders against orders table — filter out orders already created.
+async function reconcileOrders(orders, snapshotGeneratedAt, queryFn) {
+  if (!orders || orders.length === 0) return orders;
+
+  const result = await queryFn(`
+    SELECT medication_id
+    FROM orders
+    WHERE notes LIKE 'Intelligence pipeline order%'
+      AND created_at >= $1
+  `, [snapshotGeneratedAt]);
+
+  if (result.rows.length === 0) return orders;
+
+  const orderedMedIds = new Set(result.rows.map(r => r.medication_id));
+
+  return orders.filter(o => !orderedMedIds.has(o.medicationId));
+}
+
 // Reconcile cached adjustments against current DB min levels.
 // Filters out adjustments that have already been applied (or manually changed).
 async function reconcileAdjustments(adjustments, queryFn) {
@@ -54,6 +143,7 @@ exports.handler = async (event) => {
     const locationId = params.location_id || null;
     const forceRegenerate = params.force === 'true';
     const saveSnapshot = params.nosave !== 'true'; // Skip snapshot save for Step 1/2/3 internal regeneration
+    const updateSnapshotOnly = params.update_snapshot === 'true'; // Update cached snapshot pipeline data in-place
     const useCurrentMinLevels = params.use_current_mins === 'true'; // Use DB min levels instead of suggested
 
     // Check generation lock status
@@ -90,12 +180,40 @@ exports.handler = async (event) => {
           const row = cached.rows[0];
           const snapshot = row.snapshot;
 
-          // Reconcile adjustments against current DB state — filter out
-          // adjustments that have already been applied since the snapshot was generated
-          if (snapshot.pipeline && snapshot.pipeline.adjustments) {
-            snapshot.pipeline.adjustments = await reconcileAdjustments(snapshot.pipeline.adjustments, tdb.query);
-            if (snapshot.pipeline.summary) {
-              snapshot.pipeline.summary.totalAdjustments = snapshot.pipeline.adjustments.length;
+          // Reconcile all pipeline sections against current DB state — filter out
+          // items that have already been executed since the snapshot was generated
+          if (snapshot.pipeline) {
+            const generatedAt = row.generated_at;
+
+            if (snapshot.pipeline.adjustments) {
+              snapshot.pipeline.adjustments = await reconcileAdjustments(snapshot.pipeline.adjustments, tdb.query);
+              if (snapshot.pipeline.summary) {
+                snapshot.pipeline.summary.totalAdjustments = snapshot.pipeline.adjustments.length;
+              }
+            }
+
+            if (snapshot.pipeline.transfers) {
+              snapshot.pipeline.transfers = await reconcileTransfers(snapshot.pipeline.transfers, generatedAt, tdb.query);
+              if (snapshot.pipeline.summary) {
+                snapshot.pipeline.summary.totalTransfers = snapshot.pipeline.transfers.length;
+                snapshot.pipeline.summary.totalBoxesRedistributed = snapshot.pipeline.transfers.reduce((s, t) => s + (t.quantityBoxes || 0), 0);
+              }
+            }
+
+            if (snapshot.pipeline.pharmacySupplies) {
+              snapshot.pipeline.pharmacySupplies = await reconcilePharmacySupplies(snapshot.pipeline.pharmacySupplies, generatedAt, tdb.query);
+              if (snapshot.pipeline.summary) {
+                snapshot.pipeline.summary.totalPharmacySupplies = snapshot.pipeline.pharmacySupplies.length;
+                snapshot.pipeline.summary.totalBoxesFromPharmacy = snapshot.pipeline.pharmacySupplies.reduce((s, t) => s + (t.quantityBoxes || 0), 0);
+              }
+            }
+
+            if (snapshot.pipeline.orders) {
+              snapshot.pipeline.orders = await reconcileOrders(snapshot.pipeline.orders, generatedAt, tdb.query);
+              if (snapshot.pipeline.summary) {
+                snapshot.pipeline.summary.totalOrderLines = snapshot.pipeline.orders.filter(o => o.orderQuantityBoxes > 0).length;
+                snapshot.pipeline.summary.totalBoxesToOrder = snapshot.pipeline.orders.reduce((s, o) => s + (o.orderQuantityBoxes || 0), 0);
+              }
             }
           }
 
@@ -107,8 +225,9 @@ exports.handler = async (event) => {
             fromCache: true
           });
         }
-      } catch (_) {
+      } catch (cacheErr) {
         // Table may not exist yet — fall through to generate
+        console.error('[intelligence-report] Cache/reconciliation error:', cacheErr.message);
       }
     }
 
@@ -262,7 +381,24 @@ exports.handler = async (event) => {
             },
             queryFn: tdb.query
           });
-        } catch (_) { /* non-critical */ }
+        } catch (saveErr) {
+          console.error('[intelligence-report] Snapshot save failed:', saveErr.message);
+        }
+      } else if (updateSnapshotOnly && !locationId && pipeline) {
+        // Mid-workflow regeneration: update the cached snapshot's pipeline data in-place
+        // so that hard resets / device switches return the correct pipeline items.
+        // Does NOT touch generated_at, lock, completion summary, or activity log.
+        try {
+          await tdb.query(
+            `UPDATE pipeline_snapshots
+             SET snapshot = $1
+             WHERE id = (SELECT id FROM pipeline_snapshots ORDER BY generated_at DESC LIMIT 1)`,
+            [JSON.stringify(snapshotData)]
+          );
+          console.log('[intelligence-report] Snapshot pipeline data updated in-place');
+        } catch (updateErr) {
+          console.error('[intelligence-report] Snapshot pipeline update failed:', updateErr.message);
+        }
       }
     } else {
       // For location-specific reports, fetch last pipeline run timestamp

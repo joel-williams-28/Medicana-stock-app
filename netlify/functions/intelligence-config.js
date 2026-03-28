@@ -51,14 +51,18 @@ exports.handler = async (event) => {
         [key, value || '']
       );
 
-      await logActivity({
-        userId: userId || null,
-        actionType: 'config_changed',
-        entityType: 'config',
-        entityId: key,
-        details: { key, oldValue, newValue: value || '' },
-        queryFn: tdb.query
-      });
+      // Only log user-facing config changes (skip internal pipeline state keys)
+      const silentKeys = ['pipeline_completion_summary', 'pipeline_lock_until', 'last_pipeline_run'];
+      if (!silentKeys.includes(key)) {
+        await logActivity({
+          userId: userId || null,
+          actionType: 'config_changed',
+          entityType: 'config',
+          entityId: key,
+          details: { key, oldValue, newValue: value || '' },
+          queryFn: tdb.query
+        });
+      }
 
       return db.ok({ key, value });
     }

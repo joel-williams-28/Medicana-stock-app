@@ -130,16 +130,21 @@ exports.handler = async (event) => {
 
       await tdb.query('COMMIT');
 
-      await logActivity({
-        userId,
-        actionType: 'stock_transfer',
-        entityType: 'medication',
-        entityId: medicationId,
-        locationId: sourceLocationId,
-        details: {
-          medicationName: medicationName || null,
-          batchId,
-          batchCode: batchCode || null,
+      // Skip activity log for bulk operations (bulk summary is logged separately by the frontend)
+      if (!body.skipActivityLog) {
+        // Use distinct action type for pharmacy supplies vs regular transfers
+        const isPharmacySupply = pipelineContext.pipelineStep === 'pharmacy_supply';
+
+        await logActivity({
+          userId,
+          actionType: isPharmacySupply ? 'pharmacy_supply' : 'stock_transfer',
+          entityType: 'medication',
+          entityId: medicationId,
+          locationId: sourceLocationId,
+          details: {
+            medicationName: medicationName || null,
+            batchId,
+            batchCode: batchCode || null,
           delta: quantity,
           sourceLocationId,
           sourceLocationName,
@@ -149,7 +154,8 @@ exports.handler = async (event) => {
           ...pipelineContext
         },
         queryFn: tdb.query
-      });
+        });
+      }
 
       return db.ok();
     } catch (err) {

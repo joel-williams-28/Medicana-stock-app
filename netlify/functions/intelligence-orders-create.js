@@ -10,7 +10,9 @@ exports.handler = async (event) => {
     const tdb = db.forTenant(event);
     if (!tdb) return db.tenantNotFound();
 
-    const { orders, userId, pharmacistEmail } = db.parseBody(event);
+    const parsedBody = db.parseBody(event);
+    const { orders, userId, pharmacistEmail } = parsedBody;
+    const skipIndividualLogs = parsedBody.skipIndividualLogs === true;
 
     if (!orders || !Array.isArray(orders) || orders.length === 0) {
       return db.fail(400, 'orders array is required and must not be empty');
@@ -59,25 +61,27 @@ exports.handler = async (event) => {
 
       const order = orderResult.rows[0];
 
-      // Log activity with full pipeline context
-      await logActivity({
-        userId: userId || null,
-        actionType: 'order_placed',
-        entityType: 'order',
-        entityId: String(order.id),
-        locationId: locationId || null,
-        details: {
-          medicationName: medicationName || 'Unknown',
-          quantityBoxes,
-          quantityInItems,
-          urgency: urgency || 'routine',
-          source: 'intelligence_pipeline',
-          currentSimulatedBoxes: item.currentSimulatedBoxes != null ? Number(item.currentSimulatedBoxes) : null,
-          pharmacyDerivedMin: item.pharmacyDerivedMin != null ? Number(item.pharmacyDerivedMin) : null,
-          supplyDestinations: item.supplyDestinations || []
-        },
-        queryFn: tdb.query
-      });
+      // Log activity with full pipeline context (skip during bulk operations)
+      if (!skipIndividualLogs) {
+        await logActivity({
+          userId: userId || null,
+          actionType: 'order_placed',
+          entityType: 'order',
+          entityId: String(order.id),
+          locationId: locationId || null,
+          details: {
+            medicationName: medicationName || 'Unknown',
+            quantityBoxes,
+            quantityInItems,
+            urgency: urgency || 'routine',
+            source: 'intelligence_pipeline',
+            currentSimulatedBoxes: item.currentSimulatedBoxes != null ? Number(item.currentSimulatedBoxes) : null,
+            pharmacyDerivedMin: item.pharmacyDerivedMin != null ? Number(item.pharmacyDerivedMin) : null,
+            supplyDestinations: item.supplyDestinations || []
+          },
+          queryFn: tdb.query
+        });
+      }
 
       createdOrders.push({
         orderId: order.id,

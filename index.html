@@ -195,22 +195,27 @@
     ];
 
     const ACTIVITY_FILTERS = [
-      { id: 'login',              label: 'Logins',            color: 'bg-status-ordered-bg text-status-ordered-text border-status-ordered-text' },
+      { id: 'login',              label: 'Logins',            color: 'bg-[#EDE9F5] text-[#5B3E8A] border-[#C4B5DC]' },
       { id: 'stock_in',           label: 'Stock In',          color: 'bg-status-ok-bg text-status-ok-text border-status-ok-text' },
       { id: 'stock_out',          label: 'Stock Out',         color: 'bg-brand-pale text-brand-deepest border-brand-light' },
       { id: 'stock_transfer',     label: 'Transfers',         color: 'bg-status-ordered-bg text-status-ordered-text border-status-ordered-text' },
+      { id: 'pharmacy_supply',    label: 'Pharmacy Supplies', color: 'bg-[#E8F0E8] text-[#3D6B4F] border-[#B5D4BF]' },
       { id: 'order_placed',       label: 'Orders Placed',     color: 'bg-urgent-ghost-bg text-urgent-ghost-text border-urgent' },
       { id: 'order_fulfilled',    label: 'Orders Fulfilled',  color: 'bg-status-fulfilled-bg text-status-fulfilled-text border-brand-light' },
-      { id: 'medication_created', label: 'Meds Added',        color: 'bg-status-fulfilled-bg text-status-fulfilled-text border-brand-light' },
-      { id: 'medication_deleted', label: 'Meds Status',        color: 'bg-status-critical-bg text-status-critical-text border-status-critical-text' },
+      { id: 'medication_created', label: 'Meds Added',        color: 'bg-[#E8F4FA] text-[#2A6B8A] border-[#B5D6E8]' },
+      { id: 'medication_deleted', label: 'Meds Status',       color: 'bg-status-critical-bg text-status-critical-text border-status-critical-text' },
       { id: 'batch_removed',      label: 'Batch Removals',    color: 'bg-status-expired-bg text-status-expired-text border-status-expired-text' },
       { id: 'min_level_changed',  label: 'Min Level Changes', color: 'bg-status-low-bg text-status-low-text border-status-low-text' },
-      { id: 'drafts_generated',   label: 'Drafts Generated',  color: 'bg-status-ordered-bg text-status-ordered-text border-status-ordered-text' },
-      { id: 'draft_approved',     label: 'Drafts Approved',   color: 'bg-status-ok-bg text-status-ok-text border-status-ok-text' },
-      { id: 'draft_rejected',     label: 'Drafts Rejected',   color: 'bg-status-critical-bg text-status-critical-text border-status-critical-text' },
-      { id: 'bulk_order_approved', label: 'Bulk Orders',      color: 'bg-status-fulfilled-bg text-status-fulfilled-text border-brand-light' },
-      { id: 'logout',              label: 'Logouts',           color: 'bg-status-expired-bg text-status-expired-text border-status-expired-text' },
-      { id: 'config_changed',      label: 'Config Changes',    color: 'bg-status-low-bg text-status-low-text border-status-low-text' }
+      { id: 'drafts_generated',   label: 'Drafts Generated',  color: 'bg-[#F0EBF7] text-[#6B4FA0] border-[#D1C4E3]' },
+      { id: 'draft_approved',     label: 'Drafts Approved',   color: 'bg-[#E6F5ED] text-[#1D6B3F] border-[#A8D8BB]' },
+      { id: 'draft_rejected',     label: 'Drafts Rejected',   color: 'bg-[#F5E8E8] text-[#8A3D3D] border-[#D4B5B5]' },
+      { id: 'bulk_order_approved', label: 'Bulk Orders',      color: 'bg-[#F5F0E1] text-[#6B5A2A] border-[#D8CBAA]' },
+      { id: 'pipeline_generated',  label: 'Pipeline Generated', color: 'bg-[#E6EDF5] text-[#3D5A80] border-[#B5C8DC]' },
+      { id: 'pipeline_completed',  label: 'Pipeline Completed', color: 'bg-[#E2F0E8] text-[#2D6B4A] border-[#A8D4B8]' },
+      { id: 'bulk_transfers_executed',        label: 'Bulk Transfers', color: 'bg-[#E6F0F5] text-[#2A5F7A] border-[#A8CDE0]' },
+      { id: 'bulk_pharmacy_supplies_executed', label: 'Bulk Supplies',  color: 'bg-[#ECF0E6] text-[#4A6B3D] border-[#C0D4B0]' },
+      { id: 'logout',              label: 'Logouts',           color: 'bg-[#EDE8E3] text-[#6B5E52] border-[#C9BEB4]' },
+      { id: 'config_changed',      label: 'Config Changes',    color: 'bg-[#E8ECF0] text-[#4A5568] border-[#B5C0D0]' }
     ];
 
     const formatExpiry = (expiryDate, format = 'short') => {
@@ -797,7 +802,7 @@
       });
 
       // Sub-tab state for Intelligent Stock tab
-      const [orderingSubTab, setOrderingSubTab] = useState('alerts');
+      const [orderingSubTab, setOrderingSubTab] = useState('review');
 
       // Draft orders state for Review & Order sub-tab
       const [draftOrders, setDraftOrders] = useState({
@@ -873,6 +878,7 @@
       const [activityUserFilter, setActivityUserFilter] = useState('');
       const [activityUsers, setActivityUsers] = useState([]);
       const [collapsedDates, setCollapsedDates] = useState([]);
+      const [expandedBulkEntries, setExpandedBulkEntries] = useState(new Set());
       const activityLoadRef = useRef(0);
         const [changePasswordForm, setChangePasswordForm] = useState({
           currentPassword: '',
@@ -4297,7 +4303,7 @@ ${tc.name()} Stock Management System`;
       // =============================================
       // PIPELINE-BASED REVIEW & ORDER HANDLERS
       // =============================================
-      const loadReviewPipeline = async (preserveWizardStep = false, forceRegenerate = false, skipSnapshotSave = false, useCurrentMins = false) => {
+      const loadReviewPipeline = async (preserveWizardStep = false, forceRegenerate = false, skipSnapshotSave = false, useCurrentMins = false, updateSnapshot = false) => {
         setReviewPipeline({ loading: true, data: null, error: null });
         setMinLevelOverrides({});
         setAppliedMinLevels(new Set());
@@ -4310,10 +4316,15 @@ ${tc.name()} Stock Management System`;
           // or generates fresh pipeline if expired or force=true
           // skipSnapshotSave=true for mid-workflow regeneration (don't overwrite the cached snapshot or lock)
           // useCurrentMins=true after Step 1 to use applied min levels for redistribution calculations
-          const data = await window.api.fetchIntelligenceReport(null, forceRegenerate, skipSnapshotSave, useCurrentMins);
+          const data = await window.api.fetchIntelligenceReport(null, forceRegenerate, skipSnapshotSave, useCurrentMins, updateSnapshot);
           // Restore or clear completion summary from backend response
           if (data.completionSummary && !forceRegenerate) {
-            setPipelineCompleteSummary(data.completionSummary);
+            // Use the current lock timestamp from the backend response (always fresh)
+            // rather than the stale one saved inside the completion summary
+            const restoredSummary = { ...data.completionSummary };
+            if (data.lockedUntil) restoredSummary.lockedUntil = data.lockedUntil;
+            setPipelineCompleteSummary(restoredSummary);
+            setOrderingSubTab('review'); // Auto-switch so completion view is visible
           } else {
             setPipelineCompleteSummary(null);
           }
@@ -4424,7 +4435,7 @@ ${tc.name()} Stock Management System`;
           setOrders(data.orders || []);
           // Regenerate pipeline using actual DB min levels (useCurrentMins=true)
           // so Steps 2-4 honour the levels the user applied in Step 1
-          const freshData = await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
+          const freshData = await loadReviewPipeline(true, true, true, true, true); // preserveStep, force, nosave, useCurrentMins
           if (isFinal) {
             setMinLevelRefreshDone(true);
             // Ensure step 1 is marked reviewed so user can advance without password
@@ -4493,7 +4504,7 @@ ${tc.name()} Stock Management System`;
                 setLocations(data.locations || []);
                 setOrders(data.orders || []);
               });
-              loadReviewPipeline(true, true, true, true); // useCurrentMins=true
+              loadReviewPipeline(true, true, true, true, true); // useCurrentMins=true
             }
           } else {
             setWizardState(prev => ({ ...prev, currentStep: targetIndex }));
@@ -4533,7 +4544,7 @@ ${tc.name()} Stock Management System`;
           setSkipConfirm({ show: false, password: '', error: '', targetStep: null, loading: false });
           // If we skipped past step 1, trigger recalculation with current DB min levels
           if (wizardState.currentStep === 0 && targetIndex > 0) {
-            loadReviewPipeline(true, true, true, true); // useCurrentMins=true
+            loadReviewPipeline(true, true, true, true, true); // useCurrentMins=true
           }
         } catch (err) {
           setSkipConfirm(prev => ({ ...prev, loading: false, error: 'Network error. Please try again.' }));
@@ -4612,6 +4623,7 @@ ${tc.name()} Stock Management System`;
       useEffect(() => {
         if (!reviewPipeline.data?.pipeline) return;
         if (reviewPipeline.loading) return;
+        if (pipelineCompleteSummary) return; // Don't auto-advance when pipeline is complete
         const pp = reviewPipeline.data.pipeline;
         const step = wizardState.currentStep;
         const stepKey = WIZARD_STEPS[step]?.key;
@@ -4674,7 +4686,8 @@ ${tc.name()} Stock Management System`;
           const result = await window.api.createIntelligenceOrders({
             orders: selectedOrders,
             userId: userInfo?.id,
-            pharmacistEmail: draftOrders.pharmacistEmail
+            pharmacistEmail: draftOrders.pharmacistEmail,
+            skipIndividualLogs: true
           });
           // Reuse existing email preview UI via draftOrders.approvalResult
           setDraftOrders(prev => ({ ...prev, approvalResult: result }));
@@ -4934,9 +4947,6 @@ ${tc.name()} Stock Management System`;
       if (!auth.isLoggedIn) {
         return (
           <div className="min-h-screen bg-gradient-to-br from-off-white to-brand-pale flex flex-col items-center justify-center p-3 sm:p-4">
-            <div className="mb-8 sm:mb-10">
-              <img src="assets/branding/logo-clinitrack.png" alt="CliniTrack" className="h-16 sm:h-20 w-auto mx-auto" />
-            </div>
             <div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 max-w-md w-full mx-2 sm:mx-0">
               <div className="flex flex-col items-center justify-center mb-4 sm:mb-6">
                 <div className="mb-3 sm:mb-4">
@@ -4967,7 +4977,7 @@ ${tc.name()} Stock Management System`;
       return (
         <div className="min-h-screen bg-gradient-to-br from-off-white to-brand-pale">
           {/* Header */}
-          <div className="bg-near-black text-white shadow-lg border-b-2 border-near-black relative">
+          <div className="bg-[#2D2D2D] text-white shadow-lg border-b-2 border-[#2D2D2D] relative">
             <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-3 sm:py-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-0 relative z-10">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-0">
                 <div className="mr-0 sm:mr-4">
@@ -5527,7 +5537,7 @@ ${tc.name()} Stock Management System`;
                     </div>
                   </div>
 
-                  <div className="divide-y divide-bdr-default max-h-[600px] overflow-y-auto">
+                  <div className="divide-y divide-bdr-default max-h-[calc(100vh-280px)] overflow-y-auto">
                   {(() => {
                     if (activityLogLoading && activityLog.length === 0) {
                       return (
@@ -5561,27 +5571,28 @@ ${tc.name()} Stock Management System`;
 
                     // Badge config by action type
                     const badgeConfig = {
-                      login:              { label: 'LOGIN',       css: 'bg-status-ordered-bg text-status-ordered-text', icon: null },
+                      login:              { label: 'LOGIN',       css: 'bg-[#EDE9F5] text-[#5B3E8A]', icon: null },
                       stock_in:           { label: 'STOCK IN',    css: 'bg-status-ok-bg text-status-ok-text', icon: Plus },
                       stock_out:          { label: 'STOCK OUT',   css: 'bg-brand-pale text-brand-deepest', icon: Minus },
                       stock_transfer:     { label: 'TRANSFER',    css: 'bg-status-ordered-bg text-status-ordered-text', icon: Download },
+                      pharmacy_supply:    { label: 'PHARMACY SUPPLY', css: 'bg-[#E8F0E8] text-[#3D6B4F]', icon: Download },
                       order_placed:       { label: 'ORDERED',     css: 'bg-urgent-ghost-bg text-urgent-ghost-text', icon: Download },
                       order_fulfilled:    { label: 'FULFILLED',   css: 'bg-status-fulfilled-bg text-status-fulfilled-text', icon: Download },
-                      medication_created: { label: 'NEW MED',     css: 'bg-status-fulfilled-bg text-status-fulfilled-text', icon: Plus },
+                      medication_created: { label: 'NEW MED',     css: 'bg-[#E8F4FA] text-[#2A6B8A]', icon: Plus },
                       medication_deleted: { label: 'DELETED',     css: 'bg-status-critical-bg text-status-critical-text', icon: AlertTriangle },
                       batch_removed:      { label: 'REMOVED',     css: 'bg-status-expired-bg text-status-expired-text', icon: AlertTriangle },
                       min_level_changed:  { label: 'MIN LEVEL',   css: 'bg-status-low-bg text-status-low-text', icon: null },
-                      logout:             { label: 'LOGOUT',      css: 'bg-status-expired-bg text-status-expired-text', icon: null },
-                      config_changed:     { label: 'CONFIG',      css: 'bg-status-low-bg text-status-low-text', icon: null },
-                      medication_restored:{ label: 'RESTORED',    css: 'bg-status-fulfilled-bg text-status-fulfilled-text', icon: Plus },
-                      drafts_generated:   { label: 'DRAFTS',      css: 'bg-status-ordered-bg text-status-ordered-text', icon: Download },
-                      draft_approved:     { label: 'APPROVED',    css: 'bg-status-ok-bg text-status-ok-text', icon: null },
-                      draft_rejected:     { label: 'REJECTED',    css: 'bg-status-critical-bg text-status-critical-text', icon: AlertTriangle },
-                      bulk_order_approved:{ label: 'BULK ORDER',  css: 'bg-status-fulfilled-bg text-status-fulfilled-text', icon: Download },
+                      logout:             { label: 'LOGOUT',      css: 'bg-[#EDE8E3] text-[#6B5E52]', icon: null },
+                      config_changed:     { label: 'CONFIG',      css: 'bg-[#E8ECF0] text-[#4A5568]', icon: null },
+                      medication_restored:{ label: 'RESTORED',    css: 'bg-[#E8F4FA] text-[#2A6B8A]', icon: Plus },
+                      drafts_generated:   { label: 'DRAFTS',      css: 'bg-[#F0EBF7] text-[#6B4FA0]', icon: Download },
+                      draft_approved:     { label: 'APPROVED',    css: 'bg-[#E6F5ED] text-[#1D6B3F]', icon: null },
+                      draft_rejected:     { label: 'REJECTED',    css: 'bg-[#F5E8E8] text-[#8A3D3D]', icon: AlertTriangle },
+                      bulk_order_approved:{ label: 'BULK ORDER',  css: 'bg-[#F5F0E1] text-[#6B5A2A]', icon: Download },
                       pipeline_generated: { label: 'PIPELINE',    css: 'bg-status-ordered-bg text-status-ordered-text', icon: null },
                       pipeline_completed: { label: 'COMPLETED',   css: 'bg-status-ok-bg text-status-ok-text', icon: null },
-                      bulk_transfers_executed:       { label: 'TRANSFERS', css: 'bg-status-ordered-bg text-status-ordered-text', icon: Download },
-                      bulk_pharmacy_supplies_executed:{ label: 'SUPPLIES',  css: 'bg-status-ordered-bg text-status-ordered-text', icon: Download }
+                      bulk_transfers_executed:       { label: 'BULK TRANSFER', css: 'bg-status-ordered-bg text-status-ordered-text', icon: Download },
+                      bulk_pharmacy_supplies_executed:{ label: 'BULK SUPPLY',  css: 'bg-[#E8F0E8] text-[#3D6B4F]', icon: Download }
                     };
 
                     const renderEntryDetails = (entry) => {
@@ -5618,11 +5629,21 @@ ${tc.name()} Stock Management System`;
                         );
                       }
 
-                      if (at === 'stock_transfer') {
+                      if (at === 'stock_transfer' || at === 'pharmacy_supply') {
+                        const delta = Math.abs(d.delta || 0);
+                        const ipb = d.itemsPerBox;
+                        const qBoxes = d.quantityBoxes;
+                        let qtyText = `${delta} items`;
+                        if (qBoxes) {
+                          qtyText = `${qBoxes} ${qBoxes === 1 ? 'box' : 'boxes'} (${delta} items)`;
+                        } else if (ipb && delta >= ipb) {
+                          const boxes = Math.floor(delta / ipb);
+                          qtyText = `${boxes} ${boxes === 1 ? 'box' : 'boxes'} (${delta} items)`;
+                        }
                         return (
                           <div className="text-sm text-txt-tertiary">
                             <p><span className="font-medium">From:</span> {d.sourceLocationName || d.fromLocation || entry.locationName || 'Unknown'} <span className="font-medium ml-2">To:</span> {d.targetLocationName || d.toLocation || 'Unknown'}</p>
-                            <p><span className="font-medium">Quantity:</span> {d.delta || 0} items</p>
+                            <p><span className="font-medium">Quantity:</span> {qtyText}</p>
                             {d.batchCode && <p><span className="font-medium">Batch:</span> {d.batchCode}</p>}
                           </div>
                         );
@@ -5740,21 +5761,33 @@ ${tc.name()} Stock Management System`;
                       }
 
                       if (at === 'bulk_order_approved') {
+                        const isExpanded = expandedBulkEntries.has(entry.id);
+                        const meds = d.medications || [];
                         return (
                           <div className="text-sm text-txt-tertiary">
-                            <p><span className="font-medium">{d.count || '?'}</span> order{(d.count || 0) !== 1 ? 's' : ''} created — <span className="font-medium">{d.totalBoxes || '?'} boxes</span> total</p>
-                            {d.pharmacistEmail && <p><span className="font-medium">Sent to:</span> {d.pharmacistEmail}</p>}
+                            <button onClick={(e) => { e.stopPropagation(); setExpandedBulkEntries(prev => { const next = new Set(prev); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; }); }} className="flex items-center gap-1 hover:text-txt-secondary transition-colors text-left">
+                              <span className="text-xs">{isExpanded ? '\u25BE' : '\u25B8'}</span>
+                              <span><span className="font-medium">{d.count || '?'}</span> order{(d.count || 0) !== 1 ? 's' : ''} created — <span className="font-medium">{d.totalBoxes || '?'} boxes</span> total</span>
+                            </button>
+                            {d.pharmacistEmail && <p className="ml-4"><span className="font-medium">Sent to:</span> {d.pharmacistEmail}</p>}
+                            {isExpanded && meds.length > 0 && (
+                              <div className="mt-2 ml-4 space-y-1 border-l-2 border-bdr-default pl-3">
+                                {meds.map((m, i) => (
+                                  <p key={i}><span className="font-medium">{m.name}</span> — {m.boxes} {m.boxes === 1 ? 'box' : 'boxes'} <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ml-1 ${m.urgency === 'urgent' ? 'bg-danger-ghost-bg text-danger-ghost-text' : 'bg-status-ordered-bg text-status-ordered-text'}`}>{m.urgency}</span></p>
+                                ))}
+                              </div>
+                            )}
+                            {isExpanded && meds.length === 0 && <p className="mt-1 ml-4 text-txt-disabled text-xs">Detailed breakdown not available for this entry</p>}
                           </div>
                         );
                       }
 
                       if (at === 'pipeline_completed') {
                         const st = d.stepTotals || {};
+                        const total = (st.adjustments || 0) + (st.redistribute || 0) + (st.pharmacy_supply || 0) + (st.order || 0);
                         return (
                           <div className="text-sm text-txt-tertiary">
-                            <p><span className="font-medium">Pipeline completed</span> — {st.adjustments || 0} min levels, {st.redistribute || 0} transfers, {st.pharmacy_supply || 0} supplies, {st.order || 0} orders</p>
-                            {d.ordersPlaced > 0 && <p><span className="font-medium">{d.ordersPlaced}</span> purchase order{d.ordersPlaced !== 1 ? 's' : ''} placed</p>}
-                            {d.maturityLevel && <p><span className="font-medium">Maturity:</span> {d.maturityLevel} ({d.weeksOfData || 0} weeks of data)</p>}
+                            <p>Pipeline completed — {total} action{total !== 1 ? 's' : ''} executed</p>
                           </div>
                         );
                       }
@@ -5764,6 +5797,50 @@ ${tc.name()} Stock Management System`;
                           <div className="text-sm text-txt-tertiary">
                             <p><span className="font-medium">Pipeline generated</span> — {d.medicationCount || '?'} medications analysed</p>
                             <p>{d.adjustments || 0} adjustments, {d.transfers || 0} transfers, {d.pharmacySupplies || 0} supplies, {d.orders || 0} orders</p>
+                          </div>
+                        );
+                      }
+
+                      if (at === 'bulk_transfers_executed') {
+                        const isExpanded = expandedBulkEntries.has(entry.id);
+                        const items = d.items || [];
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <button onClick={(e) => { e.stopPropagation(); setExpandedBulkEntries(prev => { const next = new Set(prev); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; }); }} className="flex items-center gap-1 hover:text-txt-secondary transition-colors text-left">
+                              <span className="text-xs">{isExpanded ? '\u25BE' : '\u25B8'}</span>
+                              <span><span className="font-medium">{d.totalTransfers || '?'}</span> transfer{(d.totalTransfers || 0) !== 1 ? 's' : ''} executed — <span className="font-medium">{d.totalBoxesMoved || '?'} boxes</span> moved</span>
+                            </button>
+                            {d.totalFailed > 0 && <p className="text-status-critical-text ml-4">{d.totalFailed} failed</p>}
+                            {isExpanded && items.length > 0 && (
+                              <div className="mt-2 ml-4 space-y-1 border-l-2 border-bdr-default pl-3">
+                                {items.map((item, i) => (
+                                  <p key={i}><span className="font-medium">{item.medicationName}</span>: {item.from} → {item.to} — {item.quantityBoxes} {item.quantityBoxes === 1 ? 'box' : 'boxes'}{item.batchCode ? ` (${item.batchCode})` : ''}</p>
+                                ))}
+                              </div>
+                            )}
+                            {isExpanded && items.length === 0 && <p className="mt-1 ml-4 text-txt-disabled text-xs">Detailed breakdown not available for this entry</p>}
+                          </div>
+                        );
+                      }
+
+                      if (at === 'bulk_pharmacy_supplies_executed') {
+                        const isExpanded = expandedBulkEntries.has(entry.id);
+                        const items = d.items || [];
+                        return (
+                          <div className="text-sm text-txt-tertiary">
+                            <button onClick={(e) => { e.stopPropagation(); setExpandedBulkEntries(prev => { const next = new Set(prev); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; }); }} className="flex items-center gap-1 hover:text-txt-secondary transition-colors text-left">
+                              <span className="text-xs">{isExpanded ? '\u25BE' : '\u25B8'}</span>
+                              <span><span className="font-medium">{d.totalSupplies || '?'}</span> pharmacy {(d.totalSupplies || 0) !== 1 ? 'supplies' : 'supply'} executed — <span className="font-medium">{d.totalBoxesSupplied || '?'} boxes</span> dispensed</span>
+                            </button>
+                            {d.totalFailed > 0 && <p className="text-status-critical-text ml-4">{d.totalFailed} failed</p>}
+                            {isExpanded && items.length > 0 && (
+                              <div className="mt-2 ml-4 space-y-1 border-l-2 border-bdr-default pl-3">
+                                {items.map((item, i) => (
+                                  <p key={i}><span className="font-medium">{item.medicationName}</span>: {item.from} → {item.to} — {item.quantityBoxes} {item.quantityBoxes === 1 ? 'box' : 'boxes'}{item.batchCode ? ` (${item.batchCode})` : ''}</p>
+                                ))}
+                              </div>
+                            )}
+                            {isExpanded && items.length === 0 && <p className="mt-1 ml-4 text-txt-disabled text-xs">Detailed breakdown not available for this entry</p>}
                           </div>
                         );
                       }
@@ -5793,7 +5870,7 @@ ${tc.name()} Stock Management System`;
                               {!isCollapsed && groupedByDate[dateKey].map(entry => {
                                 const badge = badgeConfig[entry.actionType] || { label: entry.actionType.toUpperCase(), css: 'bg-off-white text-near-black', icon: null };
                                 const BadgeIcon = badge.icon;
-                                const NON_MED_ACTIONS = ['login', 'logout', 'config_changed', 'bulk_order_approved', 'drafts_generated'];
+                                const NON_MED_ACTIONS = ['login', 'logout', 'config_changed', 'bulk_order_approved', 'drafts_generated', 'bulk_transfers_executed', 'bulk_pharmacy_supplies_executed', 'pipeline_generated', 'pipeline_completed'];
                                 const medName = entry.details?.medicationName || (NON_MED_ACTIONS.includes(entry.actionType) ? '' : 'Unknown Medication');
                                 const delta = entry.details?.delta ? Math.abs(entry.details.delta) : null;
                                 return (
@@ -5806,7 +5883,13 @@ ${tc.name()} Stock Management System`;
                                             ? (entry.details?.key || 'Configuration')
                                             : entry.actionType === 'drafts_generated' || entry.actionType === 'bulk_order_approved'
                                               ? (entry.details?.count ? `${entry.details.count} item${entry.details.count !== 1 ? 's' : ''}` : '')
-                                              : ''
+                                              : entry.actionType === 'bulk_transfers_executed'
+                                                ? `Bulk Transfer — ${entry.details?.totalTransfers || '?'} transfers`
+                                                : entry.actionType === 'bulk_pharmacy_supplies_executed'
+                                                  ? `Bulk Supply — ${entry.details?.totalSupplies || '?'} supplies`
+                                                  : entry.actionType === 'pipeline_generated' || entry.actionType === 'pipeline_completed'
+                                                    ? 'Intelligence Pipeline'
+                                                    : ''
                                       )}</span>
                                       <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${badge.css}`}>
                                         {BadgeIcon && <BadgeIcon className="w-3 h-3 mr-1" />}
@@ -5914,20 +5997,10 @@ ${tc.name()} Stock Management System`;
                     </div>
                   </div>
 
-                  {/* Sub-tabs: Stock Alerts / Review & Order */}
+                  {/* Sub-tabs: Review & Order / Order History */}
                   {canAccessTab('purchaseorders') && (
                     <div className="border-b border-bdr-default bg-off-white px-4">
                       <nav className="flex gap-1 -mb-px">
-                        <button
-                          onClick={() => setOrderingSubTab('alerts')}
-                          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${orderingSubTab === 'alerts' ? 'border-brand-mid text-brand-mid' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}
-                        >
-                          Stock Alerts
-                          {(() => {
-                            const count = reviewPipeline.data?.pipeline?.orders?.length ?? lowStockMedications.length;
-                            return count > 0 ? <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-critical-bg text-status-critical-text">{count}</span> : null;
-                          })()}
-                        </button>
                         <button
                           onClick={() => { setOrderingSubTab('review'); if (!reviewPipeline.data && !reviewPipeline.loading) loadReviewPipeline(); }}
                           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${orderingSubTab === 'review' ? 'border-brand-mid text-brand-mid' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}
@@ -5940,161 +6013,79 @@ ${tc.name()} Stock Management System`;
                             return actionCount > 0 ? <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">{actionCount}</span> : null;
                           })()}
                         </button>
+                        <button
+                          onClick={() => setOrderingSubTab('history')}
+                          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${orderingSubTab === 'history' ? 'border-brand-mid text-brand-mid' : 'border-transparent text-txt-tertiary hover:text-txt-secondary hover:border-bdr-default'}`}
+                        >
+                          Order History
+                          {orders.length > 0 ? <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">{orders.length}</span> : null}
+                        </button>
                       </nav>
                     </div>
                   )}
 
-                  {/* Stock Alerts Sub-tab — powered by intelligence pipeline */}
-                  {(orderingSubTab === 'alerts' || !canAccessTab('purchaseorders')) && (() => {
-                    const pData = reviewPipeline.data;
-                    const maturity = pData?.maturityLevel;
-                    const isEarly = !pData || maturity === 'not_configured' || maturity === 'collecting';
-
-                    // Loading state
-                    if (reviewPipeline.loading) return (
-                      <div className="p-8 text-center">
-                        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brand-mid mb-3"></div>
-                        <p className="text-txt-tertiary">Analyzing stock levels...</p>
-                      </div>
-                    );
-
-                    // Error state
-                    if (reviewPipeline.error) return (
-                      <div className="p-6">
-                        <div className="bg-danger-ghost-bg border border-danger-ghost-bg rounded-lg p-4 mb-4">
-                          <p className="text-sm text-danger-ghost-text">{reviewPipeline.error}</p>
+                  {/* Order History Sub-tab */}
+                  {orderingSubTab === 'history' && (
+                    <div className="p-4 sm:p-6">
+                      <h3 className="text-lg font-semibold text-txt-primary mb-4">Order History</h3>
+                      {orders.length === 0 ? (
+                        <div className="p-8 text-center text-txt-tertiary">
+                          <p className="text-lg font-medium">No orders placed yet</p>
+                          <p className="text-sm mt-1">Orders created through the pipeline will appear here</p>
                         </div>
-                        <button onClick={loadReviewPipeline} className="bg-brand-mid text-white px-4 py-2 rounded hover:bg-brand-dark transition-colors text-sm">Retry</button>
-                      </div>
-                    );
-
-                    // Early maturity fallback — show simple low stock list with info banner
-                    if (isEarly) return (
-                      <div>
-                        {pData && (
-                          <div className="mx-4 mt-4 p-3 bg-status-ordered-bg border border-status-ordered-text/20 rounded-lg">
-                            <p className="text-sm text-status-ordered-text">Intelligence is still learning from your usage data. Showing basic stock levels below. Recommendations will improve as more data is collected.</p>
+                      ) : (
+                        <div className="border border-bdr-default rounded-lg overflow-hidden">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead className="bg-off-white sticky top-0 z-10">
+                                <tr>
+                                  <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Date & Time</th>
+                                  <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Medication</th>
+                                  <th className="px-4 py-3 text-right font-semibold text-txt-secondary">Quantity</th>
+                                  <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Urgency</th>
+                                  <th className="px-4 py-3 text-center font-semibold text-txt-secondary">Status</th>
+                                  <th className="px-4 py-3 text-left font-semibold text-txt-secondary">Ordered By</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-bdr-default">
+                                {orders.map(o => {
+                                  const ipb = medications.find(m => m.internalId === o.medId)?.batches?.[0]?.itemsPerBox || null;
+                                  const boxes = ipb ? Math.floor(o.quantity / ipb) : null;
+                                  return (
+                                    <tr key={o.id} className="hover:bg-off-white">
+                                      <td className="px-4 py-3 text-txt-secondary whitespace-nowrap">
+                                        {new Date(o.orderedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                        <span className="text-txt-disabled ml-1">{new Date(o.orderedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                                      </td>
+                                      <td className="px-4 py-3 font-medium text-near-black">{o.medName}</td>
+                                      <td className="px-4 py-3 text-right text-near-black">
+                                        {boxes != null ? `${boxes} ${boxes === 1 ? 'box' : 'boxes'} (${o.quantity} items)` : `${o.quantity} items`}
+                                      </td>
+                                      <td className="px-4 py-3 text-center">
+                                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                                          o.urgency === 'urgent' ? 'bg-danger-ghost-bg text-danger-ghost-text' :
+                                          o.urgency === 'non-urgent' ? 'bg-status-ok-bg text-status-ok-text' :
+                                          'bg-status-ordered-bg text-status-ordered-text'
+                                        }`}>{o.urgency}</span>
+                                      </td>
+                                      <td className="px-4 py-3 text-center">
+                                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                                          o.status === 'fulfilled' ? 'bg-status-ok-bg text-status-ok-text' :
+                                          o.status === 'pending' ? 'bg-status-ordered-bg text-status-ordered-text' :
+                                          'bg-status-expired-bg text-status-expired-text'
+                                        }`}>{o.status}</span>
+                                      </td>
+                                      <td className="px-4 py-3 text-txt-secondary">{o.user}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
                           </div>
-                        )}
-                        <div className="overflow-x-auto">
-                          <table className="w-full">
-                            <thead className="bg-off-white">
-                              <tr>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-txt-tertiary uppercase">Medication</th>
-                                {(ui.currentLocation === 'All' || isGroupName(ui.currentLocation, locations)) && (<th className="px-4 py-3 text-left text-xs font-semibold text-txt-tertiary uppercase">Location</th>)}
-                                <th className="px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Current Stock</th>
-                                <th className="px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Min Level</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-bdr-default">
-                              {lowStockMedications.sort((a, b) => a.name.localeCompare(b.name)).map(med => {
-                                const stableKey = `${med.medicationName || med.name}|${med.strengthRaw || ''}|${med.type || ''}|${med.location || ''}`;
-                                return (
-                                  <tr key={stableKey} className="hover:bg-off-white">
-                                    <td className="px-4 py-3 text-sm text-near-black">{med.name}</td>
-                                    {(ui.currentLocation === 'All' || isGroupName(ui.currentLocation, locations)) && (
-                                      <td className="px-4 py-3 text-sm text-txt-secondary">{med.location}</td>
-                                    )}
-                                    <td className="px-4 py-3 text-sm text-center"><span className="font-semibold text-danger-ghost-text">{formatStockDisplay(med)}</span></td>
-                                    <td className="px-4 py-3 text-sm text-txt-tertiary text-center">{formatMinLevelDisplay(med)}</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                          {lowStockMedications.length === 0 && (
-                            <div className="p-8 text-center text-txt-tertiary">
-                              <p className="text-lg font-medium">No low stock items</p>
-                              <p className="text-sm mt-1">All medications are above minimum stock levels</p>
-                            </div>
-                          )}
                         </div>
-                      </div>
-                    );
-
-                    // Pipeline-backed intelligence view
-                    const alertItems = (pData.pipeline?.orders || []).map(o => {
-                      const analysis = pData.medications?.find(
-                        m => m.medicationId === o.medicationId && m.locationId === o.locationId
-                      );
-                      return { ...o, analysis };
-                    }).sort((a, b) => {
-                      if (a.urgency === 'urgent' && b.urgency !== 'urgent') return -1;
-                      if (a.urgency !== 'urgent' && b.urgency === 'urgent') return 1;
-                      return a.medicationName.localeCompare(b.medicationName);
-                    });
-
-                    if (alertItems.length === 0) return (
-                      <div className="p-8 text-center text-txt-tertiary">
-                        <p className="text-lg font-medium">All stock levels healthy</p>
-                        <p className="text-sm mt-1">No ordering needs identified after analyzing usage patterns and redistribution options.</p>
-                      </div>
-                    );
-
-                    return (
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead className="bg-off-white">
-                            <tr>
-                              <th className="px-4 py-3 text-left text-xs font-semibold text-txt-tertiary uppercase">Medication</th>
-                              <th className="px-4 py-3 text-left text-xs font-semibold text-txt-tertiary uppercase">Supplies To</th>
-                              <th className="px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Pharmacy Stock</th>
-                              <th className="px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Derived Min</th>
-                              <th className="px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Order Qty</th>
-                              <th className="px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Urgency</th>
-                              <th className="px-4 py-3 text-center text-xs font-semibold text-txt-tertiary uppercase">Trend</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-bdr-default">
-                            {alertItems.map((o, i) => (
-                              <tr key={`${o.medicationId}-${o.locationId}-${i}`} className="hover:bg-off-white">
-                                <td className="px-4 py-3 text-sm text-near-black">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-medium">{o.medicationName}</span>
-                                    {o.existingPendingOrder && (
-                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-status-ordered-bg text-status-ordered-text">
-                                        <Download className="w-3 h-3 mr-1" />{o.alreadyOrderedBoxes} boxes on order
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3 text-sm text-txt-secondary">
-                                  {o.supplyDestinations && o.supplyDestinations.length > 0
-                                    ? o.supplyDestinations.map(d => d.locationName).join(', ')
-                                    : <span className="text-txt-disabled">-</span>}
-                                </td>
-                                <td className="px-4 py-3 text-sm text-center">
-                                  <span className="px-2 py-1 rounded text-xs font-semibold bg-status-critical-bg text-status-critical-text">
-                                    {o.currentSimulatedBoxes} {o.currentSimulatedBoxes === 1 ? 'box' : 'boxes'}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-sm text-txt-secondary text-center">{o.pharmacyDerivedMin || o.suggestedMinLevel} boxes</td>
-                                <td className="px-4 py-3 text-sm text-center">
-                                  <span className="font-semibold text-brand-mid">{o.orderQuantityBoxes} {o.orderQuantityBoxes === 1 ? 'box' : 'boxes'}</span>
-                                </td>
-                                <td className="px-4 py-3 text-sm text-center">
-                                  <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                                    o.urgency === 'urgent' ? 'bg-status-critical-bg text-status-critical-text' : 'bg-status-ordered-bg text-status-ordered-text'
-                                  }`}>
-                                    {o.urgency === 'urgent' ? 'URGENT' : 'ROUTINE'}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-sm text-center">
-                                  {(() => {
-                                    const trend = o.analysis?.usageTrend;
-                                    if (trend === 'increasing') return <span className="text-status-critical-text font-medium">Increasing</span>;
-                                    if (trend === 'decreasing') return <span className="text-green-600 font-medium">Decreasing</span>;
-                                    if (trend === 'stable') return <span className="text-txt-tertiary">Stable</span>;
-                                    return <span className="text-txt-disabled">-</span>;
-                                  })()}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    );
-                  })()}
+                      )}
+                    </div>
+                  )}
 
                   {/* Review & Order Sub-tab (Admin/Pharmacist only) — Pipeline-based */}
                   {orderingSubTab === 'review' && canAccessTab('purchaseorders') && (
@@ -6903,7 +6894,8 @@ ${tc.name()} Stock Management System`;
                                               sourceMinLevel: t.sourceMinLevel,
                                               targetMinLevel: t.targetMinLevel,
                                               quantityBoxes: t.quantityBoxes,
-                                              pipelineStep: 'redistribute'
+                                              pipelineStep: 'redistribute',
+                                              skipActivityLog: true
                                             });
                                             succeeded++;
                                           } catch (err) {
@@ -6927,13 +6919,20 @@ ${tc.name()} Stock Management System`;
                                               totalTransfers: succeeded,
                                               totalFailed: failures.length,
                                               totalBoxesMoved: pp.transfers.reduce((sum, t) => sum + t.quantityBoxes, 0),
-                                              source: 'intelligence_pipeline'
+                                              source: 'intelligence_pipeline',
+                                              items: pp.transfers.map(t => ({
+                                                medicationName: t.medicationName,
+                                                from: t.sourceLocName,
+                                                to: t.targetLocName,
+                                                quantityBoxes: t.quantityBoxes,
+                                                batchCode: t.batchCode
+                                              }))
                                             }
                                           });
                                         } catch (_) {}
                                         // Regenerate pipeline server-side to recalculate Steps 3-4
                                         // with current inventory (post-transfer)
-                                        await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
+                                        await loadReviewPipeline(true, true, true, true, true); // preserveStep, force, nosave, useCurrentMins
                                         // Mark step 2 as reviewed
                                         setWizardState(prev => ({
                                           ...prev,
@@ -7013,7 +7012,7 @@ ${tc.name()} Stock Management System`;
                                                   setLocations(data.locations || []);
                                                   // If this was the last transfer, regenerate pipeline for Steps 3-4
                                                   if (pp.transfers.length <= 1) {
-                                                    await loadReviewPipeline(true, true, true, true);
+                                                    await loadReviewPipeline(true, true, true, true, true);
                                                     setWizardState(prev => ({
                                                       ...prev,
                                                       stepStatus: { ...prev.stepStatus, redistribute: { ...prev.stepStatus.redistribute, reviewed: true } }
@@ -7101,7 +7100,8 @@ ${tc.name()} Stock Management System`;
                                               batchCode: s.batchCode,
                                               sourceStockBoxes: s.sourceStockBoxes,
                                               quantityBoxes: adjBoxes,
-                                              pipelineStep: 'pharmacy_supply'
+                                              pipelineStep: 'pharmacy_supply',
+                                              skipActivityLog: true
                                             });
                                             succeeded++;
                                             successIndices.push(si);
@@ -7126,13 +7126,20 @@ ${tc.name()} Stock Management System`;
                                               totalSupplies: succeeded,
                                               totalFailed: failures.length,
                                               totalBoxesSupplied: pp.pharmacySupplies.reduce((sum, s, idx) => sum + (pharmacySupplyAdjustments[idx] != null ? Number(pharmacySupplyAdjustments[idx]) : s.quantityBoxes), 0),
-                                              source: 'intelligence_pipeline'
+                                              source: 'intelligence_pipeline',
+                                              items: pp.pharmacySupplies.map((s, idx) => ({
+                                                medicationName: s.medicationName,
+                                                from: s.sourceLocName || 'Pharmacy',
+                                                to: s.targetLocName,
+                                                quantityBoxes: pharmacySupplyAdjustments[idx] != null ? Number(pharmacySupplyAdjustments[idx]) : s.quantityBoxes,
+                                                batchCode: s.batchCode
+                                              }))
                                             }
                                           });
                                         } catch (_) {}
                                         // Regenerate pipeline server-side to recalculate Step 4
                                         // with current inventory (post-pharmacy-supply)
-                                        await loadReviewPipeline(true, true, true, true); // preserveStep, force, nosave, useCurrentMins
+                                        await loadReviewPipeline(true, true, true, true, true); // preserveStep, force, nosave, useCurrentMins
                                         // Mark step 3 as reviewed
                                         setWizardState(prev => ({
                                           ...prev,
@@ -7227,7 +7234,7 @@ ${tc.name()} Stock Management System`;
                                                   setLocations(data.locations || []);
                                                   // If this was the last supply, regenerate pipeline for Step 4
                                                   if ((pp.pharmacySupplies || []).length <= 1) {
-                                                    await loadReviewPipeline(true, true, true, true);
+                                                    await loadReviewPipeline(true, true, true, true, true);
                                                     setWizardState(prev => ({
                                                       ...prev,
                                                       stepStatus: { ...prev.stepStatus, pharmacy_supply: { ...prev.stepStatus.pharmacy_supply, reviewed: true } }

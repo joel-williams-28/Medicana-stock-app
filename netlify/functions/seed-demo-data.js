@@ -175,12 +175,19 @@ async function seed(clean, tdb) {
       const demoMedIds = MEDICATIONS.map(m => m.id);
 
       // Tables safe to fully clear (only contain demo-generated data or are re-seeded)
-      // Note: pipeline_snapshots and intelligence_config are preserved to retain pipeline completion state
-      for (const t of ['activity_log', 'draft_orders', 'orders', 'transactions', 'inventory', 'batches', 'location_min_levels']) {
+      // pipeline_snapshots is also cleared so the demo starts fresh with no cached pipeline
+      // (pipeline persistence through browser cache resets still works — it relies on the
+      // snapshot being updated during the workflow, not on it surviving a full data reset)
+      for (const t of ['activity_log', 'draft_orders', 'orders', 'transactions', 'inventory', 'batches', 'location_min_levels', 'pipeline_snapshots']) {
         await client.query(`SAVEPOINT clean_${t}`);
         try { await client.query(`DELETE FROM ${t}`); } catch (_) { await client.query(`ROLLBACK TO SAVEPOINT clean_${t}`); }
         await client.query(`RELEASE SAVEPOINT clean_${t}`);
       }
+
+      // Clear pipeline-related keys from intelligence_config (go_live_date is re-set below)
+      await client.query(`SAVEPOINT clean_pipeline_config`);
+      try { await client.query(`DELETE FROM intelligence_config WHERE key IN ('pipeline_lock_until', 'pipeline_completion_summary', 'last_pipeline_run')`); } catch (_) { await client.query(`ROLLBACK TO SAVEPOINT clean_pipeline_config`); }
+      await client.query(`RELEASE SAVEPOINT clean_pipeline_config`);
 
       // Medications: only delete demo medications, preserve user-created ones
       await client.query(`SAVEPOINT clean_medications`);
