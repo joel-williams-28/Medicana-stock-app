@@ -13,6 +13,81 @@ const {
   runOptimisationPipeline
 } = require('./_intelligence-core');
 
+// Reconcile cached transfers against activity_log — filter out transfers already executed.
+async function reconcileTransfers(transfers, snapshotGeneratedAt, queryFn) {
+  if (!transfers || transfers.length === 0) return transfers;
+
+  const result = await queryFn(`
+    SELECT details->>'batchId' AS batch_id,
+           details->>'sourceLocationId' AS source_loc,
+           details->>'targetLocationId' AS target_loc,
+           entity_id AS medication_id
+    FROM activity_log
+    WHERE action_type = 'stock_transfer'
+      AND details->>'pipelineStep' = 'redistribute'
+      AND occurred_at >= $1
+  `, [snapshotGeneratedAt]);
+
+  if (result.rows.length === 0) return transfers;
+
+  // Build a set of executed transfer keys for fast lookup
+  const executed = new Set();
+  for (const row of result.rows) {
+    executed.add(`${row.batch_id}|${row.source_loc}|${row.target_loc}|${row.medication_id}`);
+  }
+
+  return transfers.filter(t => {
+    const key = `${t.batchId}|${t.sourceLoc}|${t.targetLoc}|${t.medicationId}`;
+    return !executed.has(key);
+  });
+}
+
+// Reconcile cached pharmacy supplies against activity_log — filter out supplies already executed.
+async function reconcilePharmacySupplies(supplies, snapshotGeneratedAt, queryFn) {
+  if (!supplies || supplies.length === 0) return supplies;
+
+  const result = await queryFn(`
+    SELECT details->>'batchId' AS batch_id,
+           details->>'sourceLocationId' AS source_loc,
+           details->>'targetLocationId' AS target_loc,
+           entity_id AS medication_id
+    FROM activity_log
+    WHERE action_type = 'stock_transfer'
+      AND details->>'pipelineStep' = 'pharmacy_supply'
+      AND occurred_at >= $1
+  `, [snapshotGeneratedAt]);
+
+  if (result.rows.length === 0) return supplies;
+
+  const executed = new Set();
+  for (const row of result.rows) {
+    executed.add(`${row.batch_id}|${row.source_loc}|${row.target_loc}|${row.medication_id}`);
+  }
+
+  return supplies.filter(s => {
+    const key = `${s.batchId}|${s.sourceLoc}|${s.targetLoc}|${s.medicationId}`;
+    return !executed.has(key);
+  });
+}
+
+// Reconcile cached orders against orders table — filter out orders already created.
+async function reconcileOrders(orders, snapshotGeneratedAt, queryFn) {
+  if (!orders || orders.length === 0) return orders;
+
+  const result = await queryFn(`
+    SELECT medication_id
+    FROM orders
+    WHERE notes LIKE 'Intelligence pipeline order%'
+      AND created_at >= $1
+  `, [snapshotGeneratedAt]);
+
+  if (result.rows.length === 0) return orders;
+
+  const orderedMedIds = new Set(result.rows.map(r => r.medication_id));
+
+  return orders.filter(o => !orderedMedIds.has(o.medicationId));
+}
+
 // Reconcile cached adjustments against current DB min levels.
 // Filters out adjustments that have already been applied (or manually changed).
 async function reconcileAdjustments(adjustments, queryFn) {
@@ -90,12 +165,40 @@ exports.handler = async (event) => {
           const row = cached.rows[0];
           const snapshot = row.snapshot;
 
-          // Reconcile adjustments against current DB state — filter out
-          // adjustments that have already been applied since the snapshot was generated
-          if (snapshot.pipeline && snapshot.pipeline.adjustments) {
-            snapshot.pipeline.adjustments = await reconcileAdjustments(snapshot.pipeline.adjustments, tdb.query);
-            if (snapshot.pipeline.summary) {
-              snapshot.pipeline.summary.totalAdjustments = snapshot.pipeline.adjustments.length;
+          // Reconcile all pipeline sections against current DB state — filter out
+          // items that have already been executed since the snapshot was generated
+          if (snapshot.pipeline) {
+            const generatedAt = row.generated_at;
+
+            if (snapshot.pipeline.adjustments) {
+              snapshot.pipeline.adjustments = await reconcileAdjustments(snapshot.pipeline.adjustments, tdb.query);
+              if (snapshot.pipeline.summary) {
+                snapshot.pipeline.summary.totalAdjustments = snapshot.pipeline.adjustments.length;
+              }
+            }
+
+            if (snapshot.pipeline.transfers) {
+              snapshot.pipeline.transfers = await reconcileTransfers(snapshot.pipeline.transfers, generatedAt, tdb.query);
+              if (snapshot.pipeline.summary) {
+                snapshot.pipeline.summary.totalTransfers = snapshot.pipeline.transfers.length;
+                snapshot.pipeline.summary.totalBoxesRedistributed = snapshot.pipeline.transfers.reduce((s, t) => s + (t.quantityBoxes || 0), 0);
+              }
+            }
+
+            if (snapshot.pipeline.pharmacySupplies) {
+              snapshot.pipeline.pharmacySupplies = await reconcilePharmacySupplies(snapshot.pipeline.pharmacySupplies, generatedAt, tdb.query);
+              if (snapshot.pipeline.summary) {
+                snapshot.pipeline.summary.totalPharmacySupplies = snapshot.pipeline.pharmacySupplies.length;
+                snapshot.pipeline.summary.totalBoxesFromPharmacy = snapshot.pipeline.pharmacySupplies.reduce((s, t) => s + (t.quantityBoxes || 0), 0);
+              }
+            }
+
+            if (snapshot.pipeline.orders) {
+              snapshot.pipeline.orders = await reconcileOrders(snapshot.pipeline.orders, generatedAt, tdb.query);
+              if (snapshot.pipeline.summary) {
+                snapshot.pipeline.summary.totalOrderLines = snapshot.pipeline.orders.filter(o => o.orderQuantityBoxes > 0).length;
+                snapshot.pipeline.summary.totalBoxesToOrder = snapshot.pipeline.orders.reduce((s, o) => s + (o.orderQuantityBoxes || 0), 0);
+              }
             }
           }
 
