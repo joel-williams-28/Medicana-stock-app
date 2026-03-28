@@ -62,24 +62,26 @@ exports.handler = async (event) => {
       const order = orderResult.rows[0];
 
       // Log activity with full pipeline context (skip during bulk operations)
-      if (!skipIndividualLogs) await logActivity({
-        userId: userId || null,
-        actionType: 'order_placed',
-        entityType: 'order',
-        entityId: String(order.id),
-        locationId: locationId || null,
-        details: {
-          medicationName: medicationName || 'Unknown',
-          quantityBoxes,
-          quantityInItems,
-          urgency: urgency || 'routine',
-          source: 'intelligence_pipeline',
-          currentSimulatedBoxes: item.currentSimulatedBoxes != null ? Number(item.currentSimulatedBoxes) : null,
-          pharmacyDerivedMin: item.pharmacyDerivedMin != null ? Number(item.pharmacyDerivedMin) : null,
-          supplyDestinations: item.supplyDestinations || []
-        },
-        queryFn: tdb.query
-      });
+      if (!skipIndividualLogs) {
+        await logActivity({
+          userId: userId || null,
+          actionType: 'order_placed',
+          entityType: 'order',
+          entityId: String(order.id),
+          locationId: locationId || null,
+          details: {
+            medicationName: medicationName || 'Unknown',
+            quantityBoxes,
+            quantityInItems,
+            urgency: urgency || 'routine',
+            source: 'intelligence_pipeline',
+            currentSimulatedBoxes: item.currentSimulatedBoxes != null ? Number(item.currentSimulatedBoxes) : null,
+            pharmacyDerivedMin: item.pharmacyDerivedMin != null ? Number(item.pharmacyDerivedMin) : null,
+            supplyDestinations: item.supplyDestinations || []
+          },
+          queryFn: tdb.query
+        });
+      }
 
       createdOrders.push({
         orderId: order.id,
