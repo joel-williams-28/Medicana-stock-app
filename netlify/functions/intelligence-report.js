@@ -13,60 +13,74 @@ const {
   runOptimisationPipeline
 } = require('./_intelligence-core');
 
-// Reconcile cached transfers against activity_log — filter out transfers already executed.
+// Reconcile cached transfers against transactions table — filter out transfers already executed.
+// Uses the transactions table (written inside the DB transaction, guaranteed to exist)
+// rather than activity_log (written after commit with silent error handling).
 async function reconcileTransfers(transfers, snapshotGeneratedAt, queryFn) {
   if (!transfers || transfers.length === 0) return transfers;
 
+  // Query outgoing transfer transactions since the snapshot was generated.
+  // Each executed transfer creates an 'out' transaction at the source location.
   const result = await queryFn(`
-    SELECT details->>'batchId' AS batch_id,
-           details->>'sourceLocationId' AS source_loc,
-           details->>'targetLocationId' AS target_loc,
-           entity_id AS medication_id
-    FROM activity_log
-    WHERE action_type = 'stock_transfer'
-      AND details->>'pipelineStep' = 'redistribute'
+    SELECT batch_id::text AS batch_id,
+           location_id AS source_loc,
+           medication_id
+    FROM transactions
+    WHERE type = 'out'
+      AND reason LIKE 'Transfer to %'
       AND occurred_at >= $1
   `, [snapshotGeneratedAt]);
 
   if (result.rows.length === 0) return transfers;
 
-  // Build a set of executed transfer keys for fast lookup
-  const executed = new Set();
+  // Build a frequency map (same batch+source+med could appear multiple times)
+  const executed = {};
   for (const row of result.rows) {
-    executed.add(`${row.batch_id}|${row.source_loc}|${row.target_loc}|${row.medication_id}`);
+    const key = `${row.batch_id}|${row.source_loc}|${row.medication_id}`;
+    executed[key] = (executed[key] || 0) + 1;
   }
 
   return transfers.filter(t => {
-    const key = `${t.batchId}|${t.sourceLoc}|${t.targetLoc}|${t.medicationId}`;
-    return !executed.has(key);
+    const key = `${t.batchId}|${t.sourceLoc}|${t.medicationId}`;
+    if (executed[key] && executed[key] > 0) {
+      executed[key]--;
+      return false; // Already executed — filter out
+    }
+    return true;
   });
 }
 
-// Reconcile cached pharmacy supplies against activity_log — filter out supplies already executed.
+// Reconcile cached pharmacy supplies against transactions table — filter out supplies already executed.
 async function reconcilePharmacySupplies(supplies, snapshotGeneratedAt, queryFn) {
   if (!supplies || supplies.length === 0) return supplies;
 
+  // Pharmacy supplies also use transferStock, creating 'out' transactions at the pharmacy.
+  // Match by batch_id + source (pharmacy) + medication.
   const result = await queryFn(`
-    SELECT details->>'batchId' AS batch_id,
-           details->>'sourceLocationId' AS source_loc,
-           details->>'targetLocationId' AS target_loc,
-           entity_id AS medication_id
-    FROM activity_log
-    WHERE action_type = 'stock_transfer'
-      AND details->>'pipelineStep' = 'pharmacy_supply'
+    SELECT batch_id::text AS batch_id,
+           location_id AS source_loc,
+           medication_id
+    FROM transactions
+    WHERE type = 'out'
+      AND reason LIKE 'Transfer to %'
       AND occurred_at >= $1
   `, [snapshotGeneratedAt]);
 
   if (result.rows.length === 0) return supplies;
 
-  const executed = new Set();
+  const executed = {};
   for (const row of result.rows) {
-    executed.add(`${row.batch_id}|${row.source_loc}|${row.target_loc}|${row.medication_id}`);
+    const key = `${row.batch_id}|${row.source_loc}|${row.medication_id}`;
+    executed[key] = (executed[key] || 0) + 1;
   }
 
   return supplies.filter(s => {
-    const key = `${s.batchId}|${s.sourceLoc}|${s.targetLoc}|${s.medicationId}`;
-    return !executed.has(key);
+    const key = `${s.batchId}|${s.sourceLoc}|${s.medicationId}`;
+    if (executed[key] && executed[key] > 0) {
+      executed[key]--;
+      return false;
+    }
+    return true;
   });
 }
 
@@ -210,8 +224,9 @@ exports.handler = async (event) => {
             fromCache: true
           });
         }
-      } catch (_) {
+      } catch (cacheErr) {
         // Table may not exist yet — fall through to generate
+        console.error('[intelligence-report] Cache/reconciliation error:', cacheErr.message);
       }
     }
 
