@@ -210,6 +210,10 @@
       { id: 'draft_approved',     label: 'Drafts Approved',   color: 'bg-[#E6F5ED] text-[#1D6B3F] border-[#A8D8BB]' },
       { id: 'draft_rejected',     label: 'Drafts Rejected',   color: 'bg-[#F5E8E8] text-[#8A3D3D] border-[#D4B5B5]' },
       { id: 'bulk_order_approved', label: 'Bulk Orders',      color: 'bg-[#F5F0E1] text-[#6B5A2A] border-[#D8CBAA]' },
+      { id: 'pipeline_generated',  label: 'Pipeline Generated', color: 'bg-[#E6EDF5] text-[#3D5A80] border-[#B5C8DC]' },
+      { id: 'pipeline_completed',  label: 'Pipeline Completed', color: 'bg-[#E2F0E8] text-[#2D6B4A] border-[#A8D4B8]' },
+      { id: 'bulk_transfers_executed',        label: 'Bulk Transfers', color: 'bg-[#E6F0F5] text-[#2A5F7A] border-[#A8CDE0]' },
+      { id: 'bulk_pharmacy_supplies_executed', label: 'Bulk Supplies',  color: 'bg-[#ECF0E6] text-[#4A6B3D] border-[#C0D4B0]' },
       { id: 'logout',              label: 'Logouts',           color: 'bg-[#EDE8E3] text-[#6B5E52] border-[#C9BEB4]' },
       { id: 'config_changed',      label: 'Config Changes',    color: 'bg-[#E8ECF0] text-[#4A5568] border-[#B5C0D0]' }
     ];
@@ -2561,14 +2565,10 @@
         const loadId = ++activityLoadRef.current;
         setActivityLogLoading(true);
         try {
-          // Expand filter aliases: medication_deleted also covers medication_restored,
-          // stock_transfer also covers legacy pharmacy_supply entries logged as stock_transfer
+          // Expand filter aliases: medication_deleted also covers medication_restored
           const expandedFilters = [...activityLogFilters];
           if (expandedFilters.includes('medication_deleted') && !expandedFilters.includes('medication_restored')) {
             expandedFilters.push('medication_restored');
-          }
-          if (expandedFilters.includes('stock_transfer') && !expandedFilters.includes('pharmacy_supply')) {
-            expandedFilters.push('pharmacy_supply');
           }
           const params = {
             actionTypes: expandedFilters,
