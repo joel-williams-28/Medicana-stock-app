@@ -130,9 +130,12 @@ exports.handler = async (event) => {
 
       await tdb.query('COMMIT');
 
+      // Use distinct action type for pharmacy supplies vs regular transfers
+      const isPharmacySupply = pipelineContext.pipelineStep === 'pharmacy_supply';
+
       await logActivity({
         userId,
-        actionType: 'stock_transfer',
+        actionType: isPharmacySupply ? 'pharmacy_supply' : 'stock_transfer',
         entityType: 'medication',
         entityId: medicationId,
         locationId: sourceLocationId,
