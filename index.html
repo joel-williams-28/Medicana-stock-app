@@ -4319,7 +4319,11 @@ ${tc.name()} Stock Management System`;
           const data = await window.api.fetchIntelligenceReport(null, forceRegenerate, skipSnapshotSave, useCurrentMins, updateSnapshot);
           // Restore or clear completion summary from backend response
           if (data.completionSummary && !forceRegenerate) {
-            setPipelineCompleteSummary(data.completionSummary);
+            // Use the current lock timestamp from the backend response (always fresh)
+            // rather than the stale one saved inside the completion summary
+            const restoredSummary = { ...data.completionSummary };
+            if (data.lockedUntil) restoredSummary.lockedUntil = data.lockedUntil;
+            setPipelineCompleteSummary(restoredSummary);
             setOrderingSubTab('review'); // Auto-switch so completion view is visible
           } else {
             setPipelineCompleteSummary(null);
