@@ -4320,6 +4320,7 @@ ${tc.name()} Stock Management System`;
           // Restore or clear completion summary from backend response
           if (data.completionSummary && !forceRegenerate) {
             setPipelineCompleteSummary(data.completionSummary);
+            setOrderingSubTab('review'); // Auto-switch so completion view is visible
           } else {
             setPipelineCompleteSummary(null);
           }
