@@ -30,7 +30,8 @@ exports.handler = async (event) => {
       minLevel,
       minLevelBoxes,
       fefo,
-      userId
+      userId,
+      medicationId: explicitMedId
     } = JSON.parse(event.body || '{}');
 
     const rawMin = (minLevelBoxes !== undefined ? minLevelBoxes : minLevel);
@@ -44,6 +45,40 @@ exports.handler = async (event) => {
 
     let medicationId = null;
     let wasCreated = false;
+
+    // Explicit edit by medication ID
+    if (explicitMedId) {
+      const updateFields = [];
+      const updateValues = [];
+      let paramIdx = 1;
+
+      if (name) { updateFields.push(`name = $${paramIdx++}`); updateValues.push(name); }
+      if (strength !== undefined) { updateFields.push(`strength = $${paramIdx++}`); updateValues.push(strength || ''); }
+      if (form) { updateFields.push(`form = $${paramIdx++}`); updateValues.push(form); }
+      if (brand !== undefined) { updateFields.push(`brand = $${paramIdx++}`); updateValues.push(brand || null); }
+      if (standardItemsPerBox !== undefined) { updateFields.push(`standard_items_per_box = $${paramIdx++}`); updateValues.push(standardItemsPerBox); }
+      if (fefo !== undefined) { updateFields.push(`fefo = $${paramIdx++}`); updateValues.push(fefoValue); }
+      if (minProvided) { updateFields.push(`min_level_boxes = $${paramIdx++}`); updateValues.push(minBoxes); }
+
+      if (updateFields.length > 0) {
+        updateValues.push(explicitMedId);
+        await tdb.query(
+          `UPDATE medications SET ${updateFields.join(', ')} WHERE id = $${paramIdx}`,
+          updateValues
+        );
+      }
+
+      await logActivity({
+        userId: userId || null,
+        actionType: 'medication_updated',
+        entityType: 'medication',
+        entityId: explicitMedId,
+        details: { medicationName: name, strength, form, brand, barcode, standardItemsPerBox },
+        queryFn: tdb.query
+      });
+
+      return db.ok({ medicationId: explicitMedId, wasCreated: false, wasUpdated: true });
+    }
 
     // Strategy 1: Find or create by barcode
     const normalizedBarcode = barcode ? normalizeBarcode(barcode) : null;
