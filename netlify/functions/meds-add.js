@@ -71,7 +71,7 @@ exports.handler = async (event) => {
         barcode = EXCLUDED.barcode,
         min_level_boxes = EXCLUDED.min_level_boxes,
         standard_items_per_box = EXCLUDED.standard_items_per_box`,
-      [id, name, strength || '', type || 'stock', normalizedBarcode || '', minBoxes, standardItemsPerBox || null]
+      [id, name, strength || '', type || 'stock', normalizedBarcode || null, minBoxes, standardItemsPerBox || null]
     );
 
     await logActivity({
