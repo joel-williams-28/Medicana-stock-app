@@ -127,14 +127,38 @@ exports.handler = async (event) => {
           await tdb.query('UPDATE medications SET min_level_boxes = $1 WHERE id = $2', [minBoxes, medicationId]);
         }
       } else {
-        medicationId = await getNextMedicationId(tdb.query);
-        await tdb.query(
-          `INSERT INTO medications
-           (id, name, strength, form, barcode, brand, min_level_boxes, standard_items_per_box, fefo, is_active)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)`,
-          [medicationId, name, strengthValue || '', formValue, '', brand || null, minBoxes, standardItemsPerBox || null, fefoValue]
-        );
-        wasCreated = true;
+        try {
+          medicationId = await getNextMedicationId(tdb.query);
+          await tdb.query(
+            `INSERT INTO medications
+             (id, name, strength, form, barcode, brand, min_level_boxes, standard_items_per_box, fefo, is_active)
+             VALUES ($1, $2, $3, $4, NULL, $5, $6, $7, $8, true)`,
+            [medicationId, name, strengthValue || '', formValue, brand || null, minBoxes, standardItemsPerBox || null, fefoValue]
+          );
+          wasCreated = true;
+        } catch (insertErr) {
+          // Unique constraint violation — fall back to finding the existing medication
+          if (insertErr.code === '23505') {
+            const existing = await tdb.query(
+              `SELECT id FROM medications
+               WHERE LOWER(name) = LOWER($1)
+                 AND (strength = $2 OR (strength IS NULL AND $2 IS NULL))
+                 AND form = $3
+               LIMIT 1`,
+              [name, strengthValue, formValue]
+            );
+            if (existing.rows.length > 0) {
+              medicationId = existing.rows[0].id;
+              if (minProvided) {
+                await tdb.query('UPDATE medications SET min_level_boxes = $1 WHERE id = $2', [minBoxes, medicationId]);
+              }
+            } else {
+              throw insertErr;
+            }
+          } else {
+            throw insertErr;
+          }
+        }
       }
     }
 

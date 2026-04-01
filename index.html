@@ -172,7 +172,7 @@
       );
 
     const MEDICATION_TYPES = [
-      'Ampule', 'Box Kit', 'Capsule', 'Cream', 'Drops', 'Enema', 'Fluid Bag',
+      'Ampule', 'Bottle', 'Box Kit', 'Capsule', 'Cream', 'Drops', 'Enema', 'Fluid Bag',
       'Inhaler', 'Liquid', 'Nasal Spray', 'Nebuliser Solution', 'Ointment', 'Patch',
       'Pessary', 'Powder', 'Pre Filled Syringe', 'Suppository', 'Suspension',
       'Tablet', 'Topical', 'Vial'
@@ -180,33 +180,34 @@
 
     // Strength unit options per medication form (lowercase keys)
     const STRENGTH_UNITS_BY_FORM = {
-      tablet:               ['mg', 'mcg', 'g', 'mmol', '%'],
+      ampule:               ['mg', 'mcg', 'g', 'mmol', 'I.U.', 'units', '% w/v'],
+      bottle:               ['mg', 'mcg', 'g', 'mmol', '% w/v'],
+      'box kit':            ['mg', 'mcg', 'g', 'I.U.', '%', 'units'],
       capsule:              ['mg', 'mcg', 'g', 'mmol'],
       cream:                ['mg', 'g', '%', 'w/w', 'w/v'],
-      ointment:             ['mg', 'g', '%', 'w/w', 'w/v'],
-      topical:              ['mg', 'g', '%', 'w/w', 'w/v'],
       drops:                ['mg', 'mcg', '%', 'w/v'],
-      patch:                ['mcg', 'mcg/hr', 'mg'],
+      enema:                ['mg', 'g', '%'],
+      'fluid bag':          ['mg', 'mcg', 'g', 'mmol', '%'],
       inhaler:              ['mcg', 'mg'],
+      liquid:               ['mg', 'mcg', 'g', 'mmol', '% w/v'],
       'nasal spray':        ['mcg', 'mg'],
-      suppository:          ['mg', 'mcg', 'g'],
+      'nebuliser solution': ['mg', 'mcg'],
+      ointment:             ['mg', 'g', '%', 'w/w', 'w/v'],
+      patch:                ['mcg', 'mcg/hr', 'mg'],
       pessary:              ['mg', 'mcg', 'g', '%'],
       powder:               ['mg', 'mcg', 'g', 'I.U.'],
-      enema:                ['mg', 'g', '%'],
-      'box kit':            ['mg', 'mcg', 'g', 'I.U.', '%', 'units'],
-      ampule:               ['mg', 'mcg', 'g', 'mmol', 'I.U.', 'units'],
-      vial:                 ['mg', 'mcg', 'g', 'mmol', 'I.U.', 'units'],
       'pre filled syringe': ['mg', 'mcg', 'g', 'I.U.', 'units'],
-      'fluid bag':          ['mg', 'mcg', 'g', 'mmol', '%'],
-      liquid:               ['mg', 'mcg', 'g', 'mmol', '%'],
-      suspension:           ['mg', 'mcg', 'g'],
-      'nebuliser solution': ['mg', 'mcg'],
+      suppository:          ['mg', 'mcg', 'g'],
+      suspension:           ['mg', 'mcg', 'g', '% w/v'],
+      tablet:               ['mg', 'mcg', 'g', 'mmol', '%'],
+      topical:              ['mg', 'g', '%', 'w/w', 'w/v'],
+      vial:                 ['mg', 'mcg', 'g', 'mmol', 'I.U.', 'units', '% w/v'],
     };
 
     // Forms that show a volume (mL/L) field alongside strength
     const FORMS_WITH_VOLUME = [
-      'ampule', 'vial', 'pre filled syringe', 'fluid bag',
-      'liquid', 'suspension', 'drops', 'enema', 'nebuliser solution'
+      'ampule', 'bottle', 'drops', 'enema', 'fluid bag',
+      'liquid', 'nebuliser solution', 'pre filled syringe', 'suspension', 'vial'
     ];
 
     const VOLUME_UNITS = ['mL', 'L'];
@@ -2791,7 +2792,7 @@
             const vp = document.querySelector('meta[name="viewport"]');
             if (vp) {
               vp.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1');
-              setTimeout(() => vp.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=5'), 100);
+              setTimeout(() => vp.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1'), 100);
             }
             
             // Reset UI to default state on login
@@ -7970,17 +7971,24 @@ ${tc.name()} Stock Management System`;
                           <label className="block text-sm font-medium text-txt-secondary mb-1">Brand</label>
                           <input
                             type="text"
+                            list="medDbBrandList"
                             value={medDbForm.brand}
                             onChange={(e) => setMedDbForm(prev => ({ ...prev, brand: e.target.value }))}
                             className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
                             placeholder="e.g. Panadol, Nurofen"
                           />
+                          <datalist id="medDbBrandList">
+                            {[...new Set(medications.flatMap(m => (m.batches || []).map(b => b.brand)).filter(Boolean))].map(b => (
+                              <option key={b} value={b} />
+                            ))}
+                          </datalist>
                         </div>
 
                         <div className="mb-6">
                           <label className="block text-sm font-medium text-txt-secondary mb-1">Items Per Box</label>
                           <input
                             type="number"
+                            inputMode="numeric"
                             min="1"
                             value={medDbForm.standardItemsPerBox}
                             onChange={(e) => setMedDbForm(prev => ({ ...prev, standardItemsPerBox: e.target.value }))}
