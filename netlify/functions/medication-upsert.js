@@ -104,17 +104,21 @@ exports.handler = async (event) => {
         wasCreated = true;
       }
     } else {
-      // Strategy 2: Find or create by slug (name + strength + form)
+      // Strategy 2: Find or create by slug (name + strength + form + brand + pack size)
       const strengthValue = strength && strength !== 'N/A' ? strength : null;
       const formValue = form || 'stock';
+      const brandValue = brand || null;
+      const itemsPerBoxValue = standardItemsPerBox != null ? Number(standardItemsPerBox) : null;
 
       const slugResult = await tdb.query(
         `SELECT id FROM medications
-         WHERE name = $1
+         WHERE LOWER(name) = LOWER($1)
            AND (strength = $2 OR (strength IS NULL AND $2 IS NULL))
            AND form = $3
+           AND (brand = $4 OR (brand IS NULL AND $4 IS NULL))
+           AND (standard_items_per_box = $5 OR (standard_items_per_box IS NULL AND $5 IS NULL))
            AND (barcode IS NULL OR barcode = '')`,
-        [name, strengthValue, formValue]
+        [name, strengthValue, formValue, brandValue, itemsPerBoxValue]
       );
 
       if (slugResult.rows.length > 0) {
