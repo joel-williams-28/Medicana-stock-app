@@ -13,16 +13,6 @@ async function getNextMedicationId(queryFn) {
   return String(result.rows[0].next_id);
 }
 
-// Generate a URL-friendly slug from medication fields
-function generateSlug(name, strength, form, brand) {
-  return [name, strength || '', form || '', brand || '']
-    .filter(Boolean)
-    .join('-')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '');
-}
-
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
 
@@ -105,12 +95,11 @@ exports.handler = async (event) => {
         }
       } else {
         medicationId = await getNextMedicationId(tdb.query);
-        const barcodeSlug = generateSlug(name, strength, form || 'stock', brand);
         await tdb.query(
           `INSERT INTO medications
-           (id, name, strength, form, barcode, brand, min_level_boxes, standard_items_per_box, fefo, is_active, slug)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10)`,
-          [medicationId, name, strength || '', form || 'stock', normalizedBarcode, brand || null, minBoxes, standardItemsPerBox || null, fefoValue, barcodeSlug]
+           (id, name, strength, form, barcode, brand, min_level_boxes, standard_items_per_box, fefo, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)`,
+          [medicationId, name, strength || '', form || 'stock', normalizedBarcode, brand || null, minBoxes, standardItemsPerBox || null, fefoValue]
         );
         wasCreated = true;
       }
@@ -140,12 +129,11 @@ exports.handler = async (event) => {
       } else {
         try {
           medicationId = await getNextMedicationId(tdb.query);
-          const medSlug = generateSlug(name, strengthValue, formValue, brand);
           await tdb.query(
             `INSERT INTO medications
-             (id, name, strength, form, barcode, brand, min_level_boxes, standard_items_per_box, fefo, is_active, slug)
-             VALUES ($1, $2, $3, $4, NULL, $5, $6, $7, $8, true, $9)`,
-            [medicationId, name, strengthValue || '', formValue, brand || null, minBoxes, standardItemsPerBox || null, fefoValue, medSlug]
+             (id, name, strength, form, barcode, brand, min_level_boxes, standard_items_per_box, fefo, is_active)
+             VALUES ($1, $2, $3, $4, NULL, $5, $6, $7, $8, true)`,
+            [medicationId, name, strengthValue || '', formValue, brand || null, minBoxes, standardItemsPerBox || null, fefoValue]
           );
           wasCreated = true;
         } catch (insertErr) {
