@@ -2,6 +2,7 @@
 // Creates real orders from intelligence pipeline recommendations
 const db = require('./_db');
 const { logActivity } = require('./_activity-log');
+const { routeAndBatchOrders } = require('./_supplier-router');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
@@ -165,6 +166,18 @@ exports.handler = async (event) => {
 
     const subject = `STOCK ORDER - ${createdOrders.length} Medication${createdOrders.length !== 1 ? 's' : ''} - ${dateStr}`;
 
+    // Route orders to suppliers (non-blocking — falls back gracefully if supplier tables don't exist yet)
+    let supplierBatches = [];
+    let unassignedOrderIds = [];
+    try {
+      const orderIds = createdOrders.map(o => o.orderId);
+      const routing = await routeAndBatchOrders(orderIds, userId, tdb.query);
+      supplierBatches = routing.supplierBatches;
+      unassignedOrderIds = routing.unassignedOrderIds;
+    } catch (routeErr) {
+      console.error('Supplier routing (non-fatal):', routeErr.message);
+    }
+
     return db.ok({
       approvedCount: createdOrders.length,
       orders: createdOrders,
@@ -172,7 +185,9 @@ exports.handler = async (event) => {
         to: pharmacistEmail,
         subject,
         body
-      }
+      },
+      supplierBatches,
+      unassignedOrderIds
     });
   } catch (e) {
     return db.serverError('intelligence-orders-create', e);

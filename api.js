@@ -148,6 +148,39 @@ window.api = (function () {
     fetchActivityLog,
     loginUser,
     startPolling,
-    stopPolling
+    stopPolling,
+
+    // Supplier management
+    getSuppliers: async () => {
+      const res = await fetch('/.netlify/functions/suppliers-get');
+      const out = await res.json();
+      if (!res.ok || !out.success) throw new Error(out.message || 'Failed to fetch suppliers');
+      return out;
+    },
+    upsertSupplier:       (payload)  => postJSON('/.netlify/functions/suppliers-upsert', payload),
+
+    // Medication-supplier mappings
+    getMedicationSuppliers: async (params) => {
+      const qs = new URLSearchParams();
+      if (params?.medicationId) qs.set('medicationId', params.medicationId);
+      if (params?.supplierId) qs.set('supplierId', params.supplierId);
+      const res = await fetch(`/.netlify/functions/medication-suppliers-get?${qs}`);
+      const out = await res.json();
+      if (!res.ok || !out.success) throw new Error(out.message || 'Failed to fetch medication suppliers');
+      return out;
+    },
+    setMedicationSupplier:(payload)  => postJSON('/.netlify/functions/medication-suppliers-set', payload),
+
+    // Supplier order tracking
+    getSupplierOrders: async (params) => {
+      const qs = new URLSearchParams();
+      if (params?.supplierId) qs.set('supplierId', params.supplierId);
+      if (params?.status) qs.set('status', params.status);
+      const res = await fetch(`/.netlify/functions/supplier-orders-get?${qs}`);
+      const out = await res.json();
+      if (!res.ok || !out.success) throw new Error(out.message || 'Failed to fetch supplier orders');
+      return out;
+    },
+    updateSupplierOrder:  (payload)  => postJSON('/.netlify/functions/supplier-orders-update', payload)
   };
 })();

@@ -65,6 +65,11 @@ exports.handler = async (event) => {
         queryFn: tdb.query
       });
 
+      // Check if supplier_order is fully delivered
+      if (isComplete) {
+        await checkSupplierOrderCompletion(order.id, tdb.query);
+      }
+
       return db.ok({
         order: {
           id: order.id,
@@ -99,6 +104,9 @@ exports.handler = async (event) => {
         queryFn: tdb.query
       });
 
+      // Check if supplier_order is fully delivered
+      await checkSupplierOrderCompletion(order.id, tdb.query);
+
       return db.ok({
         order: {
           id: order.id,
@@ -112,3 +120,33 @@ exports.handler = async (event) => {
     return db.serverError('order-fulfill', e);
   }
 };
+
+// Auto-update supplier_order to 'delivered' when all linked orders are fulfilled
+async function checkSupplierOrderCompletion(orderId, queryFn) {
+  try {
+    const result = await queryFn(
+      `SELECT o.supplier_order_id FROM orders o WHERE o.id = $1 AND o.supplier_order_id IS NOT NULL`,
+      [orderId]
+    );
+    if (result.rows.length === 0) return;
+
+    const soId = result.rows[0].supplier_order_id;
+
+    // Check if all orders in this supplier batch are fulfilled
+    const pendingCheck = await queryFn(
+      `SELECT COUNT(*) AS pending FROM orders
+       WHERE supplier_order_id = $1 AND status != 'fulfilled'`,
+      [soId]
+    );
+
+    if (Number(pendingCheck.rows[0].pending) === 0) {
+      await queryFn(
+        `UPDATE supplier_orders SET status = 'delivered', delivered_at = NOW(), updated_at = NOW()
+         WHERE id = $1 AND status != 'delivered'`,
+        [soId]
+      );
+    }
+  } catch (err) {
+    console.error('Supplier order completion check (non-fatal):', err.message);
+  }
+}
