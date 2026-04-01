@@ -2,6 +2,7 @@
 // Adds or updates a medication in the database
 const db = require('./_db');
 const { logActivity } = require('./_activity-log');
+const { normalizeBarcode } = require('./_barcode-utils');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
@@ -31,10 +32,11 @@ exports.handler = async (event) => {
     }
 
     // Check if medication already exists by barcode
-    if (barcode && barcode.trim()) {
+    const normalizedBarcode = barcode ? normalizeBarcode(barcode) : null;
+    if (normalizedBarcode) {
       const check = await tdb.query(
         'SELECT id FROM medications WHERE barcode = $1 LIMIT 1',
-        [barcode.trim()]
+        [normalizedBarcode]
       );
 
       if (check.rowCount > 0) {
@@ -48,7 +50,7 @@ exports.handler = async (event) => {
           actionType: 'med_updated',
           entityType: 'medication',
           entityId: medicationId,
-          details: { minLevelBoxes: minBoxes, reused: true, barcode: barcode.trim() },
+          details: { minLevelBoxes: minBoxes, reused: true, barcode: normalizedBarcode },
           queryFn: tdb.query
         });
 
@@ -69,7 +71,7 @@ exports.handler = async (event) => {
         barcode = EXCLUDED.barcode,
         min_level_boxes = EXCLUDED.min_level_boxes,
         standard_items_per_box = EXCLUDED.standard_items_per_box`,
-      [id, name, strength || '', type || 'stock', barcode || '', minBoxes, standardItemsPerBox || null]
+      [id, name, strength || '', type || 'stock', normalizedBarcode || '', minBoxes, standardItemsPerBox || null]
     );
 
     await logActivity({

@@ -2217,6 +2217,16 @@
         }
       };
 
+      // Normalize GTIN-14 (leading 0) to EAN-13 for consistent barcode matching
+      const normalizeBarcode = (code) => {
+        if (!code) return code;
+        const trimmed = code.trim();
+        if (trimmed.length === 14 && trimmed.startsWith('0') && /^\d+$/.test(trimmed)) {
+          return trimmed.substring(1);
+        }
+        return trimmed;
+      };
+
       /**
        * Generic barcode scan handler (1D barcodes / fallback)
        *
@@ -2228,10 +2238,11 @@
        * @param {string} barcode - The raw barcode string
        */
       const handleGenericBarcodeScan = (barcode) => {
+        const normalized = normalizeBarcode(barcode);
         // Pre-fill barcode field and trigger lookup
         setBarcodeNewMedForm(prev => ({
           ...prev,
-          barcode,
+          barcode: normalized,
           error: ''
         }));
 
@@ -2239,7 +2250,7 @@
         setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
 
         // Trigger medication lookup
-        handleBarcodeLookup(barcode);
+        handleBarcodeLookup(normalized);
       };
 
       /**
@@ -2258,7 +2269,7 @@
        */
       const handleMedicinePackScan = (parsedGs1) => {
         // Use GTIN for lookup, fallback to raw string if GTIN missing
-        const lookupBarcode = parsedGs1.gtin || parsedGs1.raw;
+        const lookupBarcode = normalizeBarcode(parsedGs1.gtin || parsedGs1.raw);
 
         // Format expiry date for the form (MM and YYYY fields)
         const dateFormat = window.formatDateForMonthYear(parsedGs1.expiryDate);
@@ -2303,7 +2314,7 @@
         // Route to Med Database handler when on that tab
         if (ui.activeTab === 'meddatabase') {
           const gs1 = window.parseGs1Data(rawValue);
-          const lookupBarcode = gs1.isGs1 ? (gs1.gtin || rawValue) : rawValue;
+          const lookupBarcode = normalizeBarcode(gs1.isGs1 ? (gs1.gtin || rawValue) : rawValue);
           handleMedDbBarcodeScan(lookupBarcode);
           return;
         }
@@ -2356,7 +2367,7 @@
 
       // ── Med Database Tab: Barcode scan handler ──
       const handleMedDbBarcodeScan = async (barcode) => {
-        const cleanBarcode = barcode.trim().replace(/\s+/g, '');
+        const cleanBarcode = normalizeBarcode(barcode.trim().replace(/\s+/g, ''));
         if (!cleanBarcode) return;
 
         // Show loading state
@@ -2411,7 +2422,7 @@
           }
         } catch (err) {
           // Fallback: check local array if API fails
-          const existing = medications.find(med => med.barcode === cleanBarcode);
+          const existing = medications.find(med => normalizeBarcode(med.barcode) === cleanBarcode);
           if (existing) {
             setMedDbForm(prev => ({
               ...prev,

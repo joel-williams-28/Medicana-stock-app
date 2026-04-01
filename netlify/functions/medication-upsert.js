@@ -3,6 +3,7 @@
 // Returns the medication ID to use for batch operations
 const db = require('./_db');
 const { logActivity } = require('./_activity-log');
+const { normalizeBarcode } = require('./_barcode-utils');
 
 // Generates next sequential ID for medications
 async function getNextMedicationId(queryFn) {
@@ -45,10 +46,11 @@ exports.handler = async (event) => {
     let wasCreated = false;
 
     // Strategy 1: Find or create by barcode
-    if (barcode && barcode.trim()) {
+    const normalizedBarcode = barcode ? normalizeBarcode(barcode) : null;
+    if (normalizedBarcode) {
       const barcodeResult = await tdb.query(
         'SELECT id FROM medications WHERE barcode = $1',
-        [barcode.trim()]
+        [normalizedBarcode]
       );
 
       if (barcodeResult.rows.length > 0) {
@@ -62,7 +64,7 @@ exports.handler = async (event) => {
           `INSERT INTO medications
            (id, name, strength, form, barcode, brand, min_level_boxes, standard_items_per_box, fefo, is_active)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)`,
-          [medicationId, name, strength || '', form || 'stock', barcode.trim(), brand || null, minBoxes, standardItemsPerBox || null, fefoValue]
+          [medicationId, name, strength || '', form || 'stock', normalizedBarcode, brand || null, minBoxes, standardItemsPerBox || null, fefoValue]
         );
         wasCreated = true;
       }
