@@ -2,6 +2,7 @@
 // Handles approve/reject actions on draft orders
 const db = require('./_db');
 const { logActivity } = require('./_activity-log');
+const { routeAndBatchOrders } = require('./_supplier-router');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
@@ -252,6 +253,18 @@ exports.handler = async (event) => {
 
     const subject = `STOCK ORDER - ${approvedOrders.length} Medication${approvedOrders.length !== 1 ? 's' : ''} - ${dateStr}`;
 
+    // Route orders to suppliers (non-blocking — falls back gracefully if supplier tables don't exist yet)
+    let supplierBatches = [];
+    let unassignedOrderIds = [];
+    try {
+      const orderIds = approvedOrders.map(o => o.orderId);
+      const routing = await routeAndBatchOrders(orderIds, userId, tdb.query);
+      supplierBatches = routing.supplierBatches;
+      unassignedOrderIds = routing.unassignedOrderIds;
+    } catch (routeErr) {
+      console.error('Supplier routing (non-fatal):', routeErr.message);
+    }
+
     return db.ok({
       approvedCount: approvedOrders.length,
       orders: approvedOrders,
@@ -259,7 +272,9 @@ exports.handler = async (event) => {
         to: email,
         subject,
         body
-      }
+      },
+      supplierBatches,
+      unassignedOrderIds
     });
   } catch (e) {
     return db.serverError('draft-orders-action', e);
