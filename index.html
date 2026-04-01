@@ -198,8 +198,8 @@
       vial:                 ['mg', 'mcg', 'g', 'mmol', 'I.U.', 'units'],
       'pre filled syringe': ['mg', 'mcg', 'g', 'I.U.', 'units'],
       'fluid bag':          ['mg', 'mcg', 'g', 'mmol', '%'],
-      liquid:               ['mg', 'mcg', 'g', 'mmol', '%'],
-      suspension:           ['mg', 'mcg', 'g'],
+      liquid:               ['mg', 'mcg', 'g', 'mmol', '%', '% w/v'],
+      suspension:           ['mg', 'mcg', 'g', '% w/v'],
       'nebuliser solution': ['mg', 'mcg'],
     };
 
@@ -2791,7 +2791,7 @@
             const vp = document.querySelector('meta[name="viewport"]');
             if (vp) {
               vp.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1');
-              setTimeout(() => vp.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=5'), 100);
+              setTimeout(() => vp.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1'), 100);
             }
             
             // Reset UI to default state on login
@@ -7970,17 +7970,24 @@ ${tc.name()} Stock Management System`;
                           <label className="block text-sm font-medium text-txt-secondary mb-1">Brand</label>
                           <input
                             type="text"
+                            list="medDbBrandList"
                             value={medDbForm.brand}
                             onChange={(e) => setMedDbForm(prev => ({ ...prev, brand: e.target.value }))}
                             className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
                             placeholder="e.g. Panadol, Nurofen"
                           />
+                          <datalist id="medDbBrandList">
+                            {[...new Set(medications.flatMap(m => (m.batches || []).map(b => b.brand)).filter(Boolean))].map(b => (
+                              <option key={b} value={b} />
+                            ))}
+                          </datalist>
                         </div>
 
                         <div className="mb-6">
                           <label className="block text-sm font-medium text-txt-secondary mb-1">Items Per Box</label>
                           <input
                             type="number"
+                            inputMode="numeric"
                             min="1"
                             value={medDbForm.standardItemsPerBox}
                             onChange={(e) => setMedDbForm(prev => ({ ...prev, standardItemsPerBox: e.target.value }))}
