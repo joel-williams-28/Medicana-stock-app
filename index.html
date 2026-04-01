@@ -818,7 +818,9 @@
         existingMed: null,
         sessionCount: 0,
         sessionMeds: [],
-        manualEntry: false
+        manualEntry: false,
+        isEditing: false,
+        editingMedId: null
       });
       const [modals, setModals] = useState({
         showLowStockReport: false,
@@ -1808,6 +1810,7 @@
               strengthType: med.strength_raw ? 'value' : 'na',
               type: med.type.toLowerCase() || 'tablet',
               itemsPerBox: med.standard_items_per_box ? String(med.standard_items_per_box) : '',
+              brand: med.brand || '',
               existingBatches: result.existingBatches || [],
               existingBatchId: null // Reset batch selection
             }));
@@ -2482,11 +2485,13 @@
               brand: med.brand || '',
               standardItemsPerBox: med.standard_items_per_box || '',
               existingMed: {
+                id: med.id,
                 name: med.name,
                 strength: med.strength_raw || '',
                 form: med.type || '',
                 brand: med.brand || '',
-                barcode: med.barcode || cleanBarcode
+                barcode: med.barcode || cleanBarcode,
+                standardItemsPerBox: med.standard_items_per_box || ''
               }
             }));
           } else {
@@ -2549,7 +2554,7 @@
         setMedDbForm(prev => ({ ...prev, isSubmitting: true, error: '', successMessage: '' }));
 
         try {
-          const result = await window.api.medicationUpsert({
+          const upsertPayload = {
             name: medDbForm.name.trim(),
             strength: composeStrength(medDbForm.strengthValue, medDbForm.strengthUnit, medDbForm.volumeValue, medDbForm.volumeUnit) || null,
             form: medDbForm.form || 'Tablet',
@@ -2557,7 +2562,11 @@
             barcode: medDbForm.barcode.trim() || null,
             standardItemsPerBox: medDbForm.standardItemsPerBox ? Number(medDbForm.standardItemsPerBox) : null,
             userId: auth.userId || null
-          });
+          };
+          if (medDbForm.isEditing && medDbForm.editingMedId) {
+            upsertPayload.medicationId = medDbForm.editingMedId;
+          }
+          const result = await window.api.medicationUpsert(upsertPayload);
 
           const composedStrength = composeStrength(medDbForm.strengthValue, medDbForm.strengthUnit, medDbForm.volumeValue, medDbForm.volumeUnit);
           const newMed = {
@@ -2570,12 +2579,15 @@
             wasCreated: result.wasCreated
           };
 
+          const wasEditing = medDbForm.isEditing;
           setMedDbForm(prev => ({
             ...prev,
             isSubmitting: false,
-            successMessage: result.wasCreated
-              ? `"${medDbForm.name.trim()}" registered successfully!`
-              : `"${medDbForm.name.trim()}" already exists (updated).`,
+            successMessage: wasEditing
+              ? `"${medDbForm.name.trim()}" updated successfully!`
+              : (result.wasCreated
+                ? `"${medDbForm.name.trim()}" registered successfully!`
+                : `"${medDbForm.name.trim()}" already exists (updated).`),
             sessionCount: prev.sessionCount + (result.wasCreated ? 1 : 0),
             sessionMeds: result.wasCreated ? [newMed, ...prev.sessionMeds] : prev.sessionMeds,
             barcode: '',
@@ -2589,11 +2601,13 @@
             standardItemsPerBox: '',
             existingMed: null,
             manualEntry: false,
+            isEditing: false,
+            editingMedId: null,
             error: ''
           }));
 
-          // Refresh medications list to include new entry
-          if (result.wasCreated) {
+          // Refresh medications list to include new/updated entry
+          if (result.wasCreated || wasEditing) {
             try {
               const data = await window.api.fetchAllData();
               if (data && data.medications) setMedications(data.medications);
@@ -2626,7 +2640,9 @@
           existingMed: null,
           error: '',
           successMessage: '',
-          manualEntry: false
+          manualEntry: false,
+          isEditing: false,
+          editingMedId: null
         }));
       };
 
@@ -7803,6 +7819,20 @@ ${tc.name()} Stock Management System`;
                         </div>
                         <div className="mt-4 flex gap-3">
                           <button
+                            onClick={() => {
+                              setMedDbForm(prev => ({
+                                ...prev,
+                                isEditing: true,
+                                editingMedId: prev.existingMed.id,
+                                existingMed: null
+                              }));
+                            }}
+                            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors font-medium text-sm"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            Edit
+                          </button>
+                          <button
                             onClick={() => { handleMedDbReset(); startCameraScanner(); }}
                             className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-brand-mid text-white rounded-lg hover:bg-brand-dark transition-colors font-medium text-sm"
                           >
@@ -7823,7 +7853,7 @@ ${tc.name()} Stock Management System`;
                     {!medDbForm.isLookingUp && !medDbForm.existingMed && (medDbForm.barcode || medDbForm.manualEntry) && (
                       <form onSubmit={handleMedDbSubmit} className="bg-off-white border border-bdr-default rounded-lg p-4 sm:p-6 mb-6">
                         <h3 className="font-bold text-near-black mb-4">
-                          {medDbForm.barcode ? 'Register New Medication' : 'Add Medication Manually'}
+                          {medDbForm.isEditing ? 'Edit Medication' : (medDbForm.barcode ? 'Register New Medication' : 'Add Medication Manually')}
                         </h3>
 
                         {medDbForm.barcode && (
@@ -7965,7 +7995,9 @@ ${tc.name()} Stock Management System`;
                             disabled={medDbForm.isSubmitting || !medDbForm.name.trim()}
                             className="flex-1 bg-brand-mid text-white py-2.5 rounded-lg hover:bg-brand-dark transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            {medDbForm.isSubmitting ? 'Registering...' : 'Register Medication'}
+                            {medDbForm.isSubmitting
+                              ? (medDbForm.isEditing ? 'Updating...' : 'Registering...')
+                              : (medDbForm.isEditing ? 'Update Medication' : 'Register Medication')}
                           </button>
                           <button
                             type="button"
