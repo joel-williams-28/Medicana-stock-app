@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
     <title>CliniTrack - Medication Stock Management</title>
     <link rel="icon" type="image/png" href="assets/branding/favicon.png">
+    <link rel="apple-touch-icon" href="assets/branding/apple-touch-icon.png">
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -172,6 +176,67 @@
       'Pessary', 'Powder', 'Pre Filled Syringe', 'Suppository', 'Suspension',
       'Tablet', 'Topical', 'Vial'
     ];
+
+    // Strength unit options per medication form (lowercase keys)
+    const STRENGTH_UNITS_BY_FORM = {
+      tablet:               ['mg', 'mcg', 'g', 'mmol', '%'],
+      capsule:              ['mg', 'mcg', 'g', 'mmol'],
+      cream:                ['mg', 'g', '%', 'w/w', 'w/v'],
+      ointment:             ['mg', 'g', '%', 'w/w', 'w/v'],
+      topical:              ['mg', 'g', '%', 'w/w', 'w/v'],
+      drops:                ['mg', 'mcg', '%', 'w/v'],
+      patch:                ['mcg', 'mcg/hr', 'mg'],
+      inhaler:              ['mcg', 'mg'],
+      'nasal spray':        ['mcg', 'mg'],
+      suppository:          ['mg', 'mcg', 'g'],
+      pessary:              ['mg', 'mcg', 'g', '%'],
+      powder:               ['mg', 'mcg', 'g', 'I.U.'],
+      enema:                ['mg', 'g', '%'],
+      'box kit':            ['mg', 'mcg', 'g', 'I.U.', '%', 'units'],
+      ampule:               ['mg', 'mcg', 'g', 'mmol', 'I.U.', 'units'],
+      vial:                 ['mg', 'mcg', 'g', 'mmol', 'I.U.', 'units'],
+      'pre filled syringe': ['mg', 'mcg', 'g', 'I.U.', 'units'],
+      'fluid bag':          ['mg', 'mcg', 'g', 'mmol', '%'],
+      liquid:               ['mg', 'mcg', 'g', 'mmol', '%'],
+      suspension:           ['mg', 'mcg', 'g'],
+      'nebuliser solution': ['mg', 'mcg'],
+    };
+
+    // Forms that show a volume (mL/L) field alongside strength
+    const FORMS_WITH_VOLUME = [
+      'ampule', 'vial', 'pre filled syringe', 'fluid bag',
+      'liquid', 'suspension', 'drops', 'enema', 'nebuliser solution'
+    ];
+
+    const VOLUME_UNITS = ['mL', 'L'];
+
+    // Compose strength parts into a single string for storage (e.g. "500mg" or "10mg/2mL")
+    const composeStrength = (value, unit, volumeValue, volumeUnit) => {
+      if (!value) return '';
+      let str = `${value}${unit}`;
+      if (volumeValue) str += `/${volumeValue}${volumeUnit}`;
+      return str;
+    };
+
+    // Parse existing strength string back into parts (backward compat with free-text data)
+    const parseStrength = (raw) => {
+      if (!raw || raw === 'N/A') return { value: '', unit: 'mg', volumeValue: '', volumeUnit: 'mL' };
+      const match = raw.match(/^([\d.]+)\s*(mg|mcg|g|mmol|I\.U\.|units|%|w\/w|w\/v|mcg\/hr)(?:\/([\d.]+)\s*(mL|L))?$/i);
+      if (match) {
+        return { value: match[1], unit: match[2], volumeValue: match[3] || '', volumeUnit: match[4] || 'mL' };
+      }
+      return { value: raw, unit: 'mg', volumeValue: '', volumeUnit: 'mL' };
+    };
+
+    // Get available strength units for a given form type
+    const getStrengthUnits = (form) => {
+      return STRENGTH_UNITS_BY_FORM[(form || '').toLowerCase()] || ['mg', 'mcg', 'g'];
+    };
+
+    // Check if a form type should show the volume field
+    const formHasVolume = (form) => {
+      return FORMS_WITH_VOLUME.includes((form || '').toLowerCase());
+    };
 
     const CONTAINER_TYPES = [
       'boxes', 'tubes', 'vials', 'bottles', 'packs', 'sachets', 'blisters', 
@@ -738,7 +803,10 @@
       const [medDbForm, setMedDbForm] = useState({
         barcode: '',
         name: '',
-        strength: '',
+        strengthValue: '',
+        strengthUnit: 'mg',
+        volumeValue: '',
+        volumeUnit: 'mL',
         form: 'Tablet',
         brand: '',
         standardItemsPerBox: '',
@@ -891,7 +959,10 @@
           barcode: '',
           medicationId: null, // Internal medication ID (from barcode lookup)
           name: '',
-          strength: '',
+          strengthValue: '',
+          strengthUnit: 'mg',
+          volumeValue: '',
+          volumeUnit: 'mL',
           strengthType: 'value', // 'value' or 'na'
           type: 'tablet',
           expiryMonth: '',
@@ -1702,7 +1773,10 @@
             existingBatches: [],
             existingBatchId: null,
             name: '',
-            strength: '',
+            strengthValue: '',
+            strengthUnit: 'mg',
+            volumeValue: '',
+            volumeUnit: 'mL',
             strengthType: 'value',
             type: 'tablet',
             itemsPerBox: ''
@@ -1719,13 +1793,17 @@
 
           if (result.found && result.medication) {
             const med = result.medication;
+            const sp = parseStrength(med.strength_raw);
             // Prefill and lock medication fields
             setBarcodeNewMedForm(prev => ({
               ...prev,
               medicationId: med.id,
               medicationLocked: true,
               name: med.name,
-              strength: med.strength_raw || '',
+              strengthValue: sp.value,
+              strengthUnit: sp.unit,
+              volumeValue: sp.volumeValue,
+              volumeUnit: sp.volumeUnit,
               strengthType: med.strength_raw ? 'value' : 'na',
               type: med.type.toLowerCase() || 'tablet',
               itemsPerBox: med.standard_items_per_box ? String(med.standard_items_per_box) : '',
@@ -1811,7 +1889,7 @@
               medicationId: batch.medicationId,
               medicationLocked: true,
               name: name,
-              strength: strength || '',
+              ...(() => { const sp = parseStrength(strength); return { strengthValue: sp.value, strengthUnit: sp.unit, volumeValue: sp.volumeValue, volumeUnit: sp.volumeUnit }; })(),
               strengthType: strength ? 'value' : 'na',
               type: batch.form ? batch.form.toLowerCase() : 'tablet',
               itemsPerBox: batch.itemsPerBox ? String(batch.itemsPerBox) : prev.itemsPerBox,
@@ -1873,7 +1951,10 @@
           barcode: '',
           medicationId: null,
           name: '',
-          strength: '',
+          strengthValue: '',
+          strengthUnit: 'mg',
+          volumeValue: '',
+          volumeUnit: 'mL',
           strengthType: 'value',
           type: 'tablet',
           expiryMonth: '',
@@ -2190,7 +2271,7 @@
             setModals(prev => ({ ...prev, showBarcodeNewMedication: false }));
             setBarcodeNewMedForm(prev => ({
               ...prev,
-              barcode: '', name: '', strength: '', strengthType: 'value', type: 'tablet',
+              barcode: '', name: '', strengthValue: '', strengthUnit: 'mg', volumeValue: '', volumeUnit: 'mL', strengthType: 'value', type: 'tablet',
               expiryMonth: '', expiryYear: '', boxQuantity: '', itemsPerBox: '', brand: '',
               batchNumber: '', serial: '', existingBatchId: null, existingBatches: [],
               enteringNewBatch: false, batchLocked: false, batchExists: false,
@@ -2217,6 +2298,16 @@
         }
       };
 
+      // Normalize GTIN-14 (leading 0) to EAN-13 for consistent barcode matching
+      const normalizeBarcode = (code) => {
+        if (!code) return code;
+        const trimmed = code.trim();
+        if (trimmed.length === 14 && trimmed.startsWith('0') && /^\d+$/.test(trimmed)) {
+          return trimmed.substring(1);
+        }
+        return trimmed;
+      };
+
       /**
        * Generic barcode scan handler (1D barcodes / fallback)
        *
@@ -2228,10 +2319,11 @@
        * @param {string} barcode - The raw barcode string
        */
       const handleGenericBarcodeScan = (barcode) => {
+        const normalized = normalizeBarcode(barcode);
         // Pre-fill barcode field and trigger lookup
         setBarcodeNewMedForm(prev => ({
           ...prev,
-          barcode,
+          barcode: normalized,
           error: ''
         }));
 
@@ -2239,7 +2331,7 @@
         setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
 
         // Trigger medication lookup
-        handleBarcodeLookup(barcode);
+        handleBarcodeLookup(normalized);
       };
 
       /**
@@ -2258,7 +2350,7 @@
        */
       const handleMedicinePackScan = (parsedGs1) => {
         // Use GTIN for lookup, fallback to raw string if GTIN missing
-        const lookupBarcode = parsedGs1.gtin || parsedGs1.raw;
+        const lookupBarcode = normalizeBarcode(parsedGs1.gtin || parsedGs1.raw);
 
         // Format expiry date for the form (MM and YYYY fields)
         const dateFormat = window.formatDateForMonthYear(parsedGs1.expiryDate);
@@ -2303,7 +2395,7 @@
         // Route to Med Database handler when on that tab
         if (ui.activeTab === 'meddatabase') {
           const gs1 = window.parseGs1Data(rawValue);
-          const lookupBarcode = gs1.isGs1 ? (gs1.gtin || rawValue) : rawValue;
+          const lookupBarcode = normalizeBarcode(gs1.isGs1 ? (gs1.gtin || rawValue) : rawValue);
           handleMedDbBarcodeScan(lookupBarcode);
           return;
         }
@@ -2356,7 +2448,7 @@
 
       // ── Med Database Tab: Barcode scan handler ──
       const handleMedDbBarcodeScan = async (barcode) => {
-        const cleanBarcode = barcode.trim().replace(/\s+/g, '');
+        const cleanBarcode = normalizeBarcode(barcode.trim().replace(/\s+/g, ''));
         if (!cleanBarcode) return;
 
         // Show loading state
@@ -2376,11 +2468,15 @@
 
           if (result.found && result.medication) {
             const med = result.medication;
+            const sp = parseStrength(med.strength_raw);
             setMedDbForm(prev => ({
               ...prev,
               isLookingUp: false,
               name: med.name,
-              strength: med.strength_raw || '',
+              strengthValue: sp.value,
+              strengthUnit: sp.unit,
+              volumeValue: sp.volumeValue,
+              volumeUnit: sp.volumeUnit,
               form: med.type || '',
               brand: med.brand || '',
               standardItemsPerBox: med.standard_items_per_box || '',
@@ -2397,7 +2493,10 @@
               ...prev,
               isLookingUp: false,
               name: '',
-              strength: '',
+              strengthValue: '',
+              strengthUnit: 'mg',
+              volumeValue: '',
+              volumeUnit: 'mL',
               form: 'Tablet',
               brand: '',
               standardItemsPerBox: '',
@@ -2411,13 +2510,17 @@
           }
         } catch (err) {
           // Fallback: check local array if API fails
-          const existing = medications.find(med => med.barcode === cleanBarcode);
+          const existing = medications.find(med => normalizeBarcode(med.barcode) === cleanBarcode);
           if (existing) {
+            const sp = parseStrength(existing.strength);
             setMedDbForm(prev => ({
               ...prev,
               isLookingUp: false,
               name: existing.name,
-              strength: existing.strength || '',
+              strengthValue: sp.value,
+              strengthUnit: sp.unit,
+              volumeValue: sp.volumeValue,
+              volumeUnit: sp.volumeUnit,
               form: existing.form || '',
               brand: existing.brand || '',
               standardItemsPerBox: existing.standard_items_per_box || '',
@@ -2447,7 +2550,7 @@
         try {
           const result = await window.api.medicationUpsert({
             name: medDbForm.name.trim(),
-            strength: medDbForm.strength.trim() || null,
+            strength: composeStrength(medDbForm.strengthValue, medDbForm.strengthUnit, medDbForm.volumeValue, medDbForm.volumeUnit) || null,
             form: medDbForm.form || 'Tablet',
             brand: medDbForm.brand.trim() || null,
             barcode: medDbForm.barcode.trim() || null,
@@ -2455,10 +2558,11 @@
             userId: auth.userId || null
           });
 
+          const composedStrength = composeStrength(medDbForm.strengthValue, medDbForm.strengthUnit, medDbForm.volumeValue, medDbForm.volumeUnit);
           const newMed = {
             id: result.medicationId,
             name: medDbForm.name.trim(),
-            strength: medDbForm.strength.trim(),
+            strength: composedStrength,
             form: medDbForm.form,
             brand: medDbForm.brand.trim(),
             barcode: medDbForm.barcode.trim(),
@@ -2475,7 +2579,10 @@
             sessionMeds: result.wasCreated ? [newMed, ...prev.sessionMeds] : prev.sessionMeds,
             barcode: '',
             name: '',
-            strength: '',
+            strengthValue: '',
+            strengthUnit: 'mg',
+            volumeValue: '',
+            volumeUnit: 'mL',
             form: 'Tablet',
             brand: '',
             standardItemsPerBox: '',
@@ -2508,7 +2615,10 @@
           ...prev,
           barcode: '',
           name: '',
-          strength: '',
+          strengthValue: '',
+          strengthUnit: 'mg',
+          volumeValue: '',
+          volumeUnit: 'mL',
           form: 'Tablet',
           brand: '',
           standardItemsPerBox: '',
@@ -2988,7 +3098,7 @@ ${tc.name()} Stock Management System`;
           setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter medication name' }));
           return;
         }
-        if (barcodeNewMedForm.strengthType === 'value' && !barcodeNewMedForm.strength.trim()) {
+        if (barcodeNewMedForm.strengthType === 'value' && !barcodeNewMedForm.strengthValue.trim()) {
           setBarcodeNewMedForm(prev => ({ ...prev, error: 'Please enter medication strength or select N/A' }));
           return;
         }
@@ -3067,7 +3177,7 @@ ${tc.name()} Stock Management System`;
           // Prepare medicationUpsert payload with minLevel
           const upsertPayload = {
             name: barcodeNewMedForm.name,
-            strength: barcodeNewMedForm.strengthType === 'na' ? 'N/A' : barcodeNewMedForm.strength,
+            strength: barcodeNewMedForm.strengthType === 'na' ? 'N/A' : composeStrength(barcodeNewMedForm.strengthValue, barcodeNewMedForm.strengthUnit, barcodeNewMedForm.volumeValue, barcodeNewMedForm.volumeUnit),
             form: barcodeNewMedForm.type,
             barcode: barcodeNewMedForm.barcode,
             standardItemsPerBox: itemsPerBox || null,
@@ -3100,7 +3210,7 @@ ${tc.name()} Stock Management System`;
               quantityBoxes: boxQuantity,
               quantityIndividuals: 0,
               serial: barcodeNewMedForm.serial || null, // GS1 serial number (if scanned from 2D barcode)
-              medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
+              medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strengthType !== 'na' && barcodeNewMedForm.strengthValue ? ' ' + composeStrength(barcodeNewMedForm.strengthValue, barcodeNewMedForm.strengthUnit, barcodeNewMedForm.volumeValue, barcodeNewMedForm.volumeUnit) : ''),
               reason: 'Delivery (existing batch)'
             });
           } else {
@@ -3117,14 +3227,14 @@ ${tc.name()} Stock Management System`;
               quantityBoxes: boxQuantity,
               quantityIndividuals: 0,
               serial: barcodeNewMedForm.serial || null, // GS1 serial number (if scanned from 2D barcode)
-              medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
+              medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strengthType !== 'na' && barcodeNewMedForm.strengthValue ? ' ' + composeStrength(barcodeNewMedForm.strengthValue, barcodeNewMedForm.strengthUnit, barcodeNewMedForm.volumeValue, barcodeNewMedForm.volumeUnit) : ''),
               reason: 'Delivery'
             });
           }
 
           // Auto-fulfil pending orders for this delivery
           const barcodeDeliveredUnits = (boxQuantity || 0) * (itemsPerBox || 1);
-          const barcodeMedName = barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : '');
+          const barcodeMedName = barcodeNewMedForm.name + (barcodeNewMedForm.strengthType !== 'na' && barcodeNewMedForm.strengthValue ? ' ' + composeStrength(barcodeNewMedForm.strengthValue, barcodeNewMedForm.strengthUnit, barcodeNewMedForm.volumeValue, barcodeNewMedForm.volumeUnit) : '');
           if (medicationId && barcodeDeliveredUnits > 0) {
             await autoFulfillOrders(medicationId, barcodeMedName, barcodeDeliveredUnits);
           }
@@ -3138,13 +3248,16 @@ ${tc.name()} Stock Management System`;
           if (data.orders) setOrders(data.orders);
 
           // Continuous add: reset form but keep modal open for next scan
-          const successMsg = `Added ${barcodeNewMedForm.boxQuantity} ${parseInt(barcodeNewMedForm.boxQuantity) === 1 ? 'box' : 'boxes'} of ${barcodeNewMedForm.name}${barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''}`;
+          const successMsg = `Added ${barcodeNewMedForm.boxQuantity} ${parseInt(barcodeNewMedForm.boxQuantity) === 1 ? 'box' : 'boxes'} of ${barcodeNewMedForm.name}${barcodeNewMedForm.strengthType !== 'na' && barcodeNewMedForm.strengthValue ? ' ' + composeStrength(barcodeNewMedForm.strengthValue, barcodeNewMedForm.strengthUnit, barcodeNewMedForm.volumeValue, barcodeNewMedForm.volumeUnit) : ''}`;
           const persistedLocation = barcodeNewMedForm.location;
           setBarcodeNewMedForm({
             barcode: '',
             medicationId: null,
             name: '',
-            strength: '',
+            strengthValue: '',
+            strengthUnit: 'mg',
+            volumeValue: '',
+            volumeUnit: 'mL',
             strengthType: 'value',
             type: 'tablet',
             expiryMonth: '',
@@ -3267,7 +3380,7 @@ ${tc.name()} Stock Management System`;
             targetLocationId: tgtLocId,
             quantity: transferQty,
             reason: 'Transfer via barcode scan',
-            medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
+            medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strengthType !== 'na' && barcodeNewMedForm.strengthValue ? ' ' + composeStrength(barcodeNewMedForm.strengthValue, barcodeNewMedForm.strengthUnit, barcodeNewMedForm.volumeValue, barcodeNewMedForm.volumeUnit) : ''),
             batchCode: batch.batchNumber || null
           };
           await window.api.transferStock(transferPayload);
@@ -3358,7 +3471,7 @@ ${tc.name()} Stock Management System`;
             batchId: batchIdVal,
             delta: -useQty,
             reason: reason,
-            medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : ''),
+            medicationName: barcodeNewMedForm.name + (barcodeNewMedForm.strengthType !== 'na' && barcodeNewMedForm.strengthValue ? ' ' + composeStrength(barcodeNewMedForm.strengthValue, barcodeNewMedForm.strengthUnit, barcodeNewMedForm.volumeValue, barcodeNewMedForm.volumeUnit) : ''),
             batchCode: batch.batchNumber || null
           };
           await window.api.adjustStock(adjustPayload);
@@ -3461,7 +3574,7 @@ ${tc.name()} Stock Management System`;
             throw new Error('Invalid location or batch selection. Please re-select.');
           }
 
-          const medFullName = barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : '');
+          const medFullName = barcodeNewMedForm.name + (barcodeNewMedForm.strengthType !== 'na' && barcodeNewMedForm.strengthValue ? ' ' + composeStrength(barcodeNewMedForm.strengthValue, barcodeNewMedForm.strengthUnit, barcodeNewMedForm.volumeValue, barcodeNewMedForm.volumeUnit) : '');
 
           // Step 1: Transfer stock from source to target
           const transferPayload = {
@@ -3531,7 +3644,7 @@ ${tc.name()} Stock Management System`;
           const currentUser = getCurrentUserInfo();
           if (!currentUser?.id) throw new Error('User not logged in');
 
-          const medFullName = barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : '');
+          const medFullName = barcodeNewMedForm.name + (barcodeNewMedForm.strengthType !== 'na' && barcodeNewMedForm.strengthValue ? ' ' + composeStrength(barcodeNewMedForm.strengthValue, barcodeNewMedForm.strengthUnit, barcodeNewMedForm.volumeValue, barcodeNewMedForm.volumeUnit) : '');
 
           await window.api.placeOrder({
             medicationId: barcodeNewMedForm.medicationId,
@@ -3596,7 +3709,7 @@ ${tc.name()} Stock Management System`;
           const currentUser = getCurrentUserInfo();
           if (!currentUser?.id) throw new Error('User not logged in');
 
-          const medFullName = barcodeNewMedForm.name + (barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? ' ' + barcodeNewMedForm.strength : '');
+          const medFullName = barcodeNewMedForm.name + (barcodeNewMedForm.strengthType !== 'na' && barcodeNewMedForm.strengthValue ? ' ' + composeStrength(barcodeNewMedForm.strengthValue, barcodeNewMedForm.strengthUnit, barcodeNewMedForm.volumeValue, barcodeNewMedForm.volumeUnit) : '');
 
           await window.api.placeOrder({
             medicationId: barcodeNewMedForm.medicationId,
@@ -7752,29 +7865,74 @@ ${tc.name()} Stock Management System`;
                           />
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                          <div>
-                            <label className="block text-sm font-medium text-txt-secondary mb-1">Strength</label>
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-txt-secondary mb-1">Form</label>
+                          <select
+                            value={medDbForm.form}
+                            onChange={(e) => {
+                              const newForm = e.target.value;
+                              const units = getStrengthUnits(newForm);
+                              setMedDbForm(prev => ({
+                                ...prev,
+                                form: newForm,
+                                strengthUnit: units.includes(prev.strengthUnit) ? prev.strengthUnit : units[0],
+                                volumeValue: formHasVolume(newForm) ? prev.volumeValue : '',
+                                volumeUnit: formHasVolume(newForm) ? prev.volumeUnit : 'mL',
+                              }));
+                            }}
+                            className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
+                          >
+                            {MEDICATION_TYPES.map(f => (
+                              <option key={f} value={f}>{f}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-txt-secondary mb-1">Strength</label>
+                          <div className="flex gap-2">
                             <input
                               type="text"
-                              value={medDbForm.strength}
-                              onChange={(e) => setMedDbForm(prev => ({ ...prev, strength: e.target.value }))}
-                              className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
-                              placeholder="e.g. 500mg"
+                              inputMode="decimal"
+                              value={medDbForm.strengthValue}
+                              onChange={(e) => setMedDbForm(prev => ({ ...prev, strengthValue: e.target.value }))}
+                              className="flex-1 px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
+                              placeholder="e.g. 500"
                             />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-txt-secondary mb-1">Form</label>
                             <select
-                              value={medDbForm.form}
-                              onChange={(e) => setMedDbForm(prev => ({ ...prev, form: e.target.value }))}
-                              className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
+                              value={medDbForm.strengthUnit}
+                              onChange={(e) => setMedDbForm(prev => ({ ...prev, strengthUnit: e.target.value }))}
+                              className="w-24 px-2 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
                             >
-                              {MEDICATION_TYPES.map(f => (
-                                <option key={f} value={f}>{f}</option>
+                              {getStrengthUnits(medDbForm.form).map(u => (
+                                <option key={u} value={u}>{u}</option>
                               ))}
                             </select>
                           </div>
+                          {formHasVolume(medDbForm.form) && (
+                            <div className="mt-2">
+                              <label className="block text-xs font-medium text-txt-tertiary mb-1">Volume</label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={medDbForm.volumeValue}
+                                  onChange={(e) => setMedDbForm(prev => ({ ...prev, volumeValue: e.target.value }))}
+                                  className="flex-1 px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
+                                  placeholder="e.g. 5"
+                                />
+                                <select
+                                  value={medDbForm.volumeUnit}
+                                  onChange={(e) => setMedDbForm(prev => ({ ...prev, volumeUnit: e.target.value }))}
+                                  className="w-24 px-2 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
+                                >
+                                  {VOLUME_UNITS.map(u => (
+                                    <option key={u} value={u}>{u}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         <div className="mb-4">
@@ -8604,7 +8762,10 @@ ${tc.name()} Stock Management System`;
                                 medicationLocked: false,
                                 medicationId: null,
                                 name: '',
-                                strength: '',
+                                strengthValue: '',
+                                strengthUnit: 'mg',
+                                volumeValue: '',
+                                volumeUnit: 'mL',
                                 strengthType: 'value',
                                 type: 'tablet',
                                 itemsPerBox: '',
@@ -8645,6 +8806,38 @@ ${tc.name()} Stock Management System`;
                         </div>
 
                         <div>
+                          <label className="block text-sm font-medium text-txt-secondary mb-1">Form *</label>
+                          <select
+                            id="barcodeNewMed-type"
+                            value={barcodeNewMedForm.type}
+                            onChange={(e) => {
+                              if (!barcodeNewMedForm.medicationLocked) {
+                                const newType = e.target.value;
+                                const units = getStrengthUnits(newType);
+                                setBarcodeNewMedForm(prev => ({
+                                  ...prev,
+                                  type: newType,
+                                  strengthUnit: units.includes(prev.strengthUnit) ? prev.strengthUnit : units[0],
+                                  volumeValue: formHasVolume(newType) ? prev.volumeValue : '',
+                                  volumeUnit: formHasVolume(newType) ? prev.volumeUnit : 'mL',
+                                  error: ''
+                                }));
+                                setTimeout(() => {
+                                  const nextEl = document.getElementById('barcodeNewMed-strength');
+                                  if (nextEl && !nextEl.readOnly) nextEl.focus();
+                                }, 50);
+                              }
+                            }}
+                            disabled={barcodeNewMedForm.medicationLocked}
+                            className={`w-full px-3 py-2 border border-bdr-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${barcodeNewMedForm.medicationLocked ? 'bg-off-white cursor-not-allowed' : ''}`}
+                          >
+                            {MEDICATION_TYPES.map(type => (
+                              <option key={type} value={type.toLowerCase()}>{type}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
                           <label className="block text-sm font-medium text-txt-secondary mb-1">Strength *</label>
                           <div className="mb-2">
                             <div className="flex gap-4">
@@ -8672,7 +8865,7 @@ ${tc.name()} Stock Management System`;
                                   checked={barcodeNewMedForm.strengthType === 'na'}
                                   onClick={(e) => {
                                     if (!barcodeNewMedForm.medicationLocked) {
-                                      setBarcodeNewMedForm(prev => ({ ...prev, strengthType: 'na', strength: '', error: '' }));
+                                      setBarcodeNewMedForm(prev => ({ ...prev, strengthType: 'na', strengthValue: '', volumeValue: '', error: '' }));
                                     }
                                   }}
                                   disabled={barcodeNewMedForm.medicationLocked}
@@ -8683,45 +8876,75 @@ ${tc.name()} Stock Management System`;
                             </div>
                           </div>
                           {barcodeNewMedForm.strengthType === 'value' && (
-                            <input
-                              type="text"
-                              id="barcodeNewMed-strength"
-                              value={barcodeNewMedForm.strength}
-                              onChange={(e) => {
-                                if (!barcodeNewMedForm.medicationLocked) {
-                                  setBarcodeNewMedForm(prev => ({ ...prev, strength: e.target.value, error: '' }));
-                                }
-                              }}
-                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-strength'); } }}
-                              readOnly={barcodeNewMedForm.medicationLocked}
-                              enterKeyHint="next"
-                              className={`w-full px-3 py-2 border border-bdr-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${barcodeNewMedForm.medicationLocked ? 'bg-off-white cursor-not-allowed' : ''}`}
-                              placeholder="e.g., 500mg"
-                            />
+                            <div>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  id="barcodeNewMed-strength"
+                                  value={barcodeNewMedForm.strengthValue}
+                                  onChange={(e) => {
+                                    if (!barcodeNewMedForm.medicationLocked) {
+                                      setBarcodeNewMedForm(prev => ({ ...prev, strengthValue: e.target.value, error: '' }));
+                                    }
+                                  }}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); focusNextBarcodeField('barcodeNewMed-strength'); } }}
+                                  readOnly={barcodeNewMedForm.medicationLocked}
+                                  enterKeyHint="next"
+                                  className={`flex-1 px-3 py-2 border border-bdr-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${barcodeNewMedForm.medicationLocked ? 'bg-off-white cursor-not-allowed' : ''}`}
+                                  placeholder="e.g. 500"
+                                />
+                                <select
+                                  value={barcodeNewMedForm.strengthUnit}
+                                  onChange={(e) => {
+                                    if (!barcodeNewMedForm.medicationLocked) {
+                                      setBarcodeNewMedForm(prev => ({ ...prev, strengthUnit: e.target.value }));
+                                    }
+                                  }}
+                                  disabled={barcodeNewMedForm.medicationLocked}
+                                  className={`w-24 px-2 py-2 border border-bdr-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid text-sm ${barcodeNewMedForm.medicationLocked ? 'bg-off-white cursor-not-allowed' : ''}`}
+                                >
+                                  {getStrengthUnits(barcodeNewMedForm.type).map(u => (
+                                    <option key={u} value={u}>{u}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              {formHasVolume(barcodeNewMedForm.type) && (
+                                <div className="mt-2">
+                                  <label className="block text-xs font-medium text-txt-tertiary mb-1">Volume</label>
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={barcodeNewMedForm.volumeValue}
+                                      onChange={(e) => {
+                                        if (!barcodeNewMedForm.medicationLocked) {
+                                          setBarcodeNewMedForm(prev => ({ ...prev, volumeValue: e.target.value }));
+                                        }
+                                      }}
+                                      readOnly={barcodeNewMedForm.medicationLocked}
+                                      className={`flex-1 px-3 py-2 border border-bdr-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${barcodeNewMedForm.medicationLocked ? 'bg-off-white cursor-not-allowed' : ''}`}
+                                      placeholder="e.g. 5"
+                                    />
+                                    <select
+                                      value={barcodeNewMedForm.volumeUnit}
+                                      onChange={(e) => {
+                                        if (!barcodeNewMedForm.medicationLocked) {
+                                          setBarcodeNewMedForm(prev => ({ ...prev, volumeUnit: e.target.value }));
+                                        }
+                                      }}
+                                      disabled={barcodeNewMedForm.medicationLocked}
+                                      className={`w-24 px-2 py-2 border border-bdr-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid text-sm ${barcodeNewMedForm.medicationLocked ? 'bg-off-white cursor-not-allowed' : ''}`}
+                                    >
+                                      {VOLUME_UNITS.map(u => (
+                                        <option key={u} value={u}>{u}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           )}
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-txt-secondary mb-1">Form *</label>
-                          <select
-                            id="barcodeNewMed-type"
-                            value={barcodeNewMedForm.type}
-                            onChange={(e) => {
-                              if (!barcodeNewMedForm.medicationLocked) {
-                                setBarcodeNewMedForm(prev => ({ ...prev, type: e.target.value, error: '' }));
-                                setTimeout(() => {
-                                  const nextEl = document.getElementById('barcodeNewMed-itemsPerBox');
-                                  if (nextEl && !nextEl.readOnly) nextEl.focus();
-                                }, 50);
-                              }
-                            }}
-                            disabled={barcodeNewMedForm.medicationLocked}
-                            className={`w-full px-3 py-2 border border-bdr-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${barcodeNewMedForm.medicationLocked ? 'bg-off-white cursor-not-allowed' : ''}`}
-                          >
-                            {MEDICATION_TYPES.map(type => (
-                              <option key={type} value={type.toLowerCase()}>{type}</option>
-                            ))}
-                          </select>
                         </div>
 
                         <div>
@@ -8990,7 +9213,7 @@ ${tc.name()} Stock Management System`;
                       return (
                       <div className="space-y-4">
                         <div className="p-3 bg-off-white rounded-lg border">
-                          <div className="text-sm font-medium text-near-black">{barcodeNewMedForm.name} {barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? barcodeNewMedForm.strength : ''}</div>
+                          <div className="text-sm font-medium text-near-black">{barcodeNewMedForm.name} {barcodeNewMedForm.strengthType !== 'na' && barcodeNewMedForm.strengthValue ? composeStrength(barcodeNewMedForm.strengthValue, barcodeNewMedForm.strengthUnit, barcodeNewMedForm.volumeValue, barcodeNewMedForm.volumeUnit) : ''}</div>
                           <div className="text-xs text-txt-tertiary">Form: {barcodeNewMedForm.type} | Items/box: {barcodeNewMedForm.itemsPerBox || 'N/A'}</div>
                         </div>
 
@@ -9090,7 +9313,7 @@ ${tc.name()} Stock Management System`;
                       return (
                       <div className="space-y-4">
                         <div className="p-3 bg-off-white rounded-lg border">
-                          <div className="text-sm font-medium text-near-black">{barcodeNewMedForm.name} {barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? barcodeNewMedForm.strength : ''}</div>
+                          <div className="text-sm font-medium text-near-black">{barcodeNewMedForm.name} {barcodeNewMedForm.strengthType !== 'na' && barcodeNewMedForm.strengthValue ? composeStrength(barcodeNewMedForm.strengthValue, barcodeNewMedForm.strengthUnit, barcodeNewMedForm.volumeValue, barcodeNewMedForm.volumeUnit) : ''}</div>
                           <div className="text-xs text-txt-tertiary">Form: {barcodeNewMedForm.type} | Items/box: {barcodeNewMedForm.itemsPerBox || 'N/A'}</div>
                         </div>
 
@@ -9220,7 +9443,7 @@ ${tc.name()} Stock Management System`;
                       return (
                       <div className="space-y-4">
                         <div className="p-3 bg-off-white rounded-lg border">
-                          <div className="text-sm font-medium text-near-black">{barcodeNewMedForm.name} {barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? barcodeNewMedForm.strength : ''}</div>
+                          <div className="text-sm font-medium text-near-black">{barcodeNewMedForm.name} {barcodeNewMedForm.strengthType !== 'na' && barcodeNewMedForm.strengthValue ? composeStrength(barcodeNewMedForm.strengthValue, barcodeNewMedForm.strengthUnit, barcodeNewMedForm.volumeValue, barcodeNewMedForm.volumeUnit) : ''}</div>
                           <div className="text-xs text-txt-tertiary">Form: {barcodeNewMedForm.type} | Items/box: {barcodeNewMedForm.itemsPerBox || 'N/A'}</div>
                         </div>
 
@@ -9399,7 +9622,7 @@ ${tc.name()} Stock Management System`;
                     {barcodeNewMedForm.medicationLocked && barcodeNewMedForm.activeTab === 'order' && (
                       <div className="space-y-4">
                         <div className="p-3 bg-off-white rounded-lg border">
-                          <div className="text-sm font-medium text-near-black">{barcodeNewMedForm.name} {barcodeNewMedForm.strength && barcodeNewMedForm.strength !== 'N/A' ? barcodeNewMedForm.strength : ''}</div>
+                          <div className="text-sm font-medium text-near-black">{barcodeNewMedForm.name} {barcodeNewMedForm.strengthType !== 'na' && barcodeNewMedForm.strengthValue ? composeStrength(barcodeNewMedForm.strengthValue, barcodeNewMedForm.strengthUnit, barcodeNewMedForm.volumeValue, barcodeNewMedForm.volumeUnit) : ''}</div>
                           <div className="text-xs text-txt-tertiary">Form: {barcodeNewMedForm.type} | Items/box: {barcodeNewMedForm.itemsPerBox || 'N/A'}</div>
                         </div>
 

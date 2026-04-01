@@ -1,6 +1,7 @@
 // netlify/functions/barcode-lookup.js
 // Looks up medication by barcode and returns medication details + existing batches
 const db = require('./_db');
+const { normalizeBarcode } = require('./_barcode-utils');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return db.methodNotAllowed();
@@ -15,11 +16,17 @@ exports.handler = async (event) => {
       return db.fail(400, 'Barcode is required');
     }
 
+    const normalized = normalizeBarcode(barcode);
+    // Also build the 14-digit padded form for fallback matching against legacy data
+    const padded = normalized.length === 13 && /^\d+$/.test(normalized)
+      ? '0' + normalized
+      : null;
+
     const medResult = await tdb.query(
       `SELECT id, name, strength, form, standard_items_per_box, barcode, brand, fefo, min_level_boxes
        FROM medications
-       WHERE barcode = $1`,
-      [barcode.trim()]
+       WHERE barcode = $1${padded ? ' OR barcode = $2' : ''}`,
+      padded ? [normalized, padded] : [normalized]
     );
 
     if (medResult.rows.length === 0) {
