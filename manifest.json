@@ -1,6 +1,6 @@
 {
-  "name": "CliniTrack - Medication Stock Management",
-  "short_name": "CliniTrack",
+  "name": "cliniTrack - Medication Stock Management",
+  "short_name": "cliniTrack",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#FFFFFF",
