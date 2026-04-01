@@ -2133,16 +2133,40 @@
                     // Resolution upgrade is best-effort
                   }
 
-                  // Apply macro focus if supported, otherwise fall back to continuous
+                  // Apply focus strategy based on device capabilities:
+                  // 1. iOS Safari: 'macro' mode (close-up hardware mode)
+                  // 2. Android Chrome: 'manual' mode + close focusDistance (explicit near-field lock)
+                  // 3. Fallback: 'continuous' autofocus + zoom nudge to encourage closer focus
                   if (capabilities.focusMode && capabilities.focusMode.includes('macro')) {
+                    // iPhone — native macro mode
                     await track.applyConstraints({ advanced: [{ focusMode: 'macro' }] });
-                  } else if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
-                    await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-                  }
-                  // If manual focus distance is available, set a close focus distance
-                  if (capabilities.focusDistance) {
+                  } else if (capabilities.focusMode && capabilities.focusMode.includes('manual') && capabilities.focusDistance) {
+                    // Android — lock manual focus to near-field distance
                     const minDist = capabilities.focusDistance.min || 0;
-                    await track.applyConstraints({ advanced: [{ focusDistance: Math.max(minDist, 0.05) }] });
+                    // Target ~10cm focus distance, clamped to device minimum
+                    const closeFocus = Math.max(minDist, 0.1);
+                    await track.applyConstraints({ advanced: [{ focusMode: 'manual', focusDistance: closeFocus }] });
+                  } else if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+                    // Generic fallback — continuous autofocus
+                    await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+                    // If manual focus distance is available alongside continuous, try setting close range
+                    if (capabilities.focusDistance) {
+                      try {
+                        const minDist = capabilities.focusDistance.min || 0;
+                        await track.applyConstraints({ advanced: [{ focusDistance: Math.max(minDist, 0.1) }] });
+                      } catch (e) { /* best-effort */ }
+                    }
+                  }
+
+                  // Apply slight digital zoom on Android to help autofocus lock on small codes
+                  // (reduces field of view, making the barcode larger in frame)
+                  if (capabilities.zoom && capabilities.zoom.min < capabilities.zoom.max) {
+                    try {
+                      const maxZoom = capabilities.zoom.max;
+                      // Apply modest 1.5x zoom (or max if less), keeps image quality reasonable
+                      const targetZoom = Math.min(1.5, maxZoom);
+                      await track.applyConstraints({ advanced: [{ zoom: targetZoom }] });
+                    } catch (e) { /* zoom is best-effort */ }
                   }
                   // Slight overexposure to brighten faint/low-contrast codes
                   if (capabilities.exposureCompensation) {
