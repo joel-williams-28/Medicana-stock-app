@@ -218,9 +218,13 @@
     const VOLUME_UNITS = ['mL', 'L'];
 
     // Compose strength parts into a single string for storage (e.g. "500mg" or "10mg/2mL")
+    // If `value` already contains a "/" (e.g. compound strength like "0.5mg/2.5mg"),
+    // it is treated as a free-text strength and returned verbatim.
     const composeStrength = (value, unit, volumeValue, volumeUnit) => {
       if (!value) return '';
-      let str = `${value}${unit}`;
+      const trimmed = String(value).trim();
+      if (trimmed.includes('/')) return trimmed;
+      let str = `${trimmed}${unit}`;
       if (volumeValue) str += `/${volumeValue}${volumeUnit}`;
       return str;
     };
@@ -232,6 +236,8 @@
       if (match) {
         return { value: match[1], unit: match[2], volumeValue: match[3] || '', volumeUnit: match[4] || 'mL' };
       }
+      // Compound / free-text strength (e.g. "0.5mg/2.5mg") — keep the whole string in `value`
+      // so it round-trips through composeStrength unchanged.
       return { value: raw, unit: 'mg', volumeValue: '', volumeUnit: 'mL' };
     };
 
@@ -826,7 +832,8 @@
         sessionMeds: [],
         manualEntry: false,
         isEditing: false,
-        editingMedId: null
+        editingMedId: null,
+        scanSessionActive: false
       });
       const [modals, setModals] = useState({
         showLowStockReport: false,
@@ -2507,7 +2514,8 @@
           existingMed: null,
           error: '',
           successMessage: '',
-          manualEntry: false
+          manualEntry: false,
+          scanSessionActive: true
         }));
 
         try {
@@ -2624,6 +2632,7 @@
           };
 
           const wasEditing = medDbForm.isEditing;
+          const wasScanSession = medDbForm.scanSessionActive;
           setMedDbForm(prev => ({
             ...prev,
             isSubmitting: false,
@@ -2647,8 +2656,15 @@
             manualEntry: false,
             isEditing: false,
             editingMedId: null,
-            error: ''
+            error: '',
+            scanSessionActive: wasScanSession
           }));
+
+          // If this submit originated from a camera-scan session, automatically
+          // reopen the scanner so the user can continue scanning the next box.
+          if (wasScanSession) {
+            setTimeout(() => { startCameraScanner(); }, 300);
+          }
 
           // Refresh medications list to include new/updated entry
           if (result.wasCreated || wasEditing) {
@@ -2686,7 +2702,8 @@
           successMessage: '',
           manualEntry: false,
           isEditing: false,
-          editingMedId: null
+          editingMedId: null,
+          scanSessionActive: false
         }));
       };
 
@@ -8522,11 +8539,11 @@ ${tc.name()} Stock Management System`;
                           <div className="flex gap-2">
                             <input
                               type="text"
-                              inputMode="decimal"
+                              inputMode="text"
                               value={medDbForm.strengthValue}
                               onChange={(e) => setMedDbForm(prev => ({ ...prev, strengthValue: e.target.value }))}
                               className="flex-1 px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
-                              placeholder="e.g. 500"
+                              placeholder="e.g. 500 or 0.5mg/2.5mg"
                             />
                             <select
                               value={medDbForm.strengthUnit}
@@ -9518,7 +9535,7 @@ ${tc.name()} Stock Management System`;
                               <div className="flex gap-2">
                                 <input
                                   type="text"
-                                  inputMode="decimal"
+                                  inputMode="text"
                                   id="barcodeNewMed-strength"
                                   value={barcodeNewMedForm.strengthValue}
                                   onChange={(e) => {
@@ -9530,7 +9547,7 @@ ${tc.name()} Stock Management System`;
                                   readOnly={barcodeNewMedForm.medicationLocked}
                                   enterKeyHint="next"
                                   className={`flex-1 px-3 py-2 border border-bdr-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${barcodeNewMedForm.medicationLocked ? 'bg-off-white cursor-not-allowed' : ''}`}
-                                  placeholder="e.g. 500"
+                                  placeholder="e.g. 500 or 0.5mg/2.5mg"
                                 />
                                 <select
                                   value={barcodeNewMedForm.strengthUnit}
@@ -10941,7 +10958,10 @@ ${tc.name()} Stock Management System`;
                         </button>
                       )}
                       <button
-                        onClick={stopCameraScanner}
+                        onClick={() => {
+                          stopCameraScanner();
+                          setMedDbForm(prev => ({ ...prev, scanSessionActive: false }));
+                        }}
                         className="p-2 hover:bg-near-black rounded-full transition-colors"
                         title="Close scanner"
                       >
@@ -10963,7 +10983,10 @@ ${tc.name()} Stock Management System`;
                         </div>
                         <div className="mt-3 flex gap-2">
                           <button
-                            onClick={stopCameraScanner}
+                            onClick={() => {
+                              stopCameraScanner();
+                              setMedDbForm(prev => ({ ...prev, scanSessionActive: false }));
+                            }}
                             className="px-4 py-2 bg-white text-danger-ghost-text rounded-md hover:bg-off-white transition-colors text-sm font-medium"
                           >
                             Close & Enter Manually
@@ -11026,7 +11049,10 @@ ${tc.name()} Stock Management System`;
                   {/* Footer with Cancel Button */}
                   <div className="bg-near-black px-4 py-3 flex-shrink-0">
                     <button
-                      onClick={stopCameraScanner}
+                      onClick={() => {
+                        stopCameraScanner();
+                        setMedDbForm(prev => ({ ...prev, scanSessionActive: false }));
+                      }}
                       className="w-full bg-txt-secondary text-white py-3 rounded-lg hover:bg-txt-tertiary transition-colors font-medium"
                     >
                       Cancel & Enter Manually
