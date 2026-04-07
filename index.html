@@ -218,9 +218,13 @@
     const VOLUME_UNITS = ['mL', 'L'];
 
     // Compose strength parts into a single string for storage (e.g. "500mg" or "10mg/2mL")
+    // If `value` already contains a "/" (e.g. compound strength like "0.5mg/2.5mg"),
+    // it is treated as a free-text strength and returned verbatim.
     const composeStrength = (value, unit, volumeValue, volumeUnit) => {
       if (!value) return '';
-      let str = `${value}${unit}`;
+      const trimmed = String(value).trim();
+      if (trimmed.includes('/')) return trimmed;
+      let str = `${trimmed}${unit}`;
       if (volumeValue) str += `/${volumeValue}${volumeUnit}`;
       return str;
     };
@@ -232,6 +236,8 @@
       if (match) {
         return { value: match[1], unit: match[2], volumeValue: match[3] || '', volumeUnit: match[4] || 'mL' };
       }
+      // Compound / free-text strength (e.g. "0.5mg/2.5mg") — keep the whole string in `value`
+      // so it round-trips through composeStrength unchanged.
       return { value: raw, unit: 'mg', volumeValue: '', volumeUnit: 'mL' };
     };
 
@@ -826,7 +832,16 @@
         sessionMeds: [],
         manualEntry: false,
         isEditing: false,
-        editingMedId: null
+        editingMedId: null,
+        scanSessionActive: false
+      });
+      const [scanCart, setScanCart] = useState({
+        isActive: false,        // true when Scan Cart mode is on
+        unit: 'boxes',          // 'boxes' | 'items' (session-wide toggle)
+        items: [],              // [{ medicationId, name, strength, form, brand, barcode, standardItemsPerBox, count }]
+        lastError: '',
+        lastScannedAt: 0,
+        pendingCommitMedId: null
       });
       const [modals, setModals] = useState({
         showLowStockReport: false,
@@ -2440,6 +2455,14 @@
        * @param {string} rawValue - Raw barcode string from scanner library
        */
       const handleScanDetected = (rawValue) => {
+        // Route to Scan Cart handler when active on the medications list tab
+        if (scanCart.isActive && ui.activeTab === 'medications') {
+          const gs1 = window.parseGs1Data(rawValue);
+          const lookupBarcode = normalizeBarcode(gs1.isGs1 ? (gs1.gtin || rawValue) : rawValue);
+          handleScanCartScan(lookupBarcode);
+          return;
+        }
+
         // Route to Med Database handler when on that tab
         if (ui.activeTab === 'meddatabase') {
           const gs1 = window.parseGs1Data(rawValue);
@@ -2507,7 +2530,8 @@
           existingMed: null,
           error: '',
           successMessage: '',
-          manualEntry: false
+          manualEntry: false,
+          scanSessionActive: true
         }));
 
         try {
@@ -2624,6 +2648,7 @@
           };
 
           const wasEditing = medDbForm.isEditing;
+          const wasScanSession = medDbForm.scanSessionActive;
           setMedDbForm(prev => ({
             ...prev,
             isSubmitting: false,
@@ -2647,8 +2672,15 @@
             manualEntry: false,
             isEditing: false,
             editingMedId: null,
-            error: ''
+            error: '',
+            scanSessionActive: wasScanSession
           }));
+
+          // If this submit originated from a camera-scan session, automatically
+          // reopen the scanner so the user can continue scanning the next box.
+          if (wasScanSession) {
+            setTimeout(() => { startCameraScanner(); }, 300);
+          }
 
           // Refresh medications list to include new/updated entry
           if (result.wasCreated || wasEditing) {
@@ -2686,8 +2718,215 @@
           successMessage: '',
           manualEntry: false,
           isEditing: false,
-          editingMedId: null
+          editingMedId: null,
+          scanSessionActive: false
         }));
+      };
+
+      // ── Med Database Tab: Soft-delete the currently recognised medication ──
+      // Uses the existing medication-set-active backend function which sets
+      // is_active=false and logs `medication_deleted` to activity_log. The
+      // medication is then automatically hidden by every query that filters on
+      // is_active (meds-get, inventory_full, etc.) — preserving audit trail.
+      const handleMedDbDelete = async () => {
+        const existing = medDbForm.existingMed;
+        if (!existing || !existing.id) return;
+
+        const confirmed = window.confirm(
+          `Delete "${existing.name}" from the database?\n\n` +
+          `This hides the medication from all lists, dashboards, and reports. ` +
+          `Existing batches, transactions, and audit history are preserved. ` +
+          `This cannot be undone from the UI.`
+        );
+        if (!confirmed) return;
+
+        setMedDbForm(prev => ({ ...prev, isSubmitting: true, error: '', successMessage: '' }));
+
+        try {
+          await window.api.setMedicationActive({
+            medicationId: existing.id,
+            isActive: false,
+            userId: auth.userId || null,
+            medicationName: existing.name
+          });
+
+          const wasScanSession = medDbForm.scanSessionActive;
+
+          setMedDbForm(prev => ({
+            ...prev,
+            isSubmitting: false,
+            successMessage: `"${existing.name}" deleted.`,
+            barcode: '',
+            name: '',
+            strengthValue: '',
+            strengthUnit: 'mg',
+            volumeValue: '',
+            volumeUnit: 'mL',
+            form: 'Tablet',
+            brand: '',
+            standardItemsPerBox: '',
+            existingMed: null,
+            manualEntry: false,
+            isEditing: false,
+            editingMedId: null,
+            error: '',
+            scanSessionActive: wasScanSession
+          }));
+
+          // Refresh the in-memory medications list so the deleted med disappears.
+          try {
+            const data = await window.api.fetchAllData();
+            if (data && data.medications) setMedications(data.medications);
+          } catch (_) { /* non-critical — next poll will refresh */ }
+
+          // Keep the continuous-scan loop going if we were mid-session.
+          if (wasScanSession) {
+            setTimeout(() => { startCameraScanner(); }, 300);
+          }
+        } catch (err) {
+          setMedDbForm(prev => ({
+            ...prev,
+            isSubmitting: false,
+            error: err.message || 'Failed to delete medication.'
+          }));
+        }
+      };
+
+      // ── Scan Cart: handle a scan in multi-scan mode on the medications list tab ──
+      const handleScanCartScan = async (barcode) => {
+        const cleanBarcode = normalizeBarcode((barcode || '').trim().replace(/\s+/g, ''));
+        if (!cleanBarcode) {
+          setTimeout(() => { startCameraScanner(); }, 250);
+          return;
+        }
+
+        // Soft debounce against the camera library reporting the same frame twice.
+        // Much shorter than the 2s lockout used elsewhere — we WANT rapid re-scans.
+        const now = Date.now();
+        if (now - scanCart.lastScannedAt < 400) {
+          setTimeout(() => { startCameraScanner(); }, 250);
+          return;
+        }
+        setScanCart(prev => ({ ...prev, lastScannedAt: now }));
+
+        try {
+          const result = await window.api.lookupByBarcode(cleanBarcode);
+          if (!result || !result.found || !result.medication) {
+            setScanCart(prev => ({ ...prev, lastError: 'Barcode not in database — register it from the Med Database tab first.' }));
+            return;
+          }
+          const med = result.medication;
+          setScanCart(prev => {
+            const existingIdx = prev.items.findIndex(i => i.medicationId === med.id);
+            let items;
+            if (existingIdx >= 0) {
+              items = prev.items.map((it, i) => i === existingIdx ? { ...it, count: it.count + 1 } : it);
+            } else {
+              items = [
+                {
+                  medicationId: med.id,
+                  name: med.name,
+                  strength: med.strength_raw || '',
+                  form: med.type || '',
+                  brand: med.brand || '',
+                  barcode: med.barcode || cleanBarcode,
+                  standardItemsPerBox: med.standard_items_per_box || null,
+                  count: 1
+                },
+                ...prev.items
+              ];
+            }
+            return { ...prev, items, lastError: '' };
+          });
+        } catch (err) {
+          setScanCart(prev => ({ ...prev, lastError: 'Barcode lookup failed. Please try again.' }));
+        } finally {
+          // Always reopen the camera so scanning is continuous.
+          setTimeout(() => { startCameraScanner(); }, 250);
+        }
+      };
+
+      // ── Scan Cart: commit a row to either Add Stock or Transfer via the existing modal ──
+      const commitScanCartRow = (row, action /* 'addStock' | 'transfer' */) => {
+        if (!row) return;
+        const sp = parseStrength(row.strength);
+        const itemsPerBox = row.standardItemsPerBox || null;
+
+        const quantityPrefill = (action === 'addStock')
+          ? {
+              boxQuantity: scanCart.unit === 'boxes'
+                ? String(row.count)
+                : (itemsPerBox ? String(Math.floor(row.count / itemsPerBox)) : ''),
+              individualQuantity: scanCart.unit === 'items' && itemsPerBox
+                ? String(row.count % itemsPerBox)
+                : ''
+            }
+          : {
+              transferQuantity: String(row.count),
+              transferQuantityType: scanCart.unit === 'boxes' ? 'boxes' : 'individual'
+            };
+
+        // Stop the camera so it doesn't fight the modal for focus
+        stopCameraScanner();
+
+        setBarcodeNewMedForm(prev => ({
+          ...prev,
+          medicationId: row.medicationId,
+          name: row.name,
+          strengthValue: sp.value,
+          strengthUnit: sp.unit,
+          volumeValue: sp.volumeValue,
+          volumeUnit: sp.volumeUnit,
+          type: row.form || prev.type,
+          brand: row.brand || '',
+          barcode: row.barcode || '',
+          itemsPerBox: itemsPerBox != null ? String(itemsPerBox) : '',
+          medicationLocked: true,
+          activeTab: action,
+          location: (ui.currentLocation !== 'All' && !isGroupName(ui.currentLocation, locations))
+            ? ui.currentLocation
+            : '',
+          error: '',
+          successMessage: '',
+          ...quantityPrefill
+        }));
+        setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
+        setScanCart(prev => ({ ...prev, pendingCommitMedId: row.medicationId }));
+      };
+
+      // ── Scan Cart: convert each row's count when switching units ──
+      const setScanCartUnit = (newUnit) => {
+        setScanCart(prev => {
+          if (prev.unit === newUnit) return prev;
+          const items = prev.items.map(it => {
+            if (!it.standardItemsPerBox) return it; // can't convert without items_per_box
+            if (newUnit === 'items' && prev.unit === 'boxes') {
+              return { ...it, count: it.count * it.standardItemsPerBox };
+            }
+            if (newUnit === 'boxes' && prev.unit === 'items') {
+              return { ...it, count: Math.max(1, Math.round(it.count / it.standardItemsPerBox)) };
+            }
+            return it;
+          });
+          return { ...prev, unit: newUnit, items };
+        });
+      };
+
+      // ── Scan Cart: manual stepper / clear ──
+      const adjustScanCartRow = (medicationId, delta) => {
+        setScanCart(prev => {
+          const items = prev.items
+            .map(it => it.medicationId === medicationId ? { ...it, count: it.count + delta } : it)
+            .filter(it => it.count > 0);
+          return { ...prev, items };
+        });
+      };
+      const clearScanCart = () => {
+        setScanCart(prev => ({ ...prev, items: [], lastError: '', pendingCommitMedId: null }));
+      };
+      const closeScanCart = () => {
+        stopCameraScanner();
+        setScanCart({ isActive: false, unit: 'boxes', items: [], lastError: '', lastScannedAt: 0, pendingCommitMedId: null });
       };
 
       // Handle existing batch selection
@@ -3366,6 +3605,20 @@ ${tc.name()} Stock Management System`;
             orderPharmacistEmail: tc.email()
           });
           setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100);
+
+          // Scan Cart: if this submit was driven by a Scan Cart row, drop the row
+          // and (if the cart is still active) reopen the camera for continuous scanning.
+          if (scanCart.pendingCommitMedId) {
+            const committedId = scanCart.pendingCommitMedId;
+            const stillActive = scanCart.isActive;
+            setScanCart(prev => ({
+              ...prev,
+              items: prev.items.filter(it => it.medicationId !== committedId),
+              pendingCommitMedId: null
+            }));
+            setModals(prev => ({ ...prev, showBarcodeNewMedication: false }));
+            if (stillActive) setTimeout(() => { startCameraScanner(); }, 300);
+          }
         } catch (err) {
           console.error('Failed to add medication/batch via barcode:', err);
           setBarcodeNewMedForm(prev => ({ ...prev, error: err.message || 'Failed to add medication', isSubmitting: false }));
@@ -3461,6 +3714,19 @@ ${tc.name()} Stock Management System`;
             successMessage: `Transferred ${displayQty} of ${prev.name} from ${sourceName} to ${targetName}`,
             transferSourceLocation: '', transferTargetLocation: '', transferBatchId: '', transferQuantity: '', transferQuantityType: 'boxes'
           }));
+
+          // Scan Cart: drop the committed row and resume scanning if cart is still active
+          if (scanCart.pendingCommitMedId) {
+            const committedId = scanCart.pendingCommitMedId;
+            const stillActive = scanCart.isActive;
+            setScanCart(prev => ({
+              ...prev,
+              items: prev.items.filter(it => it.medicationId !== committedId),
+              pendingCommitMedId: null
+            }));
+            setModals(prev => ({ ...prev, showBarcodeNewMedication: false }));
+            if (stillActive) setTimeout(() => { startCameraScanner(); }, 300);
+          }
         } catch (err) {
           console.error('Transfer via barcode failed:', err);
           setBarcodeNewMedForm(prev => ({ ...prev, error: err.message || 'Transfer failed', isSubmitting: false }));
@@ -5352,6 +5618,120 @@ ${tc.name()} Stock Management System`;
                 {/* Medications Tab */}
               {ui.activeTab === 'medications' && (
                 <>
+                  {/* Scan Cart Panel — visible while in multi-scan mode or while items remain to commit */}
+                  {(scanCart.isActive || scanCart.items.length > 0) && (
+                    <div className="p-3 sm:p-4 md:p-6 border-b bg-brand-pale">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <Camera className="w-5 h-5 text-brand-mid" />
+                          <h3 className="text-sm sm:text-base font-semibold text-brand-deepest">
+                            Scan Cart
+                          </h3>
+                          <span className="text-xs text-txt-tertiary">
+                            {scanCart.items.length} {scanCart.items.length === 1 ? 'medication' : 'medications'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {/* Unit toggle */}
+                          <div className="inline-flex rounded-md border border-bdr-default overflow-hidden text-xs">
+                            <button
+                              onClick={() => setScanCartUnit('boxes')}
+                              className={`px-3 py-1 ${scanCart.unit === 'boxes' ? 'bg-brand-mid text-white' : 'bg-white text-txt-secondary hover:bg-off-white'}`}
+                            >
+                              Boxes
+                            </button>
+                            <button
+                              onClick={() => setScanCartUnit('items')}
+                              className={`px-3 py-1 ${scanCart.unit === 'items' ? 'bg-brand-mid text-white' : 'bg-white text-txt-secondary hover:bg-off-white'}`}
+                            >
+                              Items
+                            </button>
+                          </div>
+                          {scanCart.items.length > 0 && (
+                            <button
+                              onClick={clearScanCart}
+                              className="px-3 py-1 text-xs rounded-md border border-bdr-default bg-white text-txt-secondary hover:bg-off-white"
+                              title="Remove all rows but keep scanning"
+                            >
+                              Clear
+                            </button>
+                          )}
+                          <button
+                            onClick={closeScanCart}
+                            className="p-1 rounded-md hover:bg-white"
+                            title="Close Scan Cart"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {scanCart.lastError && (
+                        <div className="mb-2 text-xs text-status-critical-text bg-status-critical-bg border border-status-critical-text rounded px-2 py-1">
+                          {scanCart.lastError}
+                        </div>
+                      )}
+
+                      {scanCart.isActive && (
+                        <div className="mb-2 text-xs text-brand-deepest">
+                          Camera is scanning… each scan adds 1 {scanCart.unit === 'boxes' ? 'box' : 'item'}.
+                        </div>
+                      )}
+
+                      {scanCart.items.length === 0 ? (
+                        <div className="text-xs text-txt-tertiary italic">No items yet — point the camera at a medication barcode.</div>
+                      ) : (
+                        <ul className="space-y-2">
+                          {scanCart.items.map(row => {
+                            const noPackInfo = !row.standardItemsPerBox;
+                            return (
+                              <li key={row.medicationId} className="flex flex-col sm:flex-row sm:items-center gap-2 bg-white rounded-md border border-bdr-default px-3 py-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium text-txt-primary truncate">
+                                    {row.name}
+                                    {row.strength ? <span className="ml-1 text-txt-tertiary">{row.strength}</span> : null}
+                                  </div>
+                                  <div className="text-xs text-txt-tertiary truncate">
+                                    {[row.form, row.brand].filter(Boolean).join(' · ')}
+                                    {noPackInfo && scanCart.unit === 'items' ? ' · ? items/box' : ''}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <div className="inline-flex items-center rounded-md border border-bdr-default overflow-hidden">
+                                    <button
+                                      onClick={() => adjustScanCartRow(row.medicationId, -1)}
+                                      className="px-2 py-1 text-sm bg-white hover:bg-off-white"
+                                      title="Decrease"
+                                    >−</button>
+                                    <span className="px-3 py-1 text-sm font-semibold min-w-[3ch] text-center">{row.count}</span>
+                                    <button
+                                      onClick={() => adjustScanCartRow(row.medicationId, 1)}
+                                      className="px-2 py-1 text-sm bg-white hover:bg-off-white"
+                                      title="Increase"
+                                    >+</button>
+                                  </div>
+                                  <span className="text-xs text-txt-tertiary">{scanCart.unit}</span>
+                                  <button
+                                    onClick={() => commitScanCartRow(row, 'addStock')}
+                                    className="px-3 py-1 text-xs rounded-md bg-brand-mid text-white hover:bg-brand-dark whitespace-nowrap"
+                                  >
+                                    Add Stock
+                                  </button>
+                                  <button
+                                    onClick={() => commitScanCartRow(row, 'transfer')}
+                                    className="px-3 py-1 text-xs rounded-md bg-brand-mid/80 text-white hover:bg-brand-dark whitespace-nowrap"
+                                  >
+                                    Transfer
+                                  </button>
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+
                   <div className="p-3 sm:p-4 md:p-6 border-b">
                     <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 items-stretch sm:items-center mb-3">
                       <div className="relative flex-1 min-w-0">
@@ -5404,6 +5784,19 @@ ${tc.name()} Stock Management System`;
                                 <Camera className="w-3 h-3 sm:w-4 sm:h-4" />
                                 <span className="hidden sm:inline">Scan Barcode</span>
                                 <span className="sm:hidden">Scan</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setScanCart(prev => ({ ...prev, isActive: true, lastError: '' }));
+                                  setCameraScanner(prev => ({ ...prev, openedViaScan: true }));
+                                  setTimeout(() => { startCameraScanner(); }, 200);
+                                }}
+                                className="bg-brand-mid/90 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-2"
+                                title="Scan multiple boxes in one session"
+                              >
+                                <Camera className="w-3 h-3 sm:w-4 sm:h-4" />
+                                <span className="hidden sm:inline">Multi-Scan</span>
+                                <span className="sm:hidden">Multi</span>
                               </button>
                               <button onClick={() => {
                                 const prefillLocation = (ui.currentLocation !== 'All' && !isGroupName(ui.currentLocation, locations)) ? ui.currentLocation : '';
@@ -8430,6 +8823,17 @@ ${tc.name()} Stock Management System`;
                             <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             Edit
                           </button>
+                          {getUserRole() === 'Administrator' && (
+                            <button
+                              onClick={handleMedDbDelete}
+                              disabled={medDbForm.isSubmitting}
+                              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-status-critical-text text-white rounded-lg hover:bg-red-700 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Soft-delete this medication (hides it everywhere, preserves audit history)"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+                              Delete
+                            </button>
+                          )}
                           <button
                             onClick={() => { handleMedDbReset(); startCameraScanner(); }}
                             className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-brand-mid text-white rounded-lg hover:bg-brand-dark transition-colors font-medium text-sm"
@@ -8522,11 +8926,11 @@ ${tc.name()} Stock Management System`;
                           <div className="flex gap-2">
                             <input
                               type="text"
-                              inputMode="decimal"
+                              inputMode="text"
                               value={medDbForm.strengthValue}
                               onChange={(e) => setMedDbForm(prev => ({ ...prev, strengthValue: e.target.value }))}
                               className="flex-1 px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent text-sm"
-                              placeholder="e.g. 500"
+                              placeholder="e.g. 500 or 0.5mg/2.5mg"
                             />
                             <select
                               value={medDbForm.strengthUnit}
@@ -9518,7 +9922,7 @@ ${tc.name()} Stock Management System`;
                               <div className="flex gap-2">
                                 <input
                                   type="text"
-                                  inputMode="decimal"
+                                  inputMode="text"
                                   id="barcodeNewMed-strength"
                                   value={barcodeNewMedForm.strengthValue}
                                   onChange={(e) => {
@@ -9530,7 +9934,7 @@ ${tc.name()} Stock Management System`;
                                   readOnly={barcodeNewMedForm.medicationLocked}
                                   enterKeyHint="next"
                                   className={`flex-1 px-3 py-2 border border-bdr-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${barcodeNewMedForm.medicationLocked ? 'bg-off-white cursor-not-allowed' : ''}`}
-                                  placeholder="e.g. 500"
+                                  placeholder="e.g. 500 or 0.5mg/2.5mg"
                                 />
                                 <select
                                   value={barcodeNewMedForm.strengthUnit}
@@ -10941,7 +11345,11 @@ ${tc.name()} Stock Management System`;
                         </button>
                       )}
                       <button
-                        onClick={stopCameraScanner}
+                        onClick={() => {
+                          stopCameraScanner();
+                          setMedDbForm(prev => ({ ...prev, scanSessionActive: false }));
+                          setScanCart(prev => ({ ...prev, isActive: false }));
+                        }}
                         className="p-2 hover:bg-near-black rounded-full transition-colors"
                         title="Close scanner"
                       >
@@ -10963,7 +11371,11 @@ ${tc.name()} Stock Management System`;
                         </div>
                         <div className="mt-3 flex gap-2">
                           <button
-                            onClick={stopCameraScanner}
+                            onClick={() => {
+                              stopCameraScanner();
+                              setMedDbForm(prev => ({ ...prev, scanSessionActive: false }));
+                              setScanCart(prev => ({ ...prev, isActive: false }));
+                            }}
                             className="px-4 py-2 bg-white text-danger-ghost-text rounded-md hover:bg-off-white transition-colors text-sm font-medium"
                           >
                             Close & Enter Manually
@@ -11026,7 +11438,11 @@ ${tc.name()} Stock Management System`;
                   {/* Footer with Cancel Button */}
                   <div className="bg-near-black px-4 py-3 flex-shrink-0">
                     <button
-                      onClick={stopCameraScanner}
+                      onClick={() => {
+                        stopCameraScanner();
+                        setMedDbForm(prev => ({ ...prev, scanSessionActive: false }));
+                        setScanCart(prev => ({ ...prev, isActive: false }));
+                      }}
                       className="w-full bg-txt-secondary text-white py-3 rounded-lg hover:bg-txt-tertiary transition-colors font-medium"
                     >
                       Cancel & Enter Manually
