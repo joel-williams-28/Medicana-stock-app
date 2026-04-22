@@ -832,8 +832,17 @@
         sessionMeds: [],
         manualEntry: false,
         isEditing: false,
-        editingMedId: null,
-        scanSessionActive: false
+        editingMedId: null
+      });
+      // Hard-delete modal state (password confirmation + RBAC-gated medication deletion).
+      // Opened from handleMedDbDelete; server-side guarded by netlify/functions/medication-delete.js.
+      const [hardDeleteForm, setHardDeleteForm] = useState({
+        open: false,
+        target: null,           // { id, name }
+        password: '',
+        error: '',
+        isSubmitting: false,
+        showSoftFallback: false // true after server returns 409 HAS_DEPENDENCIES
       });
       const [scanCart, setScanCart] = useState({
         isActive: false,        // true when Scan Cart mode is on
@@ -1056,6 +1065,22 @@
           stockMode: 'new', // 'new' | 'existing' — for the Add Stock tab toggle
           searchTerm: '' // search query for existing medication lookup
         });
+
+        // ── Hardware-scanner multi-scan session ──
+        // Tracks a queue of recognised medications scanned while the 5-tab
+        // barcode modal is open. Each scan of the same barcode increments that
+        // item's count; scanning a different recognised barcode adds a new
+        // queue item and switches modal focus. Camera path is untouched.
+        const [multiScanQueue, setMultiScanQueue] = useState({
+          active: false,
+          items: [],        // [{ barcode, medicationId, displayName, activeTab, count, formSnapshot }]
+          focusedBarcode: null,
+          unrecognisedWarning: ''
+        });
+        // Placeholder ref kept for future handler refactoring — currently
+        // commitAllMultiScan reads directly from the queue item snapshots and
+        // calls the Neon APIs without invoking the single-scan handlers.
+        const formOverrideRef = useRef(null);
 
         // Session timeout management
         const [sessionTimeout, setSessionTimeout] = useState({
@@ -2454,6 +2479,12 @@
        *
        * @param {string} rawValue - Raw barcode string from scanner library
        */
+      // ── cameraScanFlow ──
+      // Entry point for the camera (html5-qrcode) path ONLY.
+      // Called by handleBarcodeDetected (which has already stopped the camera).
+      // This path never restarts the camera on success — the user reopens it
+      // manually via the "Scan with Camera" button. Must not share side effects
+      // with the hardware-scanner path below.
       const handleScanDetected = (rawValue) => {
         // Route to Scan Cart handler when active on the medications list tab
         if (scanCart.isActive && ui.activeTab === 'medications') {
@@ -2530,8 +2561,7 @@
           existingMed: null,
           error: '',
           successMessage: '',
-          manualEntry: false,
-          scanSessionActive: true
+          manualEntry: false
         }));
 
         try {
@@ -2648,7 +2678,6 @@
           };
 
           const wasEditing = medDbForm.isEditing;
-          const wasScanSession = medDbForm.scanSessionActive;
           setMedDbForm(prev => ({
             ...prev,
             isSubmitting: false,
@@ -2672,15 +2701,8 @@
             manualEntry: false,
             isEditing: false,
             editingMedId: null,
-            error: '',
-            scanSessionActive: wasScanSession
+            error: ''
           }));
-
-          // If this submit originated from a camera-scan session, automatically
-          // reopen the scanner so the user can continue scanning the next box.
-          if (wasScanSession) {
-            setTimeout(() => { startCameraScanner(); }, 300);
-          }
 
           // Refresh medications list to include new/updated entry
           if (result.wasCreated || wasEditing) {
@@ -2718,95 +2740,177 @@
           successMessage: '',
           manualEntry: false,
           isEditing: false,
-          editingMedId: null,
-          scanSessionActive: false
+          editingMedId: null
         }));
       };
 
-      // ── Med Database Tab: Soft-delete the currently recognised medication ──
-      // Uses the existing medication-set-active backend function which sets
-      // is_active=false and logs `medication_deleted` to activity_log. The
-      // medication is then automatically hidden by every query that filters on
-      // is_active (meds-get, inventory_full, etc.) — preserving audit trail.
-      const handleMedDbDelete = async () => {
+      // ── Med Database Tab: Hard-delete flow (RBAC + password confirmation) ──
+      // Deletion is gated server-side in medication-delete.js:
+      //   1. User must be active.
+      //   2. Role must be Administrator or Pharmacist (case-insensitive).
+      //   3. Password must match the user's bcrypt hash.
+      // The client-side role check below is UX only — the server is authoritative.
+      // If the backend returns 409 HAS_DEPENDENCIES (FK constraint), the modal
+      // offers the soft-delete fallback (medication-set-active → is_active=false).
+
+      // Reads from sessionStorage via getCurrentUserInfo — `auth.currentUser` is
+      // just the username string, not a user object, so `auth.currentUser?.role`
+      // would always be undefined. The full user object (id, role, fullName, ...)
+      // lives in sessionStorage and is exposed through getCurrentUserInfo().
+      const canDeleteMedications = (() => {
+        const role = String(getCurrentUserInfo()?.role || '').trim().toLowerCase();
+        return role === 'administrator' || role === 'pharmacist';
+      })();
+
+      const handleMedDbDelete = () => {
         const existing = medDbForm.existingMed;
         if (!existing || !existing.id) return;
+        if (!canDeleteMedications) {
+          setMedDbForm(prev => ({
+            ...prev,
+            error: 'Only Administrators and Pharmacists can delete medications.'
+          }));
+          return;
+        }
+        setHardDeleteForm({
+          open: true,
+          target: { id: existing.id, name: existing.name },
+          password: '',
+          error: '',
+          isSubmitting: false,
+          showSoftFallback: false
+        });
+      };
 
-        const confirmed = window.confirm(
-          `Delete "${existing.name}" from the database?\n\n` +
-          `This hides the medication from all lists, dashboards, and reports. ` +
-          `Existing batches, transactions, and audit history are preserved. ` +
-          `This cannot be undone from the UI.`
-        );
-        if (!confirmed) return;
+      const closeHardDelete = () => {
+        setHardDeleteForm({
+          open: false,
+          target: null,
+          password: '',
+          error: '',
+          isSubmitting: false,
+          showSoftFallback: false
+        });
+      };
 
-        setMedDbForm(prev => ({ ...prev, isSubmitting: true, error: '', successMessage: '' }));
+      const clearMedDbAfterDelete = (deletedName) => {
+        setMedDbForm(prev => ({
+          ...prev,
+          isSubmitting: false,
+          successMessage: `"${deletedName}" deleted.`,
+          barcode: '',
+          name: '',
+          strengthValue: '',
+          strengthUnit: 'mg',
+          volumeValue: '',
+          volumeUnit: 'mL',
+          form: 'Tablet',
+          brand: '',
+          standardItemsPerBox: '',
+          existingMed: null,
+          manualEntry: false,
+          isEditing: false,
+          editingMedId: null,
+          error: ''
+        }));
+      };
+
+      const refreshMedicationsAfterDelete = async () => {
+        try {
+          const data = await window.api.fetchAllData();
+          if (data && data.medications) setMedications(data.medications);
+        } catch (_) { /* non-critical — next poll will refresh */ }
+      };
+
+      const submitHardDelete = async () => {
+        const target = hardDeleteForm.target;
+        if (!target || !target.id) return;
+        if (!hardDeleteForm.password) {
+          setHardDeleteForm(prev => ({ ...prev, error: 'Password is required.' }));
+          return;
+        }
+
+        setHardDeleteForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
 
         try {
-          await window.api.setMedicationActive({
-            medicationId: existing.id,
-            isActive: false,
-            userId: auth.userId || null,
-            medicationName: existing.name
+          await window.api.deleteMedication({
+            medicationId: target.id,
+            userId: getCurrentUserInfo()?.id || null,
+            password: hardDeleteForm.password,
+            medicationName: target.name
           });
-
-          const wasScanSession = medDbForm.scanSessionActive;
-
-          setMedDbForm(prev => ({
-            ...prev,
-            isSubmitting: false,
-            successMessage: `"${existing.name}" deleted.`,
-            barcode: '',
-            name: '',
-            strengthValue: '',
-            strengthUnit: 'mg',
-            volumeValue: '',
-            volumeUnit: 'mL',
-            form: 'Tablet',
-            brand: '',
-            standardItemsPerBox: '',
-            existingMed: null,
-            manualEntry: false,
-            isEditing: false,
-            editingMedId: null,
-            error: '',
-            scanSessionActive: wasScanSession
-          }));
-
-          // Refresh the in-memory medications list so the deleted med disappears.
-          try {
-            const data = await window.api.fetchAllData();
-            if (data && data.medications) setMedications(data.medications);
-          } catch (_) { /* non-critical — next poll will refresh */ }
-
-          // Keep the continuous-scan loop going if we were mid-session.
-          if (wasScanSession) {
-            setTimeout(() => { startCameraScanner(); }, 300);
-          }
+          closeHardDelete();
+          clearMedDbAfterDelete(target.name);
+          await refreshMedicationsAfterDelete();
         } catch (err) {
-          setMedDbForm(prev => ({
+          if (err && err.code === 'HAS_DEPENDENCIES') {
+            setHardDeleteForm(prev => ({
+              ...prev,
+              isSubmitting: false,
+              error: 'This medication has batches, orders, or transactions. A hard delete would break audit history — use soft-delete instead.',
+              showSoftFallback: true
+            }));
+            return;
+          }
+          if (err && err.status === 401) {
+            setHardDeleteForm(prev => ({
+              ...prev,
+              isSubmitting: false,
+              password: '',
+              error: err.message || 'Incorrect password.'
+            }));
+            return;
+          }
+          if (err && err.status === 403) {
+            setHardDeleteForm(prev => ({
+              ...prev,
+              isSubmitting: false,
+              error: err.message || 'You do not have permission to delete medications.'
+            }));
+            return;
+          }
+          setHardDeleteForm(prev => ({
             ...prev,
             isSubmitting: false,
-            error: err.message || 'Failed to delete medication.'
+            error: (err && err.message) || 'Failed to delete medication.'
+          }));
+        }
+      };
+
+      const submitSoftFallbackDelete = async () => {
+        const target = hardDeleteForm.target;
+        if (!target || !target.id) return;
+        setHardDeleteForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
+        try {
+          await window.api.setMedicationActive({
+            medicationId: target.id,
+            isActive: false,
+            userId: getCurrentUserInfo()?.id || null,
+            medicationName: target.name
+          });
+          closeHardDelete();
+          clearMedDbAfterDelete(target.name);
+          await refreshMedicationsAfterDelete();
+        } catch (err) {
+          setHardDeleteForm(prev => ({
+            ...prev,
+            isSubmitting: false,
+            error: (err && err.message) || 'Failed to soft-delete medication.'
           }));
         }
       };
 
       // ── Scan Cart: handle a scan in multi-scan mode on the medications list tab ──
+      // Works for both camera scans (one-shot — user reopens the camera manually)
+      // and hardware-scanner keyboard input (continuous — no camera involved).
       const handleScanCartScan = async (barcode) => {
         const cleanBarcode = normalizeBarcode((barcode || '').trim().replace(/\s+/g, ''));
-        if (!cleanBarcode) {
-          setTimeout(() => { startCameraScanner(); }, 250);
-          return;
-        }
+        if (!cleanBarcode) return;
 
-        // Soft debounce against the camera library reporting the same frame twice.
-        // Much shorter than the 2s lockout used elsewhere — we WANT rapid re-scans.
+        // Soft debounce against a single scan being reported twice in quick succession
+        // (html5-qrcode frame dedupe OR hardware scanner emitting Enter+carriage return).
         const now = Date.now();
-        if (now - scanCart.lastScannedAt < 400) {
-          setTimeout(() => { startCameraScanner(); }, 250);
-          return;
-        }
+        if (now - scanCart.lastScannedAt < 400) return;
         setScanCart(prev => ({ ...prev, lastScannedAt: now }));
 
         try {
@@ -2840,9 +2944,6 @@
           });
         } catch (err) {
           setScanCart(prev => ({ ...prev, lastError: 'Barcode lookup failed. Please try again.' }));
-        } finally {
-          // Always reopen the camera so scanning is continuous.
-          setTimeout(() => { startCameraScanner(); }, 250);
         }
       };
 
@@ -3151,21 +3252,595 @@
 
 
         /**
-         * Hardware barcode scanner handler (infrared/Bluetooth scanners)
+         * ── hardwareScannerInputFlow ──
+         * Entry point for hardware barcode scanners ONLY (keyboard emulation).
+         * Called by handleGlobalBarcodeInput after debounced keystroke accumulation.
+         * Must not touch any camera API — the camera path uses handleScanDetected.
          *
-         * This handler is invoked when the global hardware scanner detects a barcode
-         * via keyboard emulation (rapid keystroke detection).
+         * Routing:
+         * - Med Database tab → handleMedDbBarcodeScan
+         * - Scan Cart active on medications tab → handleScanCartScan
+         * - Otherwise: open the 5-tab barcode modal (showBarcodeNewMedication)
+         *   and trigger handleBarcodeLookup, mirroring the camera path
+         *   (handleGenericBarcodeScan / handleMedicinePackScan). When the med
+         *   is recognised in Neon the lookup sets medicationLocked=true and
+         *   the modal switches to the 5-tab UI:
+         *     Add Stock · Transfer · Patient Use · Transfer & Use · Order
          *
-         * Unlike the camera scanner which always opens the "new medication" modal,
-         * the hardware scanner has different behavior based on scan context:
-         * - If medication found: Opens stock adjustment modal (for quick stock operations)
-         * - If medication not found: Opens new medication modal
-         *
-         * GS1 codes are automatically detected and batch/expiry data is pre-filled.
-         *
-         * Supported AIs: (01) GTIN, (10) Batch, (17) Expiry YYMMDD, (21) Serial
+         * GS1 AIs supported: (01) GTIN, (10) Batch, (17) Expiry YYMMDD, (21) Serial.
          */
-        const handleBarcodeScanned = (barcode) => {
+        // ── Multi-scan helpers (hardware scanner only) ──
+
+        // Per-tab primary quantity field + rescan increment semantics.
+        // transferAndUse intentionally omitted — multi-scan is disabled on it.
+        const MULTI_SCAN_TAB_CONFIG = {
+          addStock:   { field: 'boxQuantity',      type: 'boxes',      label: 'Add Stock' },
+          transfer:   { field: 'transferQuantity', typeField: 'transferQuantityType', label: 'Transfer' },
+          patientUse: { field: 'useQuantity',      typeField: 'useQuantityType',      label: 'Patient Use' },
+          order:      { field: 'orderQuantity',    type: 'boxes',      label: 'Order' }
+        };
+
+        // Snapshot everything in barcodeNewMedForm *except* the identity fields
+        // that are re-hydrated from handleBarcodeLookup — that way switching
+        // focus restores user input without re-running the lookup lookup lookup.
+        // NOTE: `brand` and `itemsPerBox` are per-delivery values (editable by
+        // the user for each scanned carton), NOT identity. They must be in the
+        // snapshot so the live form's current values flow through to commit.
+        const IDENTITY_FIELDS = [
+          'medicationId', 'name', 'strengthValue', 'strengthUnit', 'volumeValue', 'volumeUnit',
+          'strengthType', 'type', 'existingBatches', 'medicationLocked'
+        ];
+        const snapshotFromForm = (form) => {
+          const snap = {};
+          for (const key of Object.keys(form)) {
+            if (!IDENTITY_FIELDS.includes(key)) snap[key] = form[key];
+          }
+          return snap;
+        };
+
+        const multiScanIsAvailable = (activeTab) =>
+          activeTab && activeTab !== 'transferAndUse' && !!MULTI_SCAN_TAB_CONFIG[activeTab];
+
+        // Apply one scan's worth of increment to a queue item. When scanning
+        // in 'individual' mode, reaching itemsPerBox rolls over to +1 box
+        // with the remainder staying as individuals — so the two counters
+        // are kept normalised (individualCount < itemsPerBox when ipb > 0).
+        const applyScanIncrement = (item) => {
+          const ipb = Number(item.itemsPerBox) || 0;
+          let boxCount = Number(item.boxCount) || 0;
+          let individualCount = Number(item.individualCount) || 0;
+          if (item.scanMode === 'individual') {
+            individualCount += 1;
+            if (ipb > 0 && individualCount >= ipb) {
+              boxCount += Math.floor(individualCount / ipb);
+              individualCount = individualCount % ipb;
+            }
+          } else {
+            boxCount += 1;
+          }
+          return { ...item, boxCount, individualCount };
+        };
+
+        const incrementFocusedItem = () => {
+          setMultiScanQueue(prev => {
+            if (!prev.active) return prev;
+            let newFocused = null;
+            const items = prev.items.map(it => {
+              if (it.barcode === prev.focusedBarcode) {
+                newFocused = applyScanIncrement(it);
+                return newFocused;
+              }
+              return it;
+            });
+            if (newFocused) {
+              // Mirror the focused item's counters into the live form so the
+              // visible input fields stay in sync. Use queueMicrotask so the
+              // setState updater stays pure (important under React 18 strict
+              // mode, which double-invokes updaters in development).
+              const target = newFocused;
+              queueMicrotask(() => {
+                setBarcodeNewMedForm(prevForm => {
+                  if (target.activeTab === 'addStock' && prevForm.activeTab === 'addStock') {
+                    return {
+                      ...prevForm,
+                      boxQuantity: String(target.boxCount || 0),
+                      individualQuantity: String(target.individualCount || 0),
+                      error: ''
+                    };
+                  }
+                  // Transfer / Patient Use / Order: expose total individual-unit
+                  // count (boxes × ipb + individuals) in the tab's primary field.
+                  const cfg = MULTI_SCAN_TAB_CONFIG[target.activeTab];
+                  if (!cfg || prevForm.activeTab !== target.activeTab) return prevForm;
+                  const ipb = Number(target.itemsPerBox) || 1;
+                  const total = target.scanMode === 'boxes'
+                    ? target.boxCount
+                    : (target.boxCount * ipb + target.individualCount);
+                  return { ...prevForm, [cfg.field]: String(total), error: '' };
+                });
+              });
+            }
+            return { ...prev, items };
+          });
+        };
+
+        // Change the focused item's scan mode (boxes ↔ individual). Counts
+        // are preserved across the switch so a user can scan 3 boxes,
+        // switch to individuals, and see "3 boxes × ipb + individuals".
+        const setFocusedScanMode = (mode) => {
+          setMultiScanQueue(prev => {
+            if (!prev.active) return prev;
+            const items = prev.items.map(it =>
+              it.barcode === prev.focusedBarcode ? { ...it, scanMode: mode } : it
+            );
+            return { ...prev, items, unrecognisedWarning: '' };
+          });
+        };
+
+        // Human-readable count summary for a queue item, used in chips and
+        // the focused-item readout.
+        const formatQueueCount = (item) => {
+          const b = Number(item.boxCount) || 0;
+          const i = Number(item.individualCount) || 0;
+          if (b === 0 && i === 0) return '0';
+          if (i === 0) return `${b} ${b === 1 ? 'box' : 'boxes'}`;
+          if (b === 0) return `${i} ${i === 1 ? 'item' : 'items'}`;
+          return `${b} ${b === 1 ? 'box' : 'boxes'} + ${i} ${i === 1 ? 'item' : 'items'}`;
+        };
+
+        // Build a queue item from a successful barcode-lookup result. We
+        // carry the identity fields (name, strength, type, items-per-box) on
+        // the item itself so commitAllMultiScan can run without re-looking-up.
+        // Initial boxCount=1 represents the scan that triggered creation.
+        const buildQueueItemFromLookup = (barcode, apiMed, initialFormSnapshot, initialBatch, initialExpMonth, initialExpYear) => {
+          const displayName = apiMed.strength_raw && apiMed.strength_raw !== 'N/A'
+            ? `${apiMed.name} ${apiMed.strength_raw}`
+            : apiMed.name;
+          const ipb = apiMed.standard_items_per_box || null;
+          return {
+            barcode,
+            medicationId: apiMed.id,
+            displayName,
+            name: apiMed.name,
+            strengthRaw: apiMed.strength_raw || '',
+            type: apiMed.type || 'tablet',
+            standardItemsPerBox: ipb,
+            itemsPerBox: ipb || 0,  // mutable — user can override for this item
+            activeTab: initialFormSnapshot.activeTab || 'addStock',
+            scanMode: 'boxes',
+            boxCount: 1,
+            individualCount: 0,
+            batchNumber: initialBatch || '',
+            expiryMonth: initialExpMonth || '',
+            expiryYear: initialExpYear || '',
+            formSnapshot: initialFormSnapshot
+          };
+        };
+
+        // Compare a scanned GS1 batch to a queue item's recorded batch and
+        // return a warning string when they disagree. Empty on match or when
+        // one side is missing (non-GS1 scans or un-captured batches).
+        const batchMismatchMessage = (item, gs1Data) => {
+          if (!item || !gs1Data || !gs1Data.isGs1 || !gs1Data.batch) return '';
+          if (!item.batchNumber) return '';
+          if (item.batchNumber === gs1Data.batch) return '';
+          return `Scanned batch "${gs1Data.batch}" differs from recorded batch "${item.batchNumber}" — count applied, but verify before committing.`;
+        };
+
+        // Called on every scan. Returns true if the scan was absorbed by the
+        // multi-scan session (so the caller should return early and NOT open
+        // a fresh modal).
+        const handleMultiScanScan = async (scannedGtin, gs1Data) => {
+          const modalOpen = !!modals.showBarcodeNewMedication;
+          const currentFormLocked = barcodeNewMedForm.medicationLocked;
+          const queueActive = multiScanQueue.active;
+
+          // Only engage multi-scan when the 5-tab modal is already open for a
+          // recognised medication (or a multi-scan session is already active).
+          if (!modalOpen || (!currentFormLocked && !queueActive)) return false;
+
+          // Same-barcode rescan on the focused item → bump in the current
+          // scanMode, with carry for 'individual' mode.
+          if (scannedGtin === barcodeNewMedForm.barcode) {
+            if (!multiScanIsAvailable(barcodeNewMedForm.activeTab)) {
+              setMultiScanQueue(prev => ({ ...prev, unrecognisedWarning: 'Multi-scan is not supported on the Transfer & Use tab.' }));
+              return true;
+            }
+
+            if (queueActive) {
+              // Session already active — check batch, then increment.
+              const focused = multiScanQueue.items.find(i => i.barcode === scannedGtin);
+              const warning = batchMismatchMessage(focused, gs1Data);
+              if (warning) setMultiScanQueue(prev => ({ ...prev, unrecognisedWarning: warning }));
+              incrementFocusedItem();
+              return true;
+            }
+
+            // First rescan — promote to active session. The initial scan
+            // established boxCount=1 and form.boxQuantity=1; this scan adds
+            // a second box (or one individual, if the default changes later).
+            const strengthDisplay = barcodeNewMedForm.strengthValue
+              ? ` ${barcodeNewMedForm.strengthValue}${barcodeNewMedForm.strengthUnit || ''}`
+              : '';
+            const ipb = parseInt(String(barcodeNewMedForm.itemsPerBox || '0'), 10) || 0;
+            const seedItem = {
+              barcode: barcodeNewMedForm.barcode,
+              medicationId: barcodeNewMedForm.medicationId,
+              displayName: barcodeNewMedForm.name + strengthDisplay,
+              name: barcodeNewMedForm.name,
+              strengthRaw: strengthDisplay.trim(),
+              type: barcodeNewMedForm.type,
+              standardItemsPerBox: ipb || null,
+              itemsPerBox: ipb,
+              activeTab: barcodeNewMedForm.activeTab,
+              scanMode: 'boxes',
+              boxCount: 1,
+              individualCount: 0,
+              batchNumber: barcodeNewMedForm.batchNumber || (gs1Data && gs1Data.batch) || '',
+              expiryMonth: barcodeNewMedForm.expiryMonth || '',
+              expiryYear: barcodeNewMedForm.expiryYear || '',
+              formSnapshot: snapshotFromForm(barcodeNewMedForm)
+            };
+            const promoted = applyScanIncrement(seedItem);
+            setMultiScanQueue({
+              active: true,
+              focusedBarcode: barcodeNewMedForm.barcode,
+              unrecognisedWarning: '',
+              items: [promoted]
+            });
+            queueMicrotask(() => {
+              setBarcodeNewMedForm(prev => ({
+                ...prev,
+                boxQuantity: String(promoted.boxCount),
+                individualQuantity: String(promoted.individualCount),
+                error: ''
+              }));
+            });
+            return true;
+          }
+
+          // Different barcode → look it up in Neon.
+          let lookupResult;
+          try {
+            lookupResult = await window.api.lookupByBarcode(scannedGtin);
+          } catch (err) {
+            setMultiScanQueue(prev => ({ ...prev, unrecognisedWarning: `Lookup failed for ${scannedGtin}. Try again.` }));
+            return true;
+          }
+
+          if (!lookupResult || !lookupResult.found || !lookupResult.medication) {
+            // Unrecognised barcode during an active session — show inline
+            // warning, don't clobber the queue.
+            setMultiScanQueue(prev => ({
+              ...prev,
+              unrecognisedWarning: `${scannedGtin} — not in database. Cancel session to register it.`
+            }));
+            return true;
+          }
+
+          // Recognised → is it already in the queue?
+          const existingItem = multiScanQueue.items.find(it => it.barcode === scannedGtin);
+          if (existingItem) {
+            // Snapshot the currently-focused form, then switch focus to the
+            // existing queue item. Increment (with carry) after the switch.
+            const warning = batchMismatchMessage(existingItem, gs1Data);
+            await switchFocusToQueueItem(scannedGtin, /*bump*/ true);
+            if (warning) setMultiScanQueue(prev => ({ ...prev, unrecognisedWarning: warning }));
+            return true;
+          }
+
+          // New recognised med → snapshot current, then ensure session is
+          // active and push the new item.
+          const currentSnapshot = snapshotFromForm(barcodeNewMedForm);
+          const currentBarcode = barcodeNewMedForm.barcode;
+
+          // Build the new item. GS1 batch/expiry/serial flow through the
+          // initial snapshot so it's ready when focus switches.
+          let initialBatch = '', initialExpMonth = '', initialExpYear = '', initialSerial = '';
+          if (gs1Data && gs1Data.isGs1) {
+            initialBatch = gs1Data.batch || '';
+            initialSerial = gs1Data.serial || '';
+            const df = window.formatDateForMonthYear(gs1Data.expiryDate);
+            initialExpMonth = df.month || '';
+            initialExpYear = df.year ? String(df.year) : '';
+          }
+
+          const newItemSnapshot = {
+            ...snapshotFromForm(barcodeNewMedForm),
+            barcode: scannedGtin,
+            batchNumber: initialBatch,
+            serial: initialSerial,
+            expiryMonth: initialExpMonth,
+            expiryYear: initialExpYear,
+            // Reset per-delivery fields so the new med doesn't inherit the
+            // previous med's brand, items-per-box, or quantity.
+            brand: '',
+            itemsPerBox: '',
+            boxQuantity: '1',
+            individualQuantity: '0',
+            transferQuantity: '',
+            useQuantity: '',
+            orderQuantity: '',
+            existingBatchId: null,
+            error: '',
+            successMessage: ''
+          };
+
+          setMultiScanQueue(prev => {
+            const strengthDisplay = barcodeNewMedForm.strengthValue
+              ? ` ${barcodeNewMedForm.strengthValue}${barcodeNewMedForm.strengthUnit || ''}`
+              : '';
+            const ipb = parseInt(String(barcodeNewMedForm.itemsPerBox || '0'), 10) || 0;
+            const existingItems = prev.active ? prev.items : [{
+              barcode: currentBarcode,
+              medicationId: barcodeNewMedForm.medicationId,
+              displayName: barcodeNewMedForm.name + strengthDisplay,
+              name: barcodeNewMedForm.name,
+              strengthRaw: strengthDisplay.trim(),
+              type: barcodeNewMedForm.type,
+              standardItemsPerBox: ipb || null,
+              itemsPerBox: ipb,
+              activeTab: barcodeNewMedForm.activeTab,
+              scanMode: 'boxes',
+              boxCount: Math.max(1, parseInt(String(barcodeNewMedForm[MULTI_SCAN_TAB_CONFIG[barcodeNewMedForm.activeTab]?.field] || '1'), 10) || 1),
+              individualCount: 0,
+              batchNumber: barcodeNewMedForm.batchNumber || '',
+              expiryMonth: barcodeNewMedForm.expiryMonth || '',
+              expiryYear: barcodeNewMedForm.expiryYear || '',
+              formSnapshot: currentSnapshot
+            }];
+            // Update the current item's snapshot before moving on.
+            const updatedExisting = existingItems.map(it =>
+              it.barcode === currentBarcode ? { ...it, formSnapshot: currentSnapshot } : it
+            );
+            const newItem = buildQueueItemFromLookup(
+              scannedGtin,
+              lookupResult.medication,
+              newItemSnapshot,
+              initialBatch,
+              initialExpMonth,
+              initialExpYear
+            );
+            return {
+              active: true,
+              items: [...updatedExisting, newItem],
+              focusedBarcode: scannedGtin,
+              unrecognisedWarning: ''
+            };
+          });
+
+          // Rehydrate the live form with the new item's identity + initial snapshot.
+          const med = lookupResult.medication;
+          const sp = parseStrength(med.strength_raw);
+          setBarcodeNewMedForm(prev => ({
+            ...prev,
+            ...newItemSnapshot,
+            medicationId: med.id,
+            medicationLocked: true,
+            name: med.name,
+            strengthValue: sp.value,
+            strengthUnit: sp.unit,
+            volumeValue: sp.volumeValue,
+            volumeUnit: sp.volumeUnit,
+            strengthType: med.strength_raw ? 'value' : 'na',
+            type: (med.type || 'tablet').toLowerCase(),
+            itemsPerBox: med.standard_items_per_box ? String(med.standard_items_per_box) : '',
+            brand: med.brand || '',
+            existingBatches: lookupResult.existingBatches || []
+          }));
+
+          return true;
+        };
+
+        // Click-a-chip handler and same-barcode-already-in-queue path.
+        // When `bumpCount` is true (used when a scan hits an already-queued
+        // item that isn't currently focused), the target item's count is
+        // incremented in its current scanMode, with carry.
+        const switchFocusToQueueItem = async (targetBarcode, bumpCount) => {
+          if (targetBarcode === multiScanQueue.focusedBarcode && !bumpCount) return;
+
+          // Snapshot current form into whichever item is focused right now.
+          const currentBarcode = barcodeNewMedForm.barcode;
+          const currentSnapshot = snapshotFromForm(barcodeNewMedForm);
+
+          const targetItem = multiScanQueue.items.find(it => it.barcode === targetBarcode);
+          if (!targetItem) return;
+
+          // Compute the bumped target (if asked) so the form mirror below
+          // can use the post-increment counts.
+          const bumpedTarget = bumpCount ? applyScanIncrement(targetItem) : targetItem;
+
+          setMultiScanQueue(prev => {
+            const items = prev.items.map(it => {
+              if (it.barcode === currentBarcode) return { ...it, formSnapshot: currentSnapshot };
+              if (it.barcode === targetBarcode && bumpCount) return bumpedTarget;
+              return it;
+            });
+            return { ...prev, items, focusedBarcode: targetBarcode, unrecognisedWarning: '' };
+          });
+
+          // Re-run barcode lookup to restore identity fields, then apply snapshot.
+          try {
+            const result = await window.api.lookupByBarcode(targetBarcode);
+            if (result && result.found && result.medication) {
+              const med = result.medication;
+              const sp = parseStrength(med.strength_raw);
+              setBarcodeNewMedForm(prev => {
+                const snap = { ...bumpedTarget.formSnapshot };
+                // Mirror the (possibly bumped) box/individual counts.
+                if (bumpedTarget.activeTab === 'addStock') {
+                  snap.boxQuantity = String(bumpedTarget.boxCount || 0);
+                  snap.individualQuantity = String(bumpedTarget.individualCount || 0);
+                } else {
+                  const cfg = MULTI_SCAN_TAB_CONFIG[bumpedTarget.activeTab];
+                  if (cfg) {
+                    const ipb = Number(bumpedTarget.itemsPerBox) || 1;
+                    const total = bumpedTarget.scanMode === 'boxes'
+                      ? bumpedTarget.boxCount
+                      : (bumpedTarget.boxCount * ipb + bumpedTarget.individualCount);
+                    snap[cfg.field] = String(total);
+                  }
+                }
+                return {
+                  ...prev,
+                  ...snap,
+                  medicationId: med.id,
+                  medicationLocked: true,
+                  name: med.name,
+                  strengthValue: sp.value,
+                  strengthUnit: sp.unit,
+                  volumeValue: sp.volumeValue,
+                  volumeUnit: sp.volumeUnit,
+                  strengthType: med.strength_raw ? 'value' : 'na',
+                  type: (med.type || 'tablet').toLowerCase(),
+                  // Per-delivery fields: prefer the user's snapshot value,
+                  // fall back to the medication's default from the lookup.
+                  itemsPerBox: snap.itemsPerBox || (med.standard_items_per_box ? String(med.standard_items_per_box) : ''),
+                  brand: snap.brand || med.brand || '',
+                  existingBatches: result.existingBatches || []
+                };
+              });
+            }
+          } catch (_) {
+            // Network failure — keep whatever we have.
+          }
+        };
+
+        const removeMultiScanItem = (barcode) => {
+          setMultiScanQueue(prev => {
+            const remaining = prev.items.filter(it => it.barcode !== barcode);
+            if (remaining.length === 0) {
+              return { active: false, items: [], focusedBarcode: null, unrecognisedWarning: '' };
+            }
+            // If we removed the focused one, focus the first remaining item.
+            const focusedBarcode = prev.focusedBarcode === barcode ? remaining[0].barcode : prev.focusedBarcode;
+            return { ...prev, items: remaining, focusedBarcode };
+          });
+        };
+
+        const cancelMultiScanSession = () => {
+          setMultiScanQueue({ active: false, items: [], focusedBarcode: null, unrecognisedWarning: '' });
+        };
+
+        // Commit every queued item to Neon. MVP scope: Add Stock tab only —
+        // the API flow is medicationUpsert + addBatch, matching
+        // handleBarcodeNewMedication. Other tabs (Transfer / Patient Use /
+        // Order) must be committed one-by-one via their single-scan submit
+        // buttons for now; the Commit All button skips them and reports.
+        const commitAllMultiScan = async () => {
+          // Snapshot the currently-focused form into its queue item first so
+          // edits the user made before clicking Commit All are captured.
+          const focused = multiScanQueue.focusedBarcode;
+          const liveSnapshot = snapshotFromForm(barcodeNewMedForm);
+          const items = multiScanQueue.items.map(it =>
+            it.barcode === focused ? { ...it, formSnapshot: liveSnapshot, activeTab: barcodeNewMedForm.activeTab } : it
+          );
+
+          const currentUser = getCurrentUserInfo();
+          if (!currentUser || !currentUser.id) {
+            setMultiScanQueue(prev => ({ ...prev, unrecognisedWarning: 'User not logged in.' }));
+            return;
+          }
+
+          setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: true, error: '', successMessage: '' }));
+
+          const failures = [];
+          let committed = 0;
+
+          for (const item of items) {
+            if (item.activeTab !== 'addStock') {
+              failures.push({ item, error: `${MULTI_SCAN_TAB_CONFIG[item.activeTab]?.label || item.activeTab} tab — click the chip and submit manually.` });
+              continue;
+            }
+            const snap = item.formSnapshot || {};
+            // Authoritative quantities come from the queue item (not the
+            // snapshot) so mid-session mode toggles / carries are respected.
+            const boxCount = Number(item.boxCount) || 0;
+            const individualCount = Number(item.individualCount) || 0;
+            const itemsPerBox = parseInt(String(snap.itemsPerBox || item.itemsPerBox || item.standardItemsPerBox || '0').trim(), 10);
+            // Prefer the item's captured batch/expiry (from GS1 or the first
+            // scan) over whatever was typed into the now-detached snapshot.
+            const brand = String(snap.brand || '').trim();
+            const batchNumber = String(item.batchNumber || snap.batchNumber || '').trim();
+            const location = String(snap.location || '').trim();
+            const expiryMonth = parseInt(String(item.expiryMonth || snap.expiryMonth || '0'), 10);
+            const expiryYear = parseInt(String(item.expiryYear || snap.expiryYear || '0'), 10);
+
+            if (boxCount <= 0 && individualCount <= 0) { failures.push({ item, error: 'No scans recorded.' }); continue; }
+            if (!itemsPerBox || itemsPerBox <= 0) { failures.push({ item, error: 'Missing items-per-box.' }); continue; }
+            if (!brand) { failures.push({ item, error: 'Missing brand.' }); continue; }
+            if (!batchNumber) { failures.push({ item, error: 'Missing batch/lot number.' }); continue; }
+            if (!location) { failures.push({ item, error: 'Missing location.' }); continue; }
+            if (!expiryMonth || !expiryYear) { failures.push({ item, error: 'Missing expiry date.' }); continue; }
+
+            try {
+              // Upsert medication (idempotent — updates min-level if set, resolves id).
+              const strengthRaw = item.strengthRaw || snap.strengthRaw || '';
+              const strengthForUpsert = snap.strengthType === 'na'
+                ? 'N/A'
+                : (strengthRaw || composeStrength(snap.strengthValue, snap.strengthUnit, snap.volumeValue, snap.volumeUnit));
+              const upsertResult = await window.api.medicationUpsert({
+                medicationId: item.medicationId,
+                name: item.name || snap.name,
+                strength: strengthForUpsert,
+                form: item.type || snap.type,
+                barcode: item.barcode,
+                standardItemsPerBox: itemsPerBox,
+                userId: currentUser.id
+              });
+              const medId = upsertResult?.medicationId || item.medicationId;
+
+              const locationId = getLocationId(location);
+              await window.api.addBatch({
+                medicationId: medId,
+                medicationName: item.displayName,
+                batchNumber,
+                expiryMonth,
+                expiryYear,
+                brand,
+                itemsPerBox,
+                quantityBoxes: boxCount,
+                quantityIndividuals: individualCount,
+                locationId,
+                userId: currentUser.id,
+                note: `Multi-scan delivery — ${item.displayName} × ${formatQueueCount(item)}`,
+                serial: snap.serial || null
+              });
+              committed += 1;
+            } catch (err) {
+              failures.push({ item, error: err.message || 'Commit failed' });
+            }
+          }
+
+          // Refresh in-memory data so the meds list reflects the new batches.
+          try {
+            const data = await window.api.fetchAllData();
+            if (data) {
+              setMedications(data.medications || []);
+              setTransactions(data.transactions || []);
+            }
+          } catch (_) { /* non-critical — next poll will catch up */ }
+
+          if (failures.length === 0) {
+            setModals(prev => ({ ...prev, showBarcodeNewMedication: false }));
+            resetBarcodeNewMedForm();
+            cancelMultiScanSession();
+            return;
+          }
+
+          // Keep failed items in the queue so the user can fix and retry.
+          const remaining = failures.map(f => f.item);
+          const firstFailureMsg = failures[0] ? `${failures[0].item.displayName}: ${failures[0].error}` : '';
+          setMultiScanQueue(prev => ({
+            active: true,
+            items: remaining,
+            focusedBarcode: remaining[0]?.barcode || null,
+            unrecognisedWarning: `${committed} committed, ${failures.length} failed — ${firstFailureMsg}`
+          }));
+          setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: false }));
+        };
+
+        const handleBarcodeScanned = async (barcode) => {
           // Route to Med Database handler when on that tab
           if (ui.activeTab === 'meddatabase') {
             const gs1 = window.parseGs1Data(barcode);
@@ -3174,91 +3849,65 @@
             return;
           }
 
+          // Route to Scan Cart handler when active on the medications list tab
+          if (scanCart.isActive && ui.activeTab === 'medications') {
+            const gs1 = window.parseGs1Data(barcode);
+            const lookupBarcode = normalizeBarcode(gs1.isGs1 ? (gs1.gtin || barcode) : barcode);
+            handleScanCartScan(lookupBarcode);
+            return;
+          }
+
           const gs1Data = window.parseGs1Data(barcode);
+          const scannedGtin = normalizeBarcode(
+            gs1Data.isGs1 && gs1Data.gtin
+              ? gs1Data.gtin
+              : barcode.trim().replace(/\s+/g, '')
+          );
 
-          // Determine lookup barcode and extract GS1 fields if present
-          let lookupBarcode = barcode.trim().replace(/\s+/g, '');
-          let batchNumber = '';
-          let expiryMonth = '';
-          let expiryYear = '';
+          // Default target location for Add Stock. Prefer whatever specific
+          // location the user is currently viewing; otherwise default to
+          // "Pharmacy" — the natural receiving point for deliveries, and
+          // the primary location for pharmacist/admin users. Both the GS1
+          // and plain-barcode branches need this set so a committed scan
+          // never falls through to a blank locationId.
+          const defaultStockInLocation = (ui.currentLocation && ui.currentLocation !== 'All' && !isGroupName(ui.currentLocation, locations))
+            ? ui.currentLocation
+            : 'Pharmacy';
+          setBarcodeNewMedForm(prev => ({
+            ...prev,
+            location: prev.location || defaultStockInLocation,
+            strengthType: prev.strengthType || 'value'
+          }));
 
-          if (gs1Data.isGs1) {
-            lookupBarcode = gs1Data.gtin || lookupBarcode;
-            batchNumber = gs1Data.batch || '';
-            const dateFormat = window.formatDateForMonthYear(gs1Data.expiryDate);
-            expiryMonth = dateFormat.month || '';
-            expiryYear = dateFormat.year ? String(dateFormat.year) : '';
+          // If the 5-tab modal is already open for a recognised med, route to
+          // the multi-scan handler. It returns true when it absorbs the scan.
+          const absorbed = await handleMultiScanScan(scannedGtin, gs1Data);
+          if (absorbed) return;
+
+          // GS1 pack with batch/expiry → reuse the camera medicine-pack handler so
+          // batch / expiry / serial are pre-filled identically for both input paths.
+          if (gs1Data.isGs1 && (gs1Data.batch || gs1Data.expiryDateRaw)) {
+            handleMedicinePackScan(gs1Data);
+            return;
           }
 
-          const cleanBarcode = lookupBarcode.trim().replace(/\s+/g, '');
-
-          // Try to find medication by barcode (exact match first)
-          let foundMedication = medications.find(med => med.barcode === cleanBarcode);
-
-          // If not found by exact barcode, try other methods
-          if (!foundMedication) {
-            foundMedication = medications.find(med =>
-              med.name.toLowerCase().includes(cleanBarcode.toLowerCase()) ||
-              med.id.toString() === cleanBarcode
-            );
-          }
-
-          if (foundMedication) {
-            // Medication found - open stock adjustment modal
-
-            setUi(prev => ({
-              ...prev,
-              selectedMed: foundMedication,
-              searchTerm: foundMedication.name
-            }));
-
-            // Default quantity type to boxes
-            const defaultQuantityType = 'boxes';
-
-            // Open the barcode stock adjustment modal
-            setModals(prev => ({ ...prev, showBarcodeStockAdjust: true }));
-            setAdjustmentForm({ amount: '', note: '', location: '', type: defaultQuantityType, action: 'out', batchId: '', sourceDepartment: '', stockInSource: 'delivery', transferBatchOption: 'existing', deliveryBatchOption: 'new', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' });
-
-            // Populate deliveryForm with GS1 data if available (for stock-in with new batch)
-            setDeliveryForm({
-              brand: '',
-              expiryMonth: expiryMonth,
-              expiryYear: expiryYear,
-              quantityType: defaultQuantityType,
-              boxQuantity: '',
-              itemsPerBox: '',
-              individualQuantity: '',
-              batchNumber: batchNumber
-            });
-
-            // Scroll to the medication in the list
-            setTimeout(() => {
-              const medElement = document.querySelector(`[data-med-id="${foundMedication.id}"]`);
-              if (medElement) {
-                medElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }
-            }, 100);
-
-          } else {
-            // Medication not found - open new medication modal
-
-            const defaultLocation = (ui.currentLocation !== 'All' && !isGroupName(ui.currentLocation, locations)) ? ui.currentLocation : 'Cupboard 1';
-            setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
-            setBarcodeNewMedForm(prev => ({
-              ...prev,
-              barcode: cleanBarcode,
-              batchNumber: batchNumber,
-              expiryMonth: expiryMonth,
-              expiryYear: expiryYear,
-              location: defaultLocation,
-              strengthType: 'value' // Always default to 'value' for new barcode scans
-            }));
-            // The useEffect hook will automatically trigger the lookup when the modal opens with a barcode
-          }
+          // Plain 1D barcode (or GS1 without batch data) → reuse the camera generic
+          // handler. It opens showBarcodeNewMedication and calls handleBarcodeLookup;
+          // on a recognised barcode that lookup sets medicationLocked=true and the
+          // modal renders the 5-tab UI with full details populated from Neon.
+          handleGenericBarcodeScan(scannedGtin);
         };
 
         // Global barcode scanner handler - works from anywhere in the app
         const handleGlobalBarcodeInput = (e) => {
+          // Filter out non-character keys. e.key is multi-char for modifiers
+          // ("Shift", "Control", "Alt", "Meta", "CapsLock"), navigation
+          // ("Enter", "Tab", "Arrow…", "Backspace"), function keys ("F1"…),
+          // dead keys ("Dead"), etc. Without this filter, a scanner that
+          // emits Shift+G fires two keydowns (Shift then G) and the literal
+          // string "Shift" gets concatenated into the buffer — so a GS1 lot
+          // like "19G08C8" accumulates as "19ShiftG08ShiftC8".
+          if (!e.key || e.key.length !== 1) return;
           const char = e.key;
           const now = Date.now();
           
@@ -3323,17 +3972,21 @@
             }));
           }
 
-          // Set timeout to detect end of barcode scan (typically 50-100ms after last character)
+          // Set timeout to detect end of barcode scan (typically 50-100ms after last character).
+          // Use a functional setState so we read the LATEST accumulated buffer — reading
+          // globalBarcodeScanner.currentInput directly would hit the stale closure from this
+          // keydown handler and drop the final character (the buffer is updated via
+          // setGlobalBarcodeScanner above, which is async). Dispatch the scan via
+          // queueMicrotask so the updater stays pure (important under React strict mode
+          // where updaters are invoked twice in development).
           const timeoutId = setTimeout(() => {
-            const currentInput = globalBarcodeScanner.currentInput;
-            if (currentInput.length >= 8) { // Minimum barcode length
-              handleBarcodeScanned(currentInput);
-            }
-            setGlobalBarcodeScanner(prev => ({
-              ...prev,
-              currentInput: '',
-              timeoutId: null
-            }));
+            setGlobalBarcodeScanner(prev => {
+              const finalInput = prev.currentInput;
+              if (finalInput.length >= 8) {
+                queueMicrotask(() => handleBarcodeScanned(finalInput));
+              }
+              return { ...prev, currentInput: '', timeoutId: null };
+            });
           }, 150);
 
           setGlobalBarcodeScanner(prev => ({
@@ -3606,18 +4259,17 @@ ${tc.name()} Stock Management System`;
           });
           setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100);
 
-          // Scan Cart: if this submit was driven by a Scan Cart row, drop the row
-          // and (if the cart is still active) reopen the camera for continuous scanning.
+          // Scan Cart: if this submit was driven by a Scan Cart row, drop the row.
+          // The camera is NOT automatically reopened — the spec requires the user to
+          // explicitly press "Scan with Camera" / "Multi-Scan" to reopen it.
           if (scanCart.pendingCommitMedId) {
             const committedId = scanCart.pendingCommitMedId;
-            const stillActive = scanCart.isActive;
             setScanCart(prev => ({
               ...prev,
               items: prev.items.filter(it => it.medicationId !== committedId),
               pendingCommitMedId: null
             }));
             setModals(prev => ({ ...prev, showBarcodeNewMedication: false }));
-            if (stillActive) setTimeout(() => { startCameraScanner(); }, 300);
           }
         } catch (err) {
           console.error('Failed to add medication/batch via barcode:', err);
@@ -3718,14 +4370,12 @@ ${tc.name()} Stock Management System`;
           // Scan Cart: drop the committed row and resume scanning if cart is still active
           if (scanCart.pendingCommitMedId) {
             const committedId = scanCart.pendingCommitMedId;
-            const stillActive = scanCart.isActive;
             setScanCart(prev => ({
               ...prev,
               items: prev.items.filter(it => it.medicationId !== committedId),
               pendingCommitMedId: null
             }));
             setModals(prev => ({ ...prev, showBarcodeNewMedication: false }));
-            if (stillActive) setTimeout(() => { startCameraScanner(); }, 300);
           }
         } catch (err) {
           console.error('Transfer via barcode failed:', err);
@@ -8823,12 +9473,12 @@ ${tc.name()} Stock Management System`;
                             <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             Edit
                           </button>
-                          {getUserRole() === 'Administrator' && (
+                          {(getUserRole() === 'Administrator' || getUserRole() === 'Pharmacist') && (
                             <button
                               onClick={handleMedDbDelete}
                               disabled={medDbForm.isSubmitting}
                               className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-status-critical-text text-white rounded-lg hover:bg-red-700 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                              title="Soft-delete this medication (hides it everywhere, preserves audit history)"
+                              title="Permanently delete this medication (requires password confirmation)"
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
                               Delete
@@ -9653,6 +10303,90 @@ ${tc.name()} Stock Management System`;
                       )}
                     </div>
 
+                    {/* Multi-scan queue strip — visible once a hardware-scan session is active */}
+                    {multiScanQueue.active && (() => {
+                      const focusedItem = multiScanQueue.items.find(i => i.barcode === multiScanQueue.focusedBarcode);
+                      return (
+                        <div className="mb-4 p-3 bg-brand-pale border border-brand-mid rounded-lg">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-semibold text-brand-dark mr-1">Scan queue:</span>
+                            {multiScanQueue.items.map(item => {
+                              const isFocused = item.barcode === multiScanQueue.focusedBarcode;
+                              return (
+                                <span key={item.barcode}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded border cursor-pointer ${
+                                    isFocused
+                                      ? 'bg-brand-mid text-white border-brand-mid'
+                                      : 'bg-white text-brand-dark border-brand-mid hover:bg-brand-pale'
+                                  }`}
+                                  onClick={() => switchFocusToQueueItem(item.barcode, false)}
+                                  title={`${item.displayName} — ${MULTI_SCAN_TAB_CONFIG[item.activeTab]?.label || item.activeTab}${item.batchNumber ? ' · batch ' + item.batchNumber : ''}`}
+                                >
+                                  {item.displayName} × {formatQueueCount(item)}
+                                  <span
+                                    className="ml-1 opacity-70 hover:opacity-100"
+                                    onClick={(e) => { e.stopPropagation(); removeMultiScanItem(item.barcode); }}
+                                  >×</span>
+                                </span>
+                              );
+                            })}
+                            <div className="ml-auto flex gap-2">
+                              <button type="button"
+                                onClick={commitAllMultiScan}
+                                disabled={barcodeNewMedForm.isSubmitting}
+                                className="px-3 py-1 text-xs font-semibold bg-brand-mid text-white rounded hover:bg-brand-dark disabled:opacity-50"
+                              >
+                                {barcodeNewMedForm.isSubmitting ? 'Committing…' : `Commit all (${multiScanQueue.items.length})`}
+                              </button>
+                              <button type="button"
+                                onClick={cancelMultiScanSession}
+                                disabled={barcodeNewMedForm.isSubmitting}
+                                className="px-3 py-1 text-xs text-txt-secondary border border-bdr-default rounded hover:bg-off-white disabled:opacity-50"
+                              >Cancel session</button>
+                            </div>
+                          </div>
+
+                          {/* Scan-mode toggle for the focused item */}
+                          {focusedItem && multiScanIsAvailable(focusedItem.activeTab) && (
+                            <div className="flex items-center gap-2 mt-2 text-xs">
+                              <span className="text-txt-secondary">Scanning:</span>
+                              <div className="flex rounded border border-brand-mid overflow-hidden">
+                                <button type="button"
+                                  onClick={() => setFocusedScanMode('boxes')}
+                                  className={`px-3 py-1 ${focusedItem.scanMode === 'boxes' ? 'bg-brand-mid text-white' : 'bg-white text-brand-dark hover:bg-brand-pale'}`}
+                                >Boxes</button>
+                                <button type="button"
+                                  onClick={() => setFocusedScanMode('individual')}
+                                  disabled={!focusedItem.itemsPerBox}
+                                  title={!focusedItem.itemsPerBox ? 'Set items-per-box first — individual mode needs it to roll over into boxes' : ''}
+                                  className={`px-3 py-1 border-l border-brand-mid ${focusedItem.scanMode === 'individual' ? 'bg-brand-mid text-white' : 'bg-white text-brand-dark hover:bg-brand-pale'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                                >Individual items</button>
+                              </div>
+                              <span className="text-txt-tertiary">
+                                · {formatQueueCount(focusedItem)}
+                                {focusedItem.itemsPerBox ? ` (${focusedItem.itemsPerBox}/box)` : ''}
+                                {focusedItem.batchNumber ? ` · batch ${focusedItem.batchNumber}` : ''}
+                              </span>
+                            </div>
+                          )}
+
+                          {multiScanQueue.unrecognisedWarning && (
+                            <p className="text-xs text-danger-ghost-text mt-2">{multiScanQueue.unrecognisedWarning}</p>
+                          )}
+                          <p className="text-xs text-txt-tertiary mt-2">
+                            Same-barcode rescans add to this med's count. Different recognised barcodes queue separately. Commit All currently supports Add Stock only — for other tabs, click the chip and submit manually.
+                          </p>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Transfer & Use tab: multi-scan not supported notice */}
+                    {multiScanQueue.active && barcodeNewMedForm.activeTab === 'transferAndUse' && (
+                      <div className="mb-3 p-2 bg-off-white border border-bdr-default rounded text-xs text-txt-secondary">
+                        Multi-scan is not available on the Transfer &amp; Use tab. Switch to another tab to continue scanning.
+                      </div>
+                    )}
+
                     {/* Tab bar — shown when medication is recognised OR in manual mode */}
                     {(barcodeNewMedForm.medicationLocked || barcodeNewMedForm.manualMode) && (
                       <div className="flex border-b border-bdr-default mb-4 overflow-x-auto -mx-1">
@@ -10129,9 +10863,23 @@ ${tc.name()} Stock Management System`;
                               className={`px-3 py-2 border border-bdr-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${barcodeNewMedForm.batchLocked ? 'bg-off-white cursor-not-allowed' : ''}`}
                             >
                               <option value="">Year</option>
-                              {Array.from({ length: 21 }, (_, i) => new Date().getFullYear() + i).map(y => (
-                                <option key={y} value={String(y)}>{y}</option>
-                              ))}
+                              {(() => {
+                                const currentYear = new Date().getFullYear();
+                                const years = Array.from({ length: 21 }, (_, i) => currentYear + i);
+                                // If the scanned/parsed year falls outside the default
+                                // "current year → +20" range (e.g. a GS1 barcode with
+                                // an already-expired date), inject it so the <select>
+                                // can actually show the selected value rather than
+                                // falling back to the empty placeholder.
+                                const parsedYear = parseInt(barcodeNewMedForm.expiryYear, 10);
+                                if (parsedYear && !years.includes(parsedYear)) {
+                                  years.push(parsedYear);
+                                  years.sort((a, b) => a - b);
+                                }
+                                return years.map(y => (
+                                  <option key={y} value={String(y)}>{y}</option>
+                                ));
+                              })()}
                             </select>
                           </div>
                         </div>
@@ -11215,6 +11963,62 @@ ${tc.name()} Stock Management System`;
               </div>
             )}
 
+            {/* Hard-delete Medication Modal (RBAC + password confirmation) */}
+            {hardDeleteForm.open && hardDeleteForm.target && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50" onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; if (!hardDeleteForm.isSubmitting) closeHardDelete(); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
+                <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-md w-full p-4 sm:p-6 m-2 sm:m-4">
+                  <h2 className="text-lg sm:text-xl font-bold text-near-black mb-2">Delete Medication</h2>
+                  <p className="text-sm text-txt-secondary mb-4">
+                    You are about to permanently delete <strong>"{hardDeleteForm.target.name}"</strong> from the database. This cannot be undone. Enter your password to confirm.
+                  </p>
+                  {hardDeleteForm.error && (
+                    <div className="mb-4 p-3 bg-danger-ghost-bg border border-status-critical-text rounded text-sm text-danger-ghost-text">
+                      {hardDeleteForm.error}
+                    </div>
+                  )}
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-txt-secondary mb-2">Password <span className="text-danger-ghost-text">*</span></label>
+                    <input
+                      type="password"
+                      value={hardDeleteForm.password}
+                      onChange={(e) => setHardDeleteForm(prev => ({ ...prev, password: e.target.value, error: '' }))}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !hardDeleteForm.isSubmitting) submitHardDelete(); }}
+                      className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
+                      placeholder="Enter your password to confirm"
+                      autoFocus
+                      disabled={hardDeleteForm.isSubmitting}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    {hardDeleteForm.showSoftFallback ? (
+                      <button
+                        onClick={submitSoftFallbackDelete}
+                        disabled={hardDeleteForm.isSubmitting}
+                        className="flex-1 bg-status-low-text text-white py-2 rounded-lg hover:opacity-90 transition-colors font-medium disabled:opacity-50"
+                      >
+                        {hardDeleteForm.isSubmitting ? 'Hiding...' : 'Soft-delete instead'}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={submitHardDelete}
+                        disabled={hardDeleteForm.isSubmitting || !hardDeleteForm.password}
+                        className="flex-1 bg-danger-solid text-white py-2 rounded-lg hover:opacity-90 transition-colors font-medium disabled:opacity-50"
+                      >
+                        {hardDeleteForm.isSubmitting ? 'Deleting...' : 'Delete Permanently'}
+                      </button>
+                    )}
+                    <button
+                      onClick={closeHardDelete}
+                      disabled={hardDeleteForm.isSubmitting}
+                      className="flex-1 bg-btn-secondary text-txt-secondary py-2 rounded-lg hover:bg-bdr-hover transition-colors font-medium disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Skip Step Confirmation Modal */}
             {skipConfirm.show && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50" onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setSkipConfirm({ show: false, password: '', error: '', targetStep: null, loading: false }); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
@@ -11347,7 +12151,6 @@ ${tc.name()} Stock Management System`;
                       <button
                         onClick={() => {
                           stopCameraScanner();
-                          setMedDbForm(prev => ({ ...prev, scanSessionActive: false }));
                           setScanCart(prev => ({ ...prev, isActive: false }));
                         }}
                         className="p-2 hover:bg-near-black rounded-full transition-colors"
@@ -11373,8 +12176,7 @@ ${tc.name()} Stock Management System`;
                           <button
                             onClick={() => {
                               stopCameraScanner();
-                              setMedDbForm(prev => ({ ...prev, scanSessionActive: false }));
-                              setScanCart(prev => ({ ...prev, isActive: false }));
+                                  setScanCart(prev => ({ ...prev, isActive: false }));
                             }}
                             className="px-4 py-2 bg-white text-danger-ghost-text rounded-md hover:bg-off-white transition-colors text-sm font-medium"
                           >
@@ -11440,7 +12242,6 @@ ${tc.name()} Stock Management System`;
                     <button
                       onClick={() => {
                         stopCameraScanner();
-                        setMedDbForm(prev => ({ ...prev, scanSessionActive: false }));
                         setScanCart(prev => ({ ...prev, isActive: false }));
                       }}
                       className="w-full bg-txt-secondary text-white py-3 rounded-lg hover:bg-txt-tertiary transition-colors font-medium"

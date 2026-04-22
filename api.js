@@ -119,6 +119,23 @@ window.api = (function () {
     checkBatch:           (batchCode) => postJSON('/.netlify/functions/batch-check', { batchCode }),
     lookupByBarcode:      (barcode)  => postJSON('/.netlify/functions/barcode-lookup', { barcode }),
     setMedicationActive:  (payload)  => postJSON('/.netlify/functions/medication-set-active', payload),
+    deleteMedication: async (payload) => {
+      // Custom handler so the UI can branch on HTTP status (401/403/404/409) and
+      // on out.code (e.g. HAS_DEPENDENCIES) to offer the soft-delete fallback.
+      const res = await fetch('/.netlify/functions/medication-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.success) {
+        const err = new Error(out.message || `Request to /medication-delete failed`);
+        err.status = res.status;
+        err.code = out.code || null;
+        throw err;
+      }
+      return out;
+    },
     medicationUpsert:     (payload)  => postJSON('/.netlify/functions/medication-upsert', payload),
     setMedicationMinLevel:(payload)  => postJSON('/.netlify/functions/medication-minlevel-set', payload),
     fetchUsers: async () => {
