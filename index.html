@@ -3369,17 +3369,21 @@
             }));
           }
 
-          // Set timeout to detect end of barcode scan (typically 50-100ms after last character)
+          // Set timeout to detect end of barcode scan (typically 50-100ms after last character).
+          // Use a functional setState so we read the LATEST accumulated buffer — reading
+          // globalBarcodeScanner.currentInput directly would hit the stale closure from this
+          // keydown handler and drop the final character (the buffer is updated via
+          // setGlobalBarcodeScanner above, which is async). Dispatch the scan via
+          // queueMicrotask so the updater stays pure (important under React strict mode
+          // where updaters are invoked twice in development).
           const timeoutId = setTimeout(() => {
-            const currentInput = globalBarcodeScanner.currentInput;
-            if (currentInput.length >= 8) { // Minimum barcode length
-              handleBarcodeScanned(currentInput);
-            }
-            setGlobalBarcodeScanner(prev => ({
-              ...prev,
-              currentInput: '',
-              timeoutId: null
-            }));
+            setGlobalBarcodeScanner(prev => {
+              const finalInput = prev.currentInput;
+              if (finalInput.length >= 8) {
+                queueMicrotask(() => handleBarcodeScanned(finalInput));
+              }
+              return { ...prev, currentInput: '', timeoutId: null };
+            });
           }, 150);
 
           setGlobalBarcodeScanner(prev => ({
