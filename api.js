@@ -46,20 +46,29 @@ window.api = (function () {
     return res.json(); // Returns { success, user } or { success: false, ... }
   }
 
-  // Polling to keep all clients in sync (skips when tab is hidden to save bandwidth)
+  // Polling to keep all clients in sync (skips when tab is hidden to save bandwidth).
+  // An in-flight guard prevents request pile-up when the server is slow: a
+  // delayed response was previously allowed to overlap with the next tick,
+  // which could multiply load on the already-struggling backend.
   let pollTimer = null;
+  let pollInFlight = false;
   function startPolling({ onData, intervalMs = 60000 }) {
     stopPolling();
 
-    fetchAllData()
-      .then(onData)
-      .catch(err => console.error('initial poll failed', err));
+    const runPoll = (label) => {
+      if (pollInFlight) return;
+      pollInFlight = true;
+      fetchAllData()
+        .then(onData)
+        .catch(err => console.error(`${label} failed`, err))
+        .finally(() => { pollInFlight = false; });
+    };
+
+    runPoll('initial poll');
 
     pollTimer = setInterval(() => {
       if (document.hidden) return; // Skip poll when tab is not visible
-      fetchAllData()
-        .then(onData)
-        .catch(err => console.error('poll failed', err));
+      runPoll('poll');
     }, intervalMs);
   }
 
@@ -83,12 +92,14 @@ window.api = (function () {
   }
 
   async function fetchIntelligenceReport(locationId, force = false, nosave = false, useCurrentMins = false, updateSnapshot = false) {
-    let qs = locationId ? `?location_id=${locationId}` : '';
-    if (force) qs += (qs ? '&' : '?') + 'force=true';
-    if (nosave) qs += (qs ? '&' : '?') + 'nosave=true';
-    if (useCurrentMins) qs += (qs ? '&' : '?') + 'use_current_mins=true';
-    if (updateSnapshot) qs += (qs ? '&' : '?') + 'update_snapshot=true';
-    const res = await fetch(`/.netlify/functions/intelligence-report${qs}`);
+    const qs = new URLSearchParams();
+    if (locationId) qs.set('location_id', locationId);
+    if (force) qs.set('force', 'true');
+    if (nosave) qs.set('nosave', 'true');
+    if (useCurrentMins) qs.set('use_current_mins', 'true');
+    if (updateSnapshot) qs.set('update_snapshot', 'true');
+    const query = qs.toString();
+    const res = await fetch(`/.netlify/functions/intelligence-report${query ? '?' + query : ''}`);
     const out = await res.json();
     if (!res.ok || !out.success) throw new Error(out.message || 'Failed to fetch intelligence report');
     return out;

@@ -8,23 +8,97 @@ exports.handler = async (event) => {
     const tdb = db.forTenant(event);
     if (!tdb) return db.tenantNotFound();
 
-    // Query medication/stock snapshot from inventory_full view
-    // Include medications with on_hand = 0 if they have pending orders
-    const medsResult = await tdb.query(`
-      SELECT DISTINCT ON (medication_id, location_id, batch_id) *
-      FROM inventory_full
-      WHERE on_hand > 0 OR medication_id IN (
-        SELECT medication_id FROM orders WHERE status = 'pending'
+    // Fire all read queries in parallel — they're independent and dominate the
+    // total latency. Sequential awaits previously added ~5× network round-trips
+    // for what is essentially a single-page load.
+    const [
+      medsResult,
+      medicationDetailsResult,
+      ordersResult,
+      txResult,
+      locationsResult,
+      draftCountResult
+    ] = await Promise.all([
+      // Query medication/stock snapshot from inventory_full view
+      // Include medications with on_hand = 0 if they have pending orders
+      tdb.query(`
+        SELECT DISTINCT ON (medication_id, location_id, batch_id) *
+        FROM inventory_full
+        WHERE on_hand > 0 OR medication_id IN (
+          SELECT medication_id FROM orders WHERE status = 'pending'
+        )
+        ORDER BY medication_id, location_id, batch_id, medication_name, location_name, expiry_date;
+      `),
+      // Get medication details (fefo, min_level_boxes, is_active) from medications table
+      tdb.query(`
+        SELECT id, name, strength, fefo, min_level_boxes, is_active
+        FROM medications
+        WHERE is_active = true
+      `),
+      // Query all orders (pending + fulfilled) for order history
+      tdb.query(`
+        SELECT
+          o.id,
+          o.medication_id,
+          CASE
+            WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
+            ELSE m.name || ' ' || m.strength
+          END AS med_name,
+          o.quantity,
+          COALESCE(o.quantity_fulfilled, 0) AS quantity_fulfilled,
+          o.urgency,
+          o.notes,
+          o.pharmacist_email,
+          o.status,
+          o.ordered_at,
+          o.fulfilled_at,
+          u.username AS user_name
+        FROM orders o
+        LEFT JOIN medications m ON m.id = o.medication_id
+        LEFT JOIN users u ON u.id = o.user_id
+        ORDER BY o.ordered_at DESC;
+      `),
+      // Query recent transactions for Activity tab
+      tdb.query(`
+        SELECT
+          t.id,
+          t.medication_id,
+          CASE
+            WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
+            ELSE m.name || ' ' || m.strength
+          END AS med_name,
+          t.delta,
+          t.type,
+          t.reason,
+          t.location_id,
+          l.display_name AS location_name,
+          l.group_name AS location_group,
+          t.occurred_at,
+          u.username AS user_name,
+          b.items_per_box,
+          b.batch_code
+        FROM transactions t
+        LEFT JOIN batches b ON b.id = t.batch_id
+        LEFT JOIN medications m ON m.id = t.medication_id
+        LEFT JOIN locations l ON l.id = t.location_id
+        LEFT JOIN users u ON u.id = t.user_id
+        ORDER BY t.occurred_at DESC
+        LIMIT 200;
+      `),
+      // Query all locations for UI dropdowns
+      tdb.query(`
+        SELECT id, display_name, group_name
+        FROM locations
+        ORDER BY
+          CASE WHEN group_name IS NOT NULL THEN 0 ELSE 1 END,
+          group_name,
+          display_name;
+      `),
+      // Query pending draft order count for Purchase Orders tab badge
+      tdb.query(
+        `SELECT COUNT(*)::int AS count FROM draft_orders WHERE status = 'pending_review'`
       )
-      ORDER BY medication_id, location_id, batch_id, medication_name, location_name, expiry_date;
-    `);
-
-    // Get medication details (fefo, min_level_boxes, is_active) from medications table
-    const medicationDetailsResult = await tdb.query(`
-      SELECT id, name, strength, fefo, min_level_boxes, is_active
-      FROM medications
-      WHERE is_active = true
-    `);
+    ]);
 
     // Build lookup maps by display_id and internal id
     const medicationDetailsByDisplayId = {};
@@ -102,30 +176,6 @@ exports.handler = async (event) => {
       med.numberOfBoxes = med.batches.reduce((sum, b) => sum + (b.numberOfBoxes || 0), 0);
     }
 
-    // Query all orders (pending + fulfilled) for order history
-    const ordersResult = await tdb.query(`
-      SELECT
-        o.id,
-        o.medication_id,
-        CASE
-          WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
-          ELSE m.name || ' ' || m.strength
-        END AS med_name,
-        o.quantity,
-        COALESCE(o.quantity_fulfilled, 0) AS quantity_fulfilled,
-        o.urgency,
-        o.notes,
-        o.pharmacist_email,
-        o.status,
-        o.ordered_at,
-        o.fulfilled_at,
-        u.username AS user_name
-      FROM orders o
-      LEFT JOIN medications m ON m.id = o.medication_id
-      LEFT JOIN users u ON u.id = o.user_id
-      ORDER BY o.ordered_at DESC;
-    `);
-
     const orders = ordersResult.rows.map(row => ({
       id: row.id,
       medId: row.medication_id,
@@ -146,34 +196,6 @@ exports.handler = async (event) => {
     const medications = Object.values(medsByKey).filter(med =>
       med.batches.length > 0 || medicationIdsWithOrders.has(med.internalId)
     );
-
-    // Query recent transactions for Activity tab
-    const txResult = await tdb.query(`
-      SELECT
-        t.id,
-        t.medication_id,
-        CASE
-          WHEN m.strength IS NULL OR m.strength = 'N/A' THEN m.name
-          ELSE m.name || ' ' || m.strength
-        END AS med_name,
-        t.delta,
-        t.type,
-        t.reason,
-        t.location_id,
-        l.display_name AS location_name,
-        l.group_name AS location_group,
-        t.occurred_at,
-        u.username AS user_name,
-        b.items_per_box,
-        b.batch_code
-      FROM transactions t
-      LEFT JOIN batches b ON b.id = t.batch_id
-      LEFT JOIN medications m ON m.id = t.medication_id
-      LEFT JOIN locations l ON l.id = t.location_id
-      LEFT JOIN users u ON u.id = t.user_id
-      ORDER BY t.occurred_at DESC
-      LIMIT 200;
-    `);
 
     const transactions = txResult.rows.map(row => {
       let txType = row.type || 'system';
@@ -203,26 +225,12 @@ exports.handler = async (event) => {
       };
     });
 
-    // Query all locations for UI dropdowns
-    const locationsResult = await tdb.query(`
-      SELECT id, display_name, group_name
-      FROM locations
-      ORDER BY
-        CASE WHEN group_name IS NOT NULL THEN 0 ELSE 1 END,
-        group_name,
-        display_name;
-    `);
-
     const locations = locationsResult.rows.map(row => ({
       id: row.id,
       displayName: row.display_name,
       groupName: row.group_name
     }));
 
-    // Query pending draft order count for Purchase Orders tab badge
-    const draftCountResult = await tdb.query(
-      `SELECT COUNT(*)::int AS count FROM draft_orders WHERE status = 'pending_review'`
-    );
     const draftOrderCount = draftCountResult.rows[0]?.count || 0;
 
     return db.ok({ medications, transactions, locations, orders, draftOrderCount });
