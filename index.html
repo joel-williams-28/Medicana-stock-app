@@ -10176,9 +10176,23 @@ ${tc.name()} Stock Management System`;
                               className={`px-3 py-2 border border-bdr-default rounded-md focus:outline-none focus:ring-2 focus:ring-brand-mid ${barcodeNewMedForm.batchLocked ? 'bg-off-white cursor-not-allowed' : ''}`}
                             >
                               <option value="">Year</option>
-                              {Array.from({ length: 21 }, (_, i) => new Date().getFullYear() + i).map(y => (
-                                <option key={y} value={String(y)}>{y}</option>
-                              ))}
+                              {(() => {
+                                const currentYear = new Date().getFullYear();
+                                const years = Array.from({ length: 21 }, (_, i) => currentYear + i);
+                                // If the scanned/parsed year falls outside the default
+                                // "current year → +20" range (e.g. a GS1 barcode with
+                                // an already-expired date), inject it so the <select>
+                                // can actually show the selected value rather than
+                                // falling back to the empty placeholder.
+                                const parsedYear = parseInt(barcodeNewMedForm.expiryYear, 10);
+                                if (parsedYear && !years.includes(parsedYear)) {
+                                  years.push(parsedYear);
+                                  years.sort((a, b) => a - b);
+                                }
+                                return years.map(y => (
+                                  <option key={y} value={String(y)}>{y}</option>
+                                ));
+                              })()}
                             </select>
                           </div>
                         </div>
