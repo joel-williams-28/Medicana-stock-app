@@ -2737,8 +2737,12 @@
       // If the backend returns 409 HAS_DEPENDENCIES (FK constraint), the modal
       // offers the soft-delete fallback (medication-set-active → is_active=false).
 
+      // Reads from sessionStorage via getCurrentUserInfo — `auth.currentUser` is
+      // just the username string, not a user object, so `auth.currentUser?.role`
+      // would always be undefined. The full user object (id, role, fullName, ...)
+      // lives in sessionStorage and is exposed through getCurrentUserInfo().
       const canDeleteMedications = (() => {
-        const role = String(auth.currentUser?.role || '').trim().toLowerCase();
+        const role = String(getCurrentUserInfo()?.role || '').trim().toLowerCase();
         return role === 'administrator' || role === 'pharmacist';
       })();
 
@@ -2815,7 +2819,7 @@
         try {
           await window.api.deleteMedication({
             medicationId: target.id,
-            userId: auth.userId || null,
+            userId: getCurrentUserInfo()?.id || null,
             password: hardDeleteForm.password,
             medicationName: target.name
           });
@@ -2865,7 +2869,7 @@
           await window.api.setMedicationActive({
             medicationId: target.id,
             isActive: false,
-            userId: auth.userId || null,
+            userId: getCurrentUserInfo()?.id || null,
             medicationName: target.name
           });
           closeHardDelete();
