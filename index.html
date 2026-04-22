@@ -832,8 +832,17 @@
         sessionMeds: [],
         manualEntry: false,
         isEditing: false,
-        editingMedId: null,
-        scanSessionActive: false
+        editingMedId: null
+      });
+      // Hard-delete modal state (password confirmation + RBAC-gated medication deletion).
+      // Opened from handleMedDbDelete; server-side guarded by netlify/functions/medication-delete.js.
+      const [hardDeleteForm, setHardDeleteForm] = useState({
+        open: false,
+        target: null,           // { id, name }
+        password: '',
+        error: '',
+        isSubmitting: false,
+        showSoftFallback: false // true after server returns 409 HAS_DEPENDENCIES
       });
       const [scanCart, setScanCart] = useState({
         isActive: false,        // true when Scan Cart mode is on
@@ -2454,6 +2463,12 @@
        *
        * @param {string} rawValue - Raw barcode string from scanner library
        */
+      // ── cameraScanFlow ──
+      // Entry point for the camera (html5-qrcode) path ONLY.
+      // Called by handleBarcodeDetected (which has already stopped the camera).
+      // This path never restarts the camera on success — the user reopens it
+      // manually via the "Scan with Camera" button. Must not share side effects
+      // with the hardware-scanner path below.
       const handleScanDetected = (rawValue) => {
         // Route to Scan Cart handler when active on the medications list tab
         if (scanCart.isActive && ui.activeTab === 'medications') {
@@ -2530,8 +2545,7 @@
           existingMed: null,
           error: '',
           successMessage: '',
-          manualEntry: false,
-          scanSessionActive: true
+          manualEntry: false
         }));
 
         try {
@@ -2648,7 +2662,6 @@
           };
 
           const wasEditing = medDbForm.isEditing;
-          const wasScanSession = medDbForm.scanSessionActive;
           setMedDbForm(prev => ({
             ...prev,
             isSubmitting: false,
@@ -2672,15 +2685,8 @@
             manualEntry: false,
             isEditing: false,
             editingMedId: null,
-            error: '',
-            scanSessionActive: wasScanSession
+            error: ''
           }));
-
-          // If this submit originated from a camera-scan session, automatically
-          // reopen the scanner so the user can continue scanning the next box.
-          if (wasScanSession) {
-            setTimeout(() => { startCameraScanner(); }, 300);
-          }
 
           // Refresh medications list to include new/updated entry
           if (result.wasCreated || wasEditing) {
@@ -2718,95 +2724,173 @@
           successMessage: '',
           manualEntry: false,
           isEditing: false,
-          editingMedId: null,
-          scanSessionActive: false
+          editingMedId: null
         }));
       };
 
-      // ── Med Database Tab: Soft-delete the currently recognised medication ──
-      // Uses the existing medication-set-active backend function which sets
-      // is_active=false and logs `medication_deleted` to activity_log. The
-      // medication is then automatically hidden by every query that filters on
-      // is_active (meds-get, inventory_full, etc.) — preserving audit trail.
-      const handleMedDbDelete = async () => {
+      // ── Med Database Tab: Hard-delete flow (RBAC + password confirmation) ──
+      // Deletion is gated server-side in medication-delete.js:
+      //   1. User must be active.
+      //   2. Role must be Administrator or Pharmacist (case-insensitive).
+      //   3. Password must match the user's bcrypt hash.
+      // The client-side role check below is UX only — the server is authoritative.
+      // If the backend returns 409 HAS_DEPENDENCIES (FK constraint), the modal
+      // offers the soft-delete fallback (medication-set-active → is_active=false).
+
+      const canDeleteMedications = (() => {
+        const role = String(auth.currentUser?.role || '').trim().toLowerCase();
+        return role === 'administrator' || role === 'pharmacist';
+      })();
+
+      const handleMedDbDelete = () => {
         const existing = medDbForm.existingMed;
         if (!existing || !existing.id) return;
+        if (!canDeleteMedications) {
+          setMedDbForm(prev => ({
+            ...prev,
+            error: 'Only Administrators and Pharmacists can delete medications.'
+          }));
+          return;
+        }
+        setHardDeleteForm({
+          open: true,
+          target: { id: existing.id, name: existing.name },
+          password: '',
+          error: '',
+          isSubmitting: false,
+          showSoftFallback: false
+        });
+      };
 
-        const confirmed = window.confirm(
-          `Delete "${existing.name}" from the database?\n\n` +
-          `This hides the medication from all lists, dashboards, and reports. ` +
-          `Existing batches, transactions, and audit history are preserved. ` +
-          `This cannot be undone from the UI.`
-        );
-        if (!confirmed) return;
+      const closeHardDelete = () => {
+        setHardDeleteForm({
+          open: false,
+          target: null,
+          password: '',
+          error: '',
+          isSubmitting: false,
+          showSoftFallback: false
+        });
+      };
 
-        setMedDbForm(prev => ({ ...prev, isSubmitting: true, error: '', successMessage: '' }));
+      const clearMedDbAfterDelete = (deletedName) => {
+        setMedDbForm(prev => ({
+          ...prev,
+          isSubmitting: false,
+          successMessage: `"${deletedName}" deleted.`,
+          barcode: '',
+          name: '',
+          strengthValue: '',
+          strengthUnit: 'mg',
+          volumeValue: '',
+          volumeUnit: 'mL',
+          form: 'Tablet',
+          brand: '',
+          standardItemsPerBox: '',
+          existingMed: null,
+          manualEntry: false,
+          isEditing: false,
+          editingMedId: null,
+          error: ''
+        }));
+      };
+
+      const refreshMedicationsAfterDelete = async () => {
+        try {
+          const data = await window.api.fetchAllData();
+          if (data && data.medications) setMedications(data.medications);
+        } catch (_) { /* non-critical — next poll will refresh */ }
+      };
+
+      const submitHardDelete = async () => {
+        const target = hardDeleteForm.target;
+        if (!target || !target.id) return;
+        if (!hardDeleteForm.password) {
+          setHardDeleteForm(prev => ({ ...prev, error: 'Password is required.' }));
+          return;
+        }
+
+        setHardDeleteForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
 
         try {
+          await window.api.deleteMedication({
+            medicationId: target.id,
+            userId: auth.userId || null,
+            password: hardDeleteForm.password,
+            medicationName: target.name
+          });
+          closeHardDelete();
+          clearMedDbAfterDelete(target.name);
+          await refreshMedicationsAfterDelete();
+        } catch (err) {
+          if (err && err.code === 'HAS_DEPENDENCIES') {
+            setHardDeleteForm(prev => ({
+              ...prev,
+              isSubmitting: false,
+              error: 'This medication has batches, orders, or transactions. A hard delete would break audit history — use soft-delete instead.',
+              showSoftFallback: true
+            }));
+            return;
+          }
+          if (err && err.status === 401) {
+            setHardDeleteForm(prev => ({
+              ...prev,
+              isSubmitting: false,
+              password: '',
+              error: err.message || 'Incorrect password.'
+            }));
+            return;
+          }
+          if (err && err.status === 403) {
+            setHardDeleteForm(prev => ({
+              ...prev,
+              isSubmitting: false,
+              error: err.message || 'You do not have permission to delete medications.'
+            }));
+            return;
+          }
+          setHardDeleteForm(prev => ({
+            ...prev,
+            isSubmitting: false,
+            error: (err && err.message) || 'Failed to delete medication.'
+          }));
+        }
+      };
+
+      const submitSoftFallbackDelete = async () => {
+        const target = hardDeleteForm.target;
+        if (!target || !target.id) return;
+        setHardDeleteForm(prev => ({ ...prev, isSubmitting: true, error: '' }));
+        try {
           await window.api.setMedicationActive({
-            medicationId: existing.id,
+            medicationId: target.id,
             isActive: false,
             userId: auth.userId || null,
-            medicationName: existing.name
+            medicationName: target.name
           });
-
-          const wasScanSession = medDbForm.scanSessionActive;
-
-          setMedDbForm(prev => ({
-            ...prev,
-            isSubmitting: false,
-            successMessage: `"${existing.name}" deleted.`,
-            barcode: '',
-            name: '',
-            strengthValue: '',
-            strengthUnit: 'mg',
-            volumeValue: '',
-            volumeUnit: 'mL',
-            form: 'Tablet',
-            brand: '',
-            standardItemsPerBox: '',
-            existingMed: null,
-            manualEntry: false,
-            isEditing: false,
-            editingMedId: null,
-            error: '',
-            scanSessionActive: wasScanSession
-          }));
-
-          // Refresh the in-memory medications list so the deleted med disappears.
-          try {
-            const data = await window.api.fetchAllData();
-            if (data && data.medications) setMedications(data.medications);
-          } catch (_) { /* non-critical — next poll will refresh */ }
-
-          // Keep the continuous-scan loop going if we were mid-session.
-          if (wasScanSession) {
-            setTimeout(() => { startCameraScanner(); }, 300);
-          }
+          closeHardDelete();
+          clearMedDbAfterDelete(target.name);
+          await refreshMedicationsAfterDelete();
         } catch (err) {
-          setMedDbForm(prev => ({
+          setHardDeleteForm(prev => ({
             ...prev,
             isSubmitting: false,
-            error: err.message || 'Failed to delete medication.'
+            error: (err && err.message) || 'Failed to soft-delete medication.'
           }));
         }
       };
 
       // ── Scan Cart: handle a scan in multi-scan mode on the medications list tab ──
+      // Works for both camera scans (one-shot — user reopens the camera manually)
+      // and hardware-scanner keyboard input (continuous — no camera involved).
       const handleScanCartScan = async (barcode) => {
         const cleanBarcode = normalizeBarcode((barcode || '').trim().replace(/\s+/g, ''));
-        if (!cleanBarcode) {
-          setTimeout(() => { startCameraScanner(); }, 250);
-          return;
-        }
+        if (!cleanBarcode) return;
 
-        // Soft debounce against the camera library reporting the same frame twice.
-        // Much shorter than the 2s lockout used elsewhere — we WANT rapid re-scans.
+        // Soft debounce against a single scan being reported twice in quick succession
+        // (html5-qrcode frame dedupe OR hardware scanner emitting Enter+carriage return).
         const now = Date.now();
-        if (now - scanCart.lastScannedAt < 400) {
-          setTimeout(() => { startCameraScanner(); }, 250);
-          return;
-        }
+        if (now - scanCart.lastScannedAt < 400) return;
         setScanCart(prev => ({ ...prev, lastScannedAt: now }));
 
         try {
@@ -2840,9 +2924,6 @@
           });
         } catch (err) {
           setScanCart(prev => ({ ...prev, lastError: 'Barcode lookup failed. Please try again.' }));
-        } finally {
-          // Always reopen the camera so scanning is continuous.
-          setTimeout(() => { startCameraScanner(); }, 250);
         }
       };
 
@@ -3151,26 +3232,33 @@
 
 
         /**
-         * Hardware barcode scanner handler (infrared/Bluetooth scanners)
+         * ── hardwareScannerInputFlow ──
+         * Entry point for hardware barcode scanners ONLY (keyboard emulation).
+         * Called by handleGlobalBarcodeInput after debounced keystroke accumulation.
+         * Must not touch any camera API — the camera path uses handleScanDetected.
          *
-         * This handler is invoked when the global hardware scanner detects a barcode
-         * via keyboard emulation (rapid keystroke detection).
+         * Routing:
+         * - Med Database tab → handleMedDbBarcodeScan
+         * - Scan Cart active on medications tab → handleScanCartScan
+         * - Otherwise: API-first barcode lookup against Neon, then open stock-adjust
+         *   modal (existing med) or new-medication modal (unknown barcode).
          *
-         * Unlike the camera scanner which always opens the "new medication" modal,
-         * the hardware scanner has different behavior based on scan context:
-         * - If medication found: Opens stock adjustment modal (for quick stock operations)
-         * - If medication not found: Opens new medication modal
-         *
-         * GS1 codes are automatically detected and batch/expiry data is pre-filled.
-         *
-         * Supported AIs: (01) GTIN, (10) Batch, (17) Expiry YYMMDD, (21) Serial
+         * GS1 AIs supported: (01) GTIN, (10) Batch, (17) Expiry YYMMDD, (21) Serial.
          */
-        const handleBarcodeScanned = (barcode) => {
+        const handleBarcodeScanned = async (barcode) => {
           // Route to Med Database handler when on that tab
           if (ui.activeTab === 'meddatabase') {
             const gs1 = window.parseGs1Data(barcode);
             const lookupBarcode = gs1.isGs1 ? (gs1.gtin || barcode) : barcode.trim().replace(/\s+/g, '');
             handleMedDbBarcodeScan(lookupBarcode);
+            return;
+          }
+
+          // Route to Scan Cart handler when active on the medications list tab
+          if (scanCart.isActive && ui.activeTab === 'medications') {
+            const gs1 = window.parseGs1Data(barcode);
+            const lookupBarcode = normalizeBarcode(gs1.isGs1 ? (gs1.gtin || barcode) : barcode);
+            handleScanCartScan(lookupBarcode);
             return;
           }
 
@@ -3190,12 +3278,43 @@
             expiryYear = dateFormat.year ? String(dateFormat.year) : '';
           }
 
-          const cleanBarcode = lookupBarcode.trim().replace(/\s+/g, '');
+          const cleanBarcode = normalizeBarcode(lookupBarcode.trim().replace(/\s+/g, ''));
 
-          // Try to find medication by barcode (exact match first)
-          let foundMedication = medications.find(med => med.barcode === cleanBarcode);
+          // API-first lookup: the local `medications` array comes from meds-get
+          // and may omit medications with no stock, so a DB round-trip is the
+          // only reliable source of truth. Fall back to the local array only on
+          // network failure so offline-ish scans still work.
+          let foundMedication = null;
+          try {
+            const result = await window.api.lookupByBarcode(cleanBarcode);
+            if (result && result.found && result.medication) {
+              const apiMed = result.medication;
+              const localCopy = medications.find(m => String(m.id) === String(apiMed.id));
+              foundMedication = localCopy || {
+                id: apiMed.id,
+                name: apiMed.name,
+                strength: apiMed.strength_raw || '',
+                form: apiMed.type || '',
+                brand: apiMed.brand || '',
+                barcode: apiMed.barcode || cleanBarcode,
+                standard_items_per_box: apiMed.standard_items_per_box || null,
+                fefo: apiMed.fefo !== false,
+                min_level_boxes: apiMed.min_level_boxes || 0,
+                batches: [],
+                locations: {}
+              };
+              // Background refresh so the stock-adjust modal has full batch/location data
+              if (!localCopy) {
+                window.api.fetchAllData()
+                  .then(data => { if (data && data.medications) setMedications(data.medications); })
+                  .catch(() => { /* non-critical */ });
+              }
+            }
+          } catch (_) {
+            foundMedication = medications.find(med => normalizeBarcode(med.barcode) === cleanBarcode);
+          }
 
-          // If not found by exact barcode, try other methods
+          // Legacy fallback: partial name/id match against local array
           if (!foundMedication) {
             foundMedication = medications.find(med =>
               med.name.toLowerCase().includes(cleanBarcode.toLowerCase()) ||
@@ -3606,18 +3725,17 @@ ${tc.name()} Stock Management System`;
           });
           setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100);
 
-          // Scan Cart: if this submit was driven by a Scan Cart row, drop the row
-          // and (if the cart is still active) reopen the camera for continuous scanning.
+          // Scan Cart: if this submit was driven by a Scan Cart row, drop the row.
+          // The camera is NOT automatically reopened — the spec requires the user to
+          // explicitly press "Scan with Camera" / "Multi-Scan" to reopen it.
           if (scanCart.pendingCommitMedId) {
             const committedId = scanCart.pendingCommitMedId;
-            const stillActive = scanCart.isActive;
             setScanCart(prev => ({
               ...prev,
               items: prev.items.filter(it => it.medicationId !== committedId),
               pendingCommitMedId: null
             }));
             setModals(prev => ({ ...prev, showBarcodeNewMedication: false }));
-            if (stillActive) setTimeout(() => { startCameraScanner(); }, 300);
           }
         } catch (err) {
           console.error('Failed to add medication/batch via barcode:', err);
@@ -3718,14 +3836,12 @@ ${tc.name()} Stock Management System`;
           // Scan Cart: drop the committed row and resume scanning if cart is still active
           if (scanCart.pendingCommitMedId) {
             const committedId = scanCart.pendingCommitMedId;
-            const stillActive = scanCart.isActive;
             setScanCart(prev => ({
               ...prev,
               items: prev.items.filter(it => it.medicationId !== committedId),
               pendingCommitMedId: null
             }));
             setModals(prev => ({ ...prev, showBarcodeNewMedication: false }));
-            if (stillActive) setTimeout(() => { startCameraScanner(); }, 300);
           }
         } catch (err) {
           console.error('Transfer via barcode failed:', err);
@@ -8823,12 +8939,12 @@ ${tc.name()} Stock Management System`;
                             <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             Edit
                           </button>
-                          {getUserRole() === 'Administrator' && (
+                          {(getUserRole() === 'Administrator' || getUserRole() === 'Pharmacist') && (
                             <button
                               onClick={handleMedDbDelete}
                               disabled={medDbForm.isSubmitting}
                               className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-status-critical-text text-white rounded-lg hover:bg-red-700 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                              title="Soft-delete this medication (hides it everywhere, preserves audit history)"
+                              title="Permanently delete this medication (requires password confirmation)"
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
                               Delete
@@ -11215,6 +11331,62 @@ ${tc.name()} Stock Management System`;
               </div>
             )}
 
+            {/* Hard-delete Medication Modal (RBAC + password confirmation) */}
+            {hardDeleteForm.open && hardDeleteForm.target && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50" onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; if (!hardDeleteForm.isSubmitting) closeHardDelete(); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
+                <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-md w-full p-4 sm:p-6 m-2 sm:m-4">
+                  <h2 className="text-lg sm:text-xl font-bold text-near-black mb-2">Delete Medication</h2>
+                  <p className="text-sm text-txt-secondary mb-4">
+                    You are about to permanently delete <strong>"{hardDeleteForm.target.name}"</strong> from the database. This cannot be undone. Enter your password to confirm.
+                  </p>
+                  {hardDeleteForm.error && (
+                    <div className="mb-4 p-3 bg-danger-ghost-bg border border-status-critical-text rounded text-sm text-danger-ghost-text">
+                      {hardDeleteForm.error}
+                    </div>
+                  )}
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-txt-secondary mb-2">Password <span className="text-danger-ghost-text">*</span></label>
+                    <input
+                      type="password"
+                      value={hardDeleteForm.password}
+                      onChange={(e) => setHardDeleteForm(prev => ({ ...prev, password: e.target.value, error: '' }))}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !hardDeleteForm.isSubmitting) submitHardDelete(); }}
+                      className="w-full px-3 py-2 border border-bdr-default rounded-lg focus:ring-2 focus:ring-brand-mid focus:border-transparent"
+                      placeholder="Enter your password to confirm"
+                      autoFocus
+                      disabled={hardDeleteForm.isSubmitting}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    {hardDeleteForm.showSoftFallback ? (
+                      <button
+                        onClick={submitSoftFallbackDelete}
+                        disabled={hardDeleteForm.isSubmitting}
+                        className="flex-1 bg-status-low-text text-white py-2 rounded-lg hover:opacity-90 transition-colors font-medium disabled:opacity-50"
+                      >
+                        {hardDeleteForm.isSubmitting ? 'Hiding...' : 'Soft-delete instead'}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={submitHardDelete}
+                        disabled={hardDeleteForm.isSubmitting || !hardDeleteForm.password}
+                        className="flex-1 bg-danger-solid text-white py-2 rounded-lg hover:opacity-90 transition-colors font-medium disabled:opacity-50"
+                      >
+                        {hardDeleteForm.isSubmitting ? 'Deleting...' : 'Delete Permanently'}
+                      </button>
+                    )}
+                    <button
+                      onClick={closeHardDelete}
+                      disabled={hardDeleteForm.isSubmitting}
+                      className="flex-1 bg-btn-secondary text-txt-secondary py-2 rounded-lg hover:bg-bdr-hover transition-colors font-medium disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Skip Step Confirmation Modal */}
             {skipConfirm.show && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50" onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; setSkipConfirm({ show: false, password: '', error: '', targetStep: null, loading: false }); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
@@ -11347,7 +11519,6 @@ ${tc.name()} Stock Management System`;
                       <button
                         onClick={() => {
                           stopCameraScanner();
-                          setMedDbForm(prev => ({ ...prev, scanSessionActive: false }));
                           setScanCart(prev => ({ ...prev, isActive: false }));
                         }}
                         className="p-2 hover:bg-near-black rounded-full transition-colors"
@@ -11373,8 +11544,7 @@ ${tc.name()} Stock Management System`;
                           <button
                             onClick={() => {
                               stopCameraScanner();
-                              setMedDbForm(prev => ({ ...prev, scanSessionActive: false }));
-                              setScanCart(prev => ({ ...prev, isActive: false }));
+                                  setScanCart(prev => ({ ...prev, isActive: false }));
                             }}
                             className="px-4 py-2 bg-white text-danger-ghost-text rounded-md hover:bg-off-white transition-colors text-sm font-medium"
                           >
@@ -11440,7 +11610,6 @@ ${tc.name()} Stock Management System`;
                     <button
                       onClick={() => {
                         stopCameraScanner();
-                        setMedDbForm(prev => ({ ...prev, scanSessionActive: false }));
                         setScanCart(prev => ({ ...prev, isActive: false }));
                       }}
                       className="w-full bg-txt-secondary text-white py-3 rounded-lg hover:bg-txt-tertiary transition-colors font-medium"
