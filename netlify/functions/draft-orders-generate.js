@@ -20,20 +20,31 @@ exports.handler = async (event) => {
 
     const { userId, locationId } = db.parseBody(event);
 
-    // Get maturity info
-    const { weeksOfData, maturityLevel } = await getMaturityInfo(tdb.query);
-
-    // Get stock levels
-    const stockRows = await getStockLevels(locationId || null, tdb.query);
+    // Fetch maturity, stock levels, items-per-box, and existing drafts/orders
+    // in parallel — all four are independent reads. Weekly usage depends on
+    // maturity so we bump it to a second phase, but the initial fan-out is the
+    // dominant slice of latency.
+    const [
+      { weeksOfData, maturityLevel },
+      stockRows,
+      itemsPerBoxByMed,
+      existingResult
+    ] = await Promise.all([
+      getMaturityInfo(tdb.query),
+      getStockLevels(locationId || null, tdb.query),
+      getItemsPerBoxMap(tdb.query),
+      tdb.query(`
+        SELECT DISTINCT medication_id, 'draft' AS source FROM draft_orders WHERE status = 'pending_review'
+        UNION
+        SELECT DISTINCT medication_id, 'order' AS source FROM orders WHERE status = 'pending'
+      `)
+    ]);
 
     // Get usage data (if mature enough)
     const weeksToAnalyze = Math.min(Math.max(weeksOfData, 1), 12);
     const usageByMedLoc = (maturityLevel !== 'not_configured' && maturityLevel !== 'collecting')
       ? await getWeeklyUsageData(locationId || null, weeksToAnalyze, tdb.query)
       : {};
-
-    // Get items per box
-    const itemsPerBoxByMed = await getItemsPerBoxMap(tdb.query);
 
     // Aggregate stock rows by medication_id (sum boxes across all locations)
     // This prevents duplicate drafts when a medication exists at multiple locations
@@ -59,14 +70,14 @@ exports.handler = async (event) => {
       agg.location_keys.push(`${medId}|${row.location_id}`);
     }
 
-    // Get existing pending drafts and pending orders to avoid duplicates (single query)
-    const existingResult = await tdb.query(`
-      SELECT DISTINCT medication_id, 'draft' AS source FROM draft_orders WHERE status = 'pending_review'
-      UNION
-      SELECT DISTINCT medication_id, 'order' AS source FROM orders WHERE status = 'pending'
-    `);
-    const draftedMedIds = new Set(existingResult.rows.filter(r => r.source === 'draft').map(r => r.medication_id));
-    const orderedMedIds = new Set(existingResult.rows.filter(r => r.source === 'order').map(r => r.medication_id));
+    // Split the existing-drafts/orders rows (already fetched above) into two
+    // lookup sets. Walking the rows once avoids two .filter+.map passes.
+    const draftedMedIds = new Set();
+    const orderedMedIds = new Set();
+    for (const row of existingResult.rows) {
+      if (row.source === 'draft') draftedMedIds.add(row.medication_id);
+      else if (row.source === 'order') orderedMedIds.add(row.medication_id);
+    }
 
     // Generate batch reference
     const batchRef = crypto.randomUUID();

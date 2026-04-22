@@ -121,31 +121,32 @@ exports.handler = async (event) => {
   }
 };
 
-// Auto-update supplier_order to 'delivered' when all linked orders are fulfilled
+// Auto-update supplier_order to 'delivered' when all linked orders are fulfilled.
+// Fetches supplier_order_id and counts the remaining unfulfilled siblings in a
+// single round trip — the previous implementation issued three sequential
+// queries per fulfillment (supplier lookup + pending count + update).
 async function checkSupplierOrderCompletion(orderId, queryFn) {
   try {
     const result = await queryFn(
-      `SELECT o.supplier_order_id FROM orders o WHERE o.id = $1 AND o.supplier_order_id IS NOT NULL`,
+      `SELECT
+         o.supplier_order_id,
+         (SELECT COUNT(*)::int FROM orders
+           WHERE supplier_order_id = o.supplier_order_id
+             AND status != 'fulfilled') AS pending
+       FROM orders o
+       WHERE o.id = $1 AND o.supplier_order_id IS NOT NULL`,
       [orderId]
     );
     if (result.rows.length === 0) return;
 
-    const soId = result.rows[0].supplier_order_id;
+    const { supplier_order_id: soId, pending } = result.rows[0];
+    if (Number(pending) !== 0) return;
 
-    // Check if all orders in this supplier batch are fulfilled
-    const pendingCheck = await queryFn(
-      `SELECT COUNT(*) AS pending FROM orders
-       WHERE supplier_order_id = $1 AND status != 'fulfilled'`,
+    await queryFn(
+      `UPDATE supplier_orders SET status = 'delivered', delivered_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND status != 'delivered'`,
       [soId]
     );
-
-    if (Number(pendingCheck.rows[0].pending) === 0) {
-      await queryFn(
-        `UPDATE supplier_orders SET status = 'delivered', delivered_at = NOW(), updated_at = NOW()
-         WHERE id = $1 AND status != 'delivered'`,
-        [soId]
-      );
-    }
   } catch (err) {
     console.error('Supplier order completion check (non-fatal):', err.message);
   }

@@ -16,7 +16,16 @@ function getPool(tenant) {
       connectionString,
       ssl: true,
       statement_timeout: 30000,
-      idle_in_transaction_session_timeout: 30000
+      idle_in_transaction_session_timeout: 30000,
+      // Serverless-friendly pool sizing: each warm function container serves
+      // one request at a time, so a small pool avoids exhausting Neon's
+      // compute connection budget when many containers are warm.
+      max: 3,
+      // Drop idle sockets quickly so Neon's free-tier compute can scale to zero.
+      idleTimeoutMillis: 10000,
+      // Fail fast instead of hanging if Neon is waking from cold start
+      // longer than expected — the client will see a clear error.
+      connectionTimeoutMillis: 10000
     });
   }
   return pools[key];
