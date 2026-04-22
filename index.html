@@ -3853,6 +3853,21 @@
               : barcode.trim().replace(/\s+/g, '')
           );
 
+          // Default target location for Add Stock. Prefer whatever specific
+          // location the user is currently viewing; otherwise default to
+          // "Pharmacy" — the natural receiving point for deliveries, and
+          // the primary location for pharmacist/admin users. Both the GS1
+          // and plain-barcode branches need this set so a committed scan
+          // never falls through to a blank locationId.
+          const defaultStockInLocation = (ui.currentLocation && ui.currentLocation !== 'All' && !isGroupName(ui.currentLocation, locations))
+            ? ui.currentLocation
+            : 'Pharmacy';
+          setBarcodeNewMedForm(prev => ({
+            ...prev,
+            location: prev.location || defaultStockInLocation,
+            strengthType: prev.strengthType || 'value'
+          }));
+
           // If the 5-tab modal is already open for a recognised med, route to
           // the multi-scan handler. It returns true when it absorbs the scan.
           const absorbed = await handleMultiScanScan(scannedGtin, gs1Data);
@@ -3869,14 +3884,6 @@
           // handler. It opens showBarcodeNewMedication and calls handleBarcodeLookup;
           // on a recognised barcode that lookup sets medicationLocked=true and the
           // modal renders the 5-tab UI with full details populated from Neon.
-          const defaultLocation = (ui.currentLocation !== 'All' && !isGroupName(ui.currentLocation, locations))
-            ? ui.currentLocation
-            : 'Cupboard 1';
-          setBarcodeNewMedForm(prev => ({
-            ...prev,
-            location: defaultLocation,
-            strengthType: 'value'
-          }));
           handleGenericBarcodeScan(scannedGtin);
         };
 
