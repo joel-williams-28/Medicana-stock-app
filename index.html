@@ -1066,6 +1066,22 @@
           searchTerm: '' // search query for existing medication lookup
         });
 
+        // ── Hardware-scanner multi-scan session ──
+        // Tracks a queue of recognised medications scanned while the 5-tab
+        // barcode modal is open. Each scan of the same barcode increments that
+        // item's count; scanning a different recognised barcode adds a new
+        // queue item and switches modal focus. Camera path is untouched.
+        const [multiScanQueue, setMultiScanQueue] = useState({
+          active: false,
+          items: [],        // [{ barcode, medicationId, displayName, activeTab, count, formSnapshot }]
+          focusedBarcode: null,
+          unrecognisedWarning: ''
+        });
+        // Placeholder ref kept for future handler refactoring — currently
+        // commitAllMultiScan reads directly from the queue item snapshots and
+        // calls the Neon APIs without invoking the single-scan handlers.
+        const formOverrideRef = useRef(null);
+
         // Session timeout management
         const [sessionTimeout, setSessionTimeout] = useState({
           showWarning: false,
@@ -3253,7 +3269,423 @@
          *
          * GS1 AIs supported: (01) GTIN, (10) Batch, (17) Expiry YYMMDD, (21) Serial.
          */
-        const handleBarcodeScanned = (barcode) => {
+        // ── Multi-scan helpers (hardware scanner only) ──
+
+        // Per-tab primary quantity field + rescan increment semantics.
+        // transferAndUse intentionally omitted — multi-scan is disabled on it.
+        const MULTI_SCAN_TAB_CONFIG = {
+          addStock:   { field: 'boxQuantity',      type: 'boxes',      label: 'Add Stock' },
+          transfer:   { field: 'transferQuantity', typeField: 'transferQuantityType', label: 'Transfer' },
+          patientUse: { field: 'useQuantity',      typeField: 'useQuantityType',      label: 'Patient Use' },
+          order:      { field: 'orderQuantity',    type: 'boxes',      label: 'Order' }
+        };
+
+        // Snapshot everything in barcodeNewMedForm *except* the identity fields
+        // that are re-hydrated from handleBarcodeLookup — that way switching
+        // focus restores user input without re-running the lookup lookup lookup.
+        const IDENTITY_FIELDS = [
+          'medicationId', 'name', 'strengthValue', 'strengthUnit', 'volumeValue', 'volumeUnit',
+          'strengthType', 'type', 'itemsPerBox', 'brand', 'existingBatches', 'medicationLocked'
+        ];
+        const snapshotFromForm = (form) => {
+          const snap = {};
+          for (const key of Object.keys(form)) {
+            if (!IDENTITY_FIELDS.includes(key)) snap[key] = form[key];
+          }
+          return snap;
+        };
+
+        const multiScanIsAvailable = (activeTab) =>
+          activeTab && activeTab !== 'transferAndUse' && !!MULTI_SCAN_TAB_CONFIG[activeTab];
+
+        // Increment the active tab's primary quantity field by 1 (in its
+        // current unit — "boxes" for Add Stock/Order, current quantityType
+        // for Transfer/Patient Use).
+        const incrementActiveTabQuantity = () => {
+          setBarcodeNewMedForm(prev => {
+            const cfg = MULTI_SCAN_TAB_CONFIG[prev.activeTab];
+            if (!cfg) return prev; // transferAndUse or unknown — no-op
+            const current = parseInt(String(prev[cfg.field] || '0').trim(), 10);
+            const next = (Number.isFinite(current) ? current : 0) + 1;
+            return { ...prev, [cfg.field]: String(next), error: '' };
+          });
+          // Bump queue count in parallel
+          setMultiScanQueue(prev => {
+            if (!prev.active) return prev;
+            const items = prev.items.map(it =>
+              it.barcode === prev.focusedBarcode ? { ...it, count: it.count + 1 } : it
+            );
+            return { ...prev, items };
+          });
+        };
+
+        // Build a queue item from a successful barcode-lookup result. We
+        // carry the identity fields (name, strength, type, items-per-box) on
+        // the item itself so commitAllMultiScan can run without re-looking-up.
+        const buildQueueItemFromLookup = (barcode, apiMed, initialFormSnapshot) => {
+          const displayName = apiMed.strength_raw && apiMed.strength_raw !== 'N/A'
+            ? `${apiMed.name} ${apiMed.strength_raw}`
+            : apiMed.name;
+          return {
+            barcode,
+            medicationId: apiMed.id,
+            displayName,
+            name: apiMed.name,
+            strengthRaw: apiMed.strength_raw || '',
+            type: apiMed.type || 'tablet',
+            standardItemsPerBox: apiMed.standard_items_per_box || null,
+            activeTab: initialFormSnapshot.activeTab || 'addStock',
+            count: 1,
+            formSnapshot: initialFormSnapshot
+          };
+        };
+
+        // Called on every scan. Returns true if the scan was absorbed by the
+        // multi-scan session (so the caller should return early and NOT open
+        // a fresh modal).
+        const handleMultiScanScan = async (scannedGtin, gs1Data) => {
+          const modalOpen = !!modals.showBarcodeNewMedication;
+          const currentFormLocked = barcodeNewMedForm.medicationLocked;
+          const queueActive = multiScanQueue.active;
+
+          // Only engage multi-scan when the 5-tab modal is already open for a
+          // recognised medication (or a multi-scan session is already active).
+          if (!modalOpen || (!currentFormLocked && !queueActive)) return false;
+
+          // Same-barcode rescan on the focused item → just bump the quantity.
+          if (scannedGtin === barcodeNewMedForm.barcode) {
+            if (!multiScanIsAvailable(barcodeNewMedForm.activeTab)) {
+              setMultiScanQueue(prev => ({ ...prev, unrecognisedWarning: 'Multi-scan is not supported on the Transfer & Use tab.' }));
+              return true;
+            }
+            incrementActiveTabQuantity();
+            // Promote to active session on the FIRST rescan (so single scans
+            // behave as before).
+            if (!queueActive) {
+              const strengthDisplay = barcodeNewMedForm.strengthValue
+                ? ` ${barcodeNewMedForm.strengthValue}${barcodeNewMedForm.strengthUnit || ''}`
+                : '';
+              setMultiScanQueue(prev => ({
+                active: true,
+                focusedBarcode: barcodeNewMedForm.barcode,
+                unrecognisedWarning: '',
+                items: [{
+                  barcode: barcodeNewMedForm.barcode,
+                  medicationId: barcodeNewMedForm.medicationId,
+                  displayName: barcodeNewMedForm.name + strengthDisplay,
+                  name: barcodeNewMedForm.name,
+                  strengthRaw: strengthDisplay.trim(),
+                  type: barcodeNewMedForm.type,
+                  standardItemsPerBox: parseInt(String(barcodeNewMedForm.itemsPerBox || '0'), 10) || null,
+                  activeTab: barcodeNewMedForm.activeTab,
+                  count: 2, // the original scan + this one
+                  formSnapshot: snapshotFromForm(barcodeNewMedForm)
+                }]
+              }));
+            }
+            return true;
+          }
+
+          // Different barcode → look it up in Neon.
+          let lookupResult;
+          try {
+            lookupResult = await window.api.lookupByBarcode(scannedGtin);
+          } catch (err) {
+            setMultiScanQueue(prev => ({ ...prev, unrecognisedWarning: `Lookup failed for ${scannedGtin}. Try again.` }));
+            return true;
+          }
+
+          if (!lookupResult || !lookupResult.found || !lookupResult.medication) {
+            // Unrecognised barcode during an active session — show inline
+            // warning, don't clobber the queue.
+            setMultiScanQueue(prev => ({
+              ...prev,
+              unrecognisedWarning: `${scannedGtin} — not in database. Cancel session to register it.`
+            }));
+            return true;
+          }
+
+          // Recognised → is it already in the queue?
+          const existingItem = multiScanQueue.items.find(it => it.barcode === scannedGtin);
+          if (existingItem) {
+            // Snapshot the currently-focused form, then switch focus to the
+            // existing queue item and bump its count + quantity.
+            switchFocusToQueueItem(scannedGtin, /*bumpCount*/ true);
+            return true;
+          }
+
+          // New recognised med → snapshot current, then ensure session is
+          // active and push the new item.
+          const currentSnapshot = snapshotFromForm(barcodeNewMedForm);
+          const currentBarcode = barcodeNewMedForm.barcode;
+
+          // Build the new item. GS1 batch/expiry/serial flow through the
+          // initial snapshot so it's ready when focus switches.
+          let initialBatch = '', initialExpMonth = '', initialExpYear = '', initialSerial = '';
+          if (gs1Data && gs1Data.isGs1) {
+            initialBatch = gs1Data.batch || '';
+            initialSerial = gs1Data.serial || '';
+            const df = window.formatDateForMonthYear(gs1Data.expiryDate);
+            initialExpMonth = df.month || '';
+            initialExpYear = df.year ? String(df.year) : '';
+          }
+
+          const newItemSnapshot = {
+            ...snapshotFromForm(barcodeNewMedForm),
+            barcode: scannedGtin,
+            batchNumber: initialBatch,
+            serial: initialSerial,
+            expiryMonth: initialExpMonth,
+            expiryYear: initialExpYear,
+            boxQuantity: '1',
+            transferQuantity: '',
+            useQuantity: '',
+            orderQuantity: '',
+            existingBatchId: null,
+            error: '',
+            successMessage: ''
+          };
+
+          setMultiScanQueue(prev => {
+            const strengthDisplay = barcodeNewMedForm.strengthValue
+              ? ` ${barcodeNewMedForm.strengthValue}${barcodeNewMedForm.strengthUnit || ''}`
+              : '';
+            const existingItems = prev.active ? prev.items : [{
+              barcode: currentBarcode,
+              medicationId: barcodeNewMedForm.medicationId,
+              displayName: barcodeNewMedForm.name + strengthDisplay,
+              name: barcodeNewMedForm.name,
+              strengthRaw: strengthDisplay.trim(),
+              type: barcodeNewMedForm.type,
+              standardItemsPerBox: parseInt(String(barcodeNewMedForm.itemsPerBox || '0'), 10) || null,
+              activeTab: barcodeNewMedForm.activeTab,
+              count: Math.max(1, parseInt(String(barcodeNewMedForm[MULTI_SCAN_TAB_CONFIG[barcodeNewMedForm.activeTab]?.field] || '1'), 10) || 1),
+              formSnapshot: currentSnapshot
+            }];
+            // Update the current item's snapshot before moving on.
+            const updatedExisting = existingItems.map(it =>
+              it.barcode === currentBarcode ? { ...it, formSnapshot: currentSnapshot } : it
+            );
+            const newItem = buildQueueItemFromLookup(scannedGtin, lookupResult.medication, newItemSnapshot);
+            return {
+              active: true,
+              items: [...updatedExisting, newItem],
+              focusedBarcode: scannedGtin,
+              unrecognisedWarning: ''
+            };
+          });
+
+          // Rehydrate the live form with the new item's identity + initial snapshot.
+          const med = lookupResult.medication;
+          const sp = parseStrength(med.strength_raw);
+          setBarcodeNewMedForm(prev => ({
+            ...prev,
+            ...newItemSnapshot,
+            medicationId: med.id,
+            medicationLocked: true,
+            name: med.name,
+            strengthValue: sp.value,
+            strengthUnit: sp.unit,
+            volumeValue: sp.volumeValue,
+            volumeUnit: sp.volumeUnit,
+            strengthType: med.strength_raw ? 'value' : 'na',
+            type: (med.type || 'tablet').toLowerCase(),
+            itemsPerBox: med.standard_items_per_box ? String(med.standard_items_per_box) : '',
+            brand: med.brand || '',
+            existingBatches: lookupResult.existingBatches || []
+          }));
+
+          return true;
+        };
+
+        // Click-a-chip handler and same-barcode-already-in-queue path.
+        const switchFocusToQueueItem = async (targetBarcode, bumpCount) => {
+          if (targetBarcode === multiScanQueue.focusedBarcode && !bumpCount) return;
+
+          // Snapshot current form into whichever item is focused right now.
+          const currentBarcode = barcodeNewMedForm.barcode;
+          const currentSnapshot = snapshotFromForm(barcodeNewMedForm);
+
+          const targetItem = multiScanQueue.items.find(it => it.barcode === targetBarcode);
+          if (!targetItem) return;
+
+          setMultiScanQueue(prev => {
+            const items = prev.items.map(it => {
+              if (it.barcode === currentBarcode) return { ...it, formSnapshot: currentSnapshot };
+              if (it.barcode === targetBarcode && bumpCount) return { ...it, count: it.count + 1 };
+              return it;
+            });
+            return { ...prev, items, focusedBarcode: targetBarcode, unrecognisedWarning: '' };
+          });
+
+          // Re-run barcode lookup to restore identity fields, then apply snapshot.
+          try {
+            const result = await window.api.lookupByBarcode(targetBarcode);
+            if (result && result.found && result.medication) {
+              const med = result.medication;
+              const sp = parseStrength(med.strength_raw);
+              setBarcodeNewMedForm(prev => {
+                const snap = { ...targetItem.formSnapshot };
+                // If we're bumping the count on re-focus, also bump the matching quantity.
+                if (bumpCount) {
+                  const cfg = MULTI_SCAN_TAB_CONFIG[snap.activeTab || prev.activeTab];
+                  if (cfg) {
+                    const cur = parseInt(String(snap[cfg.field] || '0'), 10);
+                    snap[cfg.field] = String((Number.isFinite(cur) ? cur : 0) + 1);
+                  }
+                }
+                return {
+                  ...prev,
+                  ...snap,
+                  medicationId: med.id,
+                  medicationLocked: true,
+                  name: med.name,
+                  strengthValue: sp.value,
+                  strengthUnit: sp.unit,
+                  volumeValue: sp.volumeValue,
+                  volumeUnit: sp.volumeUnit,
+                  strengthType: med.strength_raw ? 'value' : 'na',
+                  type: (med.type || 'tablet').toLowerCase(),
+                  itemsPerBox: med.standard_items_per_box ? String(med.standard_items_per_box) : '',
+                  brand: med.brand || '',
+                  existingBatches: result.existingBatches || []
+                };
+              });
+            }
+          } catch (_) {
+            // Network failure — keep whatever we have.
+          }
+        };
+
+        const removeMultiScanItem = (barcode) => {
+          setMultiScanQueue(prev => {
+            const remaining = prev.items.filter(it => it.barcode !== barcode);
+            if (remaining.length === 0) {
+              return { active: false, items: [], focusedBarcode: null, unrecognisedWarning: '' };
+            }
+            // If we removed the focused one, focus the first remaining item.
+            const focusedBarcode = prev.focusedBarcode === barcode ? remaining[0].barcode : prev.focusedBarcode;
+            return { ...prev, items: remaining, focusedBarcode };
+          });
+        };
+
+        const cancelMultiScanSession = () => {
+          setMultiScanQueue({ active: false, items: [], focusedBarcode: null, unrecognisedWarning: '' });
+        };
+
+        // Commit every queued item to Neon. MVP scope: Add Stock tab only —
+        // the API flow is medicationUpsert + addBatch, matching
+        // handleBarcodeNewMedication. Other tabs (Transfer / Patient Use /
+        // Order) must be committed one-by-one via their single-scan submit
+        // buttons for now; the Commit All button skips them and reports.
+        const commitAllMultiScan = async () => {
+          // Snapshot the currently-focused form into its queue item first so
+          // edits the user made before clicking Commit All are captured.
+          const focused = multiScanQueue.focusedBarcode;
+          const liveSnapshot = snapshotFromForm(barcodeNewMedForm);
+          const items = multiScanQueue.items.map(it =>
+            it.barcode === focused ? { ...it, formSnapshot: liveSnapshot, activeTab: barcodeNewMedForm.activeTab } : it
+          );
+
+          const currentUser = getCurrentUserInfo();
+          if (!currentUser || !currentUser.id) {
+            setMultiScanQueue(prev => ({ ...prev, unrecognisedWarning: 'User not logged in.' }));
+            return;
+          }
+
+          setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: true, error: '', successMessage: '' }));
+
+          const failures = [];
+          let committed = 0;
+
+          for (const item of items) {
+            if (item.activeTab !== 'addStock') {
+              failures.push({ item, error: `${MULTI_SCAN_TAB_CONFIG[item.activeTab]?.label || item.activeTab} tab — click the chip and submit manually.` });
+              continue;
+            }
+            const snap = item.formSnapshot || {};
+            const boxQty = parseInt(String(snap.boxQuantity || item.count || '0').trim(), 10);
+            const itemsPerBox = parseInt(String(snap.itemsPerBox || item.standardItemsPerBox || '0').trim(), 10);
+            const brand = String(snap.brand || '').trim();
+            const batchNumber = String(snap.batchNumber || '').trim();
+            const location = String(snap.location || '').trim();
+            const expiryMonth = parseInt(String(snap.expiryMonth || '0'), 10);
+            const expiryYear = parseInt(String(snap.expiryYear || '0'), 10);
+
+            if (!boxQty || boxQty <= 0) { failures.push({ item, error: 'Missing box quantity.' }); continue; }
+            if (!itemsPerBox || itemsPerBox <= 0) { failures.push({ item, error: 'Missing items-per-box.' }); continue; }
+            if (!brand) { failures.push({ item, error: 'Missing brand.' }); continue; }
+            if (!batchNumber) { failures.push({ item, error: 'Missing batch/lot number.' }); continue; }
+            if (!location) { failures.push({ item, error: 'Missing location.' }); continue; }
+            if (!expiryMonth || !expiryYear) { failures.push({ item, error: 'Missing expiry date.' }); continue; }
+
+            try {
+              // Upsert medication (idempotent — updates min-level if set, resolves id).
+              const strengthRaw = item.strengthRaw || snap.strengthRaw || '';
+              const strengthForUpsert = snap.strengthType === 'na'
+                ? 'N/A'
+                : (strengthRaw || composeStrength(snap.strengthValue, snap.strengthUnit, snap.volumeValue, snap.volumeUnit));
+              const upsertResult = await window.api.medicationUpsert({
+                medicationId: item.medicationId,
+                name: item.name || snap.name,
+                strength: strengthForUpsert,
+                form: item.type || snap.type,
+                barcode: item.barcode,
+                standardItemsPerBox: itemsPerBox,
+                userId: currentUser.id
+              });
+              const medId = upsertResult?.medicationId || item.medicationId;
+
+              const locationId = getLocationId(location);
+              await window.api.addBatch({
+                medicationId: medId,
+                batchNumber,
+                expiryMonth,
+                expiryYear,
+                brand,
+                itemsPerBox,
+                quantityBoxes: boxQty,
+                quantityIndividuals: 0,
+                locationId,
+                userId: currentUser.id,
+                note: `Multi-scan delivery — ${item.displayName} × ${boxQty} boxes`,
+                serial: snap.serial || null
+              });
+              committed += 1;
+            } catch (err) {
+              failures.push({ item, error: err.message || 'Commit failed' });
+            }
+          }
+
+          // Refresh in-memory data so the meds list reflects the new batches.
+          try {
+            const data = await window.api.fetchAllData();
+            if (data) {
+              setMedications(data.medications || []);
+              setTransactions(data.transactions || []);
+            }
+          } catch (_) { /* non-critical — next poll will catch up */ }
+
+          if (failures.length === 0) {
+            setModals(prev => ({ ...prev, showBarcodeNewMedication: false }));
+            resetBarcodeNewMedForm();
+            cancelMultiScanSession();
+            return;
+          }
+
+          // Keep failed items in the queue so the user can fix and retry.
+          const remaining = failures.map(f => f.item);
+          const firstFailureMsg = failures[0] ? `${failures[0].item.displayName}: ${failures[0].error}` : '';
+          setMultiScanQueue(prev => ({
+            active: true,
+            items: remaining,
+            focusedBarcode: remaining[0]?.barcode || null,
+            unrecognisedWarning: `${committed} committed, ${failures.length} failed — ${firstFailureMsg}`
+          }));
+          setBarcodeNewMedForm(prev => ({ ...prev, isSubmitting: false }));
+        };
+
+        const handleBarcodeScanned = async (barcode) => {
           // Route to Med Database handler when on that tab
           if (ui.activeTab === 'meddatabase') {
             const gs1 = window.parseGs1Data(barcode);
@@ -3271,6 +3703,16 @@
           }
 
           const gs1Data = window.parseGs1Data(barcode);
+          const scannedGtin = normalizeBarcode(
+            gs1Data.isGs1 && gs1Data.gtin
+              ? gs1Data.gtin
+              : barcode.trim().replace(/\s+/g, '')
+          );
+
+          // If the 5-tab modal is already open for a recognised med, route to
+          // the multi-scan handler. It returns true when it absorbs the scan.
+          const absorbed = await handleMultiScanScan(scannedGtin, gs1Data);
+          if (absorbed) return;
 
           // GS1 pack with batch/expiry → reuse the camera medicine-pack handler so
           // batch / expiry / serial are pre-filled identically for both input paths.
@@ -3283,7 +3725,6 @@
           // handler. It opens showBarcodeNewMedication and calls handleBarcodeLookup;
           // on a recognised barcode that lookup sets medicationLocked=true and the
           // modal renders the 5-tab UI with full details populated from Neon.
-          const lookupBarcode = normalizeBarcode(barcode.trim().replace(/\s+/g, ''));
           const defaultLocation = (ui.currentLocation !== 'All' && !isGroupName(ui.currentLocation, locations))
             ? ui.currentLocation
             : 'Cupboard 1';
@@ -3292,7 +3733,7 @@
             location: defaultLocation,
             strengthType: 'value'
           }));
-          handleGenericBarcodeScan(lookupBarcode);
+          handleGenericBarcodeScan(scannedGtin);
         };
 
         // Global barcode scanner handler - works from anywhere in the app
@@ -9699,6 +10140,62 @@ ${tc.name()} Stock Management System`;
                         <p className="text-xs text-brand-dark mt-1">Medication found — details auto-filled.</p>
                       )}
                     </div>
+
+                    {/* Multi-scan queue strip — visible once a hardware-scan session is active */}
+                    {multiScanQueue.active && (
+                      <div className="mb-4 p-3 bg-brand-pale border border-brand-mid rounded-lg">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-semibold text-brand-dark mr-1">Scan queue:</span>
+                          {multiScanQueue.items.map(item => {
+                            const isFocused = item.barcode === multiScanQueue.focusedBarcode;
+                            return (
+                              <span key={item.barcode}
+                                className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded border cursor-pointer ${
+                                  isFocused
+                                    ? 'bg-brand-mid text-white border-brand-mid'
+                                    : 'bg-white text-brand-dark border-brand-mid hover:bg-brand-pale'
+                                }`}
+                                onClick={() => switchFocusToQueueItem(item.barcode, false)}
+                                title={`${item.displayName} — ${MULTI_SCAN_TAB_CONFIG[item.activeTab]?.label || item.activeTab}`}
+                              >
+                                {item.displayName} × {item.count}
+                                <span
+                                  className="ml-1 opacity-70 hover:opacity-100"
+                                  onClick={(e) => { e.stopPropagation(); removeMultiScanItem(item.barcode); }}
+                                >×</span>
+                              </span>
+                            );
+                          })}
+                          <div className="ml-auto flex gap-2">
+                            <button type="button"
+                              onClick={commitAllMultiScan}
+                              disabled={barcodeNewMedForm.isSubmitting}
+                              className="px-3 py-1 text-xs font-semibold bg-brand-mid text-white rounded hover:bg-brand-dark disabled:opacity-50"
+                            >
+                              {barcodeNewMedForm.isSubmitting ? 'Committing…' : `Commit all (${multiScanQueue.items.length})`}
+                            </button>
+                            <button type="button"
+                              onClick={cancelMultiScanSession}
+                              disabled={barcodeNewMedForm.isSubmitting}
+                              className="px-3 py-1 text-xs text-txt-secondary border border-bdr-default rounded hover:bg-off-white disabled:opacity-50"
+                            >Cancel session</button>
+                          </div>
+                        </div>
+                        {multiScanQueue.unrecognisedWarning && (
+                          <p className="text-xs text-danger-ghost-text mt-2">{multiScanQueue.unrecognisedWarning}</p>
+                        )}
+                        <p className="text-xs text-txt-tertiary mt-2">
+                          Same-barcode rescans bump the count on the active tab. Commit All currently supports Add Stock items only — for other tabs, click the chip and submit that item manually.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Transfer & Use tab: multi-scan not supported notice */}
+                    {multiScanQueue.active && barcodeNewMedForm.activeTab === 'transferAndUse' && (
+                      <div className="mb-3 p-2 bg-off-white border border-bdr-default rounded text-xs text-txt-secondary">
+                        Multi-scan is not available on the Transfer &amp; Use tab. Switch to another tab to continue scanning.
+                      </div>
+                    )}
 
                     {/* Tab bar — shown when medication is recognised OR in manual mode */}
                     {(barcodeNewMedForm.medicationLocked || barcodeNewMedForm.manualMode) && (
