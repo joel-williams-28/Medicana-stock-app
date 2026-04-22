@@ -3244,12 +3244,16 @@
          * Routing:
          * - Med Database tab → handleMedDbBarcodeScan
          * - Scan Cart active on medications tab → handleScanCartScan
-         * - Otherwise: API-first barcode lookup against Neon, then open stock-adjust
-         *   modal (existing med) or new-medication modal (unknown barcode).
+         * - Otherwise: open the 5-tab barcode modal (showBarcodeNewMedication)
+         *   and trigger handleBarcodeLookup, mirroring the camera path
+         *   (handleGenericBarcodeScan / handleMedicinePackScan). When the med
+         *   is recognised in Neon the lookup sets medicationLocked=true and
+         *   the modal switches to the 5-tab UI:
+         *     Add Stock · Transfer · Patient Use · Transfer & Use · Order
          *
          * GS1 AIs supported: (01) GTIN, (10) Batch, (17) Expiry YYMMDD, (21) Serial.
          */
-        const handleBarcodeScanned = async (barcode) => {
+        const handleBarcodeScanned = (barcode) => {
           // Route to Med Database handler when on that tab
           if (ui.activeTab === 'meddatabase') {
             const gs1 = window.parseGs1Data(barcode);
@@ -3268,156 +3272,27 @@
 
           const gs1Data = window.parseGs1Data(barcode);
 
-          // Determine lookup barcode and extract GS1 fields if present
-          let lookupBarcode = barcode.trim().replace(/\s+/g, '');
-          let batchNumber = '';
-          let expiryMonth = '';
-          let expiryYear = '';
-
-          if (gs1Data.isGs1) {
-            lookupBarcode = gs1Data.gtin || lookupBarcode;
-            batchNumber = gs1Data.batch || '';
-            const dateFormat = window.formatDateForMonthYear(gs1Data.expiryDate);
-            expiryMonth = dateFormat.month || '';
-            expiryYear = dateFormat.year ? String(dateFormat.year) : '';
+          // GS1 pack with batch/expiry → reuse the camera medicine-pack handler so
+          // batch / expiry / serial are pre-filled identically for both input paths.
+          if (gs1Data.isGs1 && (gs1Data.batch || gs1Data.expiryDateRaw)) {
+            handleMedicinePackScan(gs1Data);
+            return;
           }
 
-          const cleanBarcode = normalizeBarcode(lookupBarcode.trim().replace(/\s+/g, ''));
-
-          // API-first lookup: the local `medications` array comes from meds-get
-          // and filters out medications with no stock (no batches, no pending
-          // orders — see meds-get.js:144-148). So a med you registered via the
-          // Med Database tab is missing from local state until it has stock.
-          // Fall back to the local array only on network failure so offline-ish
-          // scans still work.
-          let foundMedication = null;
-          let isNoStockSynthesis = false;
-          try {
-            const result = await window.api.lookupByBarcode(cleanBarcode);
-            if (result && result.found && result.medication) {
-              const apiMed = result.medication;
-              // Try to match the API result to an existing local row first —
-              // preferred because local rows carry batches/location/unit etc.
-              const apiInternalId = String(apiMed.id);
-              const localCopy = medications.find(m => String(m.internalId) === apiInternalId)
-                || medications.find(m => normalizeBarcode(m.barcode) === cleanBarcode);
-              if (localCopy) {
-                foundMedication = localCopy;
-              } else {
-                // No stock yet — synthesize an object that matches the meds-get
-                // shape so the Quick Stock Adjustment modal renders correctly.
-                // Default the location to the current view when it's specific;
-                // otherwise fall back to the first available cupboard/location.
-                const strengthRaw = apiMed.strength_raw || '';
-                const displayName = strengthRaw && strengthRaw !== 'N/A'
-                  ? `${apiMed.name} ${strengthRaw}`
-                  : apiMed.name;
-                let defaultLoc = null;
-                if (ui.currentLocation && ui.currentLocation !== 'All' && !isGroupName(ui.currentLocation, locations)) {
-                  defaultLoc = locations.find(l => l.displayName === ui.currentLocation) || null;
-                }
-                if (!defaultLoc) {
-                  defaultLoc = locations.find(l => ['Cupboard 1', 'Cupboard 2', 'Cupboard 3'].includes(l.displayName))
-                    || locations[0]
-                    || null;
-                }
-                foundMedication = {
-                  id: displayName,
-                  internalId: apiMed.id,
-                  name: displayName,
-                  medicationName: apiMed.name,
-                  strength: strengthRaw,
-                  strengthRaw: strengthRaw,
-                  medicationDisplayId: displayName,
-                  minLevelBoxes: apiMed.min_level_boxes || 0,
-                  unit: apiMed.type || 'units',
-                  type: apiMed.type || 'stock',
-                  location: defaultLoc?.displayName || '',
-                  locationId: defaultLoc?.id || null,
-                  locationGroup: defaultLoc?.groupName || null,
-                  barcode: apiMed.barcode || cleanBarcode,
-                  standardItemsPerBox: apiMed.standard_items_per_box || null,
-                  fefo: apiMed.fefo !== false,
-                  batches: [],
-                  numberOfBoxes: 0
-                };
-                isNoStockSynthesis = true;
-                // Background refresh so a later scan finds the med locally once
-                // the first batch has been posted.
-                window.api.fetchAllData()
-                  .then(data => { if (data && data.medications) setMedications(data.medications); })
-                  .catch(() => { /* non-critical */ });
-              }
-            }
-          } catch (_) {
-            foundMedication = medications.find(med => normalizeBarcode(med.barcode) === cleanBarcode);
-          }
-
-          // Legacy fallback: partial name/id match against local array
-          if (!foundMedication) {
-            foundMedication = medications.find(med =>
-              med.name.toLowerCase().includes(cleanBarcode.toLowerCase()) ||
-              med.id.toString() === cleanBarcode
-            );
-          }
-
-          if (foundMedication) {
-            // Medication found - open stock adjustment modal
-
-            setUi(prev => ({
-              ...prev,
-              selectedMed: foundMedication,
-              searchTerm: foundMedication.name
-            }));
-
-            // Default quantity type to boxes
-            const defaultQuantityType = 'boxes';
-
-            // No-stock synthesis can't Transfer Out (no batches) — default to
-            // Stock In > New Delivery > New Batch so the user lands on a form
-            // they can actually submit.
-            const initialAction = isNoStockSynthesis ? 'in' : 'out';
-
-            // Open the barcode stock adjustment modal
-            setModals(prev => ({ ...prev, showBarcodeStockAdjust: true }));
-            setAdjustmentForm({ amount: '', note: '', location: '', type: defaultQuantityType, action: initialAction, batchId: '', sourceDepartment: '', stockInSource: 'delivery', transferBatchOption: 'existing', deliveryBatchOption: 'new', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' });
-
-            // Populate deliveryForm with GS1 data and the med's standard items-per-box
-            setDeliveryForm({
-              brand: foundMedication.brand || '',
-              expiryMonth: expiryMonth,
-              expiryYear: expiryYear,
-              quantityType: defaultQuantityType,
-              boxQuantity: '',
-              itemsPerBox: foundMedication.standardItemsPerBox ? String(foundMedication.standardItemsPerBox) : '',
-              individualQuantity: '',
-              batchNumber: batchNumber
-            });
-
-            // Scroll to the medication in the list
-            setTimeout(() => {
-              const medElement = document.querySelector(`[data-med-id="${foundMedication.id}"]`);
-              if (medElement) {
-                medElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }
-            }, 100);
-
-          } else {
-            // Medication not found - open new medication modal
-
-            const defaultLocation = (ui.currentLocation !== 'All' && !isGroupName(ui.currentLocation, locations)) ? ui.currentLocation : 'Cupboard 1';
-            setModals(prev => ({ ...prev, showBarcodeNewMedication: true }));
-            setBarcodeNewMedForm(prev => ({
-              ...prev,
-              barcode: cleanBarcode,
-              batchNumber: batchNumber,
-              expiryMonth: expiryMonth,
-              expiryYear: expiryYear,
-              location: defaultLocation,
-              strengthType: 'value' // Always default to 'value' for new barcode scans
-            }));
-            // The useEffect hook will automatically trigger the lookup when the modal opens with a barcode
-          }
+          // Plain 1D barcode (or GS1 without batch data) → reuse the camera generic
+          // handler. It opens showBarcodeNewMedication and calls handleBarcodeLookup;
+          // on a recognised barcode that lookup sets medicationLocked=true and the
+          // modal renders the 5-tab UI with full details populated from Neon.
+          const lookupBarcode = normalizeBarcode(barcode.trim().replace(/\s+/g, ''));
+          const defaultLocation = (ui.currentLocation !== 'All' && !isGroupName(ui.currentLocation, locations))
+            ? ui.currentLocation
+            : 'Cupboard 1';
+          setBarcodeNewMedForm(prev => ({
+            ...prev,
+            location: defaultLocation,
+            strengthType: 'value'
+          }));
+          handleGenericBarcodeScan(lookupBarcode);
         };
 
         // Global barcode scanner handler - works from anywhere in the app
