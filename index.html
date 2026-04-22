@@ -3283,9 +3283,12 @@
         // Snapshot everything in barcodeNewMedForm *except* the identity fields
         // that are re-hydrated from handleBarcodeLookup — that way switching
         // focus restores user input without re-running the lookup lookup lookup.
+        // NOTE: `brand` and `itemsPerBox` are per-delivery values (editable by
+        // the user for each scanned carton), NOT identity. They must be in the
+        // snapshot so the live form's current values flow through to commit.
         const IDENTITY_FIELDS = [
           'medicationId', 'name', 'strengthValue', 'strengthUnit', 'volumeValue', 'volumeUnit',
-          'strengthType', 'type', 'itemsPerBox', 'brand', 'existingBatches', 'medicationLocked'
+          'strengthType', 'type', 'existingBatches', 'medicationLocked'
         ];
         const snapshotFromForm = (form) => {
           const snap = {};
@@ -3549,7 +3552,12 @@
             serial: initialSerial,
             expiryMonth: initialExpMonth,
             expiryYear: initialExpYear,
+            // Reset per-delivery fields so the new med doesn't inherit the
+            // previous med's brand, items-per-box, or quantity.
+            brand: '',
+            itemsPerBox: '',
             boxQuantity: '1',
+            individualQuantity: '0',
             transferQuantity: '',
             useQuantity: '',
             orderQuantity: '',
@@ -3685,8 +3693,10 @@
                   volumeUnit: sp.volumeUnit,
                   strengthType: med.strength_raw ? 'value' : 'na',
                   type: (med.type || 'tablet').toLowerCase(),
-                  itemsPerBox: med.standard_items_per_box ? String(med.standard_items_per_box) : '',
-                  brand: med.brand || '',
+                  // Per-delivery fields: prefer the user's snapshot value,
+                  // fall back to the medication's default from the lookup.
+                  itemsPerBox: snap.itemsPerBox || (med.standard_items_per_box ? String(med.standard_items_per_box) : ''),
+                  brand: snap.brand || med.brand || '',
                   existingBatches: result.existingBatches || []
                 };
               });
