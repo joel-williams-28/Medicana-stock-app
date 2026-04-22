@@ -2261,23 +2261,66 @@
           if (result.found && result.medication) {
             const med = result.medication;
             const sp = parseStrength(med.strength_raw);
-            // Prefill and lock medication fields
-            setBarcodeNewMedForm(prev => ({
-              ...prev,
-              medicationId: med.id,
-              medicationLocked: true,
-              name: med.name,
-              strengthValue: sp.value,
-              strengthUnit: sp.unit,
-              volumeValue: sp.volumeValue,
-              volumeUnit: sp.volumeUnit,
-              strengthType: med.strength_raw ? 'value' : 'na',
-              type: med.type.toLowerCase() || 'tablet',
-              itemsPerBox: med.standard_items_per_box ? String(med.standard_items_per_box) : '',
-              brand: med.brand || '',
-              existingBatches: result.existingBatches || [],
-              existingBatchId: null // Reset batch selection
-            }));
+            const existingBatches = result.existingBatches || [];
+            // Prefill and lock medication fields. If a batch number was pre-populated
+            // by the GS1 scanner, auto-match it against existing batches (or fall
+            // through to "enter new batch" mode) so the scanned batch stays visible.
+            setBarcodeNewMedForm(prev => {
+              const scannedBatch = (prev.batchNumber || '').trim();
+              const scannedKey = scannedBatch.toLowerCase();
+              const matched = scannedKey
+                ? existingBatches.find(b => (b.batchCode || '').trim().toLowerCase() === scannedKey)
+                : null;
+
+              const base = {
+                ...prev,
+                medicationId: med.id,
+                medicationLocked: true,
+                name: med.name,
+                strengthValue: sp.value,
+                strengthUnit: sp.unit,
+                volumeValue: sp.volumeValue,
+                volumeUnit: sp.volumeUnit,
+                strengthType: med.strength_raw ? 'value' : 'na',
+                type: med.type.toLowerCase() || 'tablet',
+                itemsPerBox: med.standard_items_per_box ? String(med.standard_items_per_box) : '',
+                brand: med.brand || '',
+                existingBatches,
+              };
+
+              if (matched) {
+                const expiry = matched.expiryDate ? new Date(matched.expiryDate) : null;
+                const expiryMonth = expiry ? String(expiry.getMonth() + 1).padStart(2, '0') : prev.expiryMonth;
+                const expiryYear  = expiry ? String(expiry.getFullYear()) : prev.expiryYear;
+                return {
+                  ...base,
+                  existingBatchId: matched.id,
+                  batchLocked: true,
+                  batchExists: true,
+                  batchNumber: matched.batchCode || prev.batchNumber,
+                  brand: matched.brand || base.brand,
+                  expiryMonth,
+                  expiryYear,
+                  itemsPerBox: matched.itemsPerBox ? String(matched.itemsPerBox) : base.itemsPerBox,
+                  enteringNewBatch: false,
+                };
+              }
+
+              if (scannedBatch && existingBatches.length > 0) {
+                return {
+                  ...base,
+                  existingBatchId: null,
+                  enteringNewBatch: true,
+                  batchLocked: false,
+                  batchExists: false,
+                };
+              }
+
+              return {
+                ...base,
+                existingBatchId: null,
+              };
+            });
           } else {
             // Medication not found - unlock fields for manual entry
             setBarcodeNewMedForm(prev => ({
