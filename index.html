@@ -3297,6 +3297,14 @@
 
         // Global barcode scanner handler - works from anywhere in the app
         const handleGlobalBarcodeInput = (e) => {
+          // Filter out non-character keys. e.key is multi-char for modifiers
+          // ("Shift", "Control", "Alt", "Meta", "CapsLock"), navigation
+          // ("Enter", "Tab", "Arrow…", "Backspace"), function keys ("F1"…),
+          // dead keys ("Dead"), etc. Without this filter, a scanner that
+          // emits Shift+G fires two keydowns (Shift then G) and the literal
+          // string "Shift" gets concatenated into the buffer — so a GS1 lot
+          // like "19G08C8" accumulates as "19ShiftG08ShiftC8".
+          if (!e.key || e.key.length !== 1) return;
           const char = e.key;
           const now = Date.now();
           
