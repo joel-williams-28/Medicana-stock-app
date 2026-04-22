@@ -10,11 +10,31 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="cliniTrack">
+
+    <!-- Premium typography: Inter for UI, with Manrope available for display accents. Preconnect for perceived speed. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@600;700;800&display=swap">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
+      /* ------------------------------------------------------------------
+         Design Tokens (Tailwind theme extension)
+         ------------------------------------------------------------------
+         Kept backwards-compatible with existing classNames. New tokens
+         (surface, ink, ring, premium shadows, Inter font family, refined
+         radii) are additive so the existing UI continues to render
+         identically while gaining access to a polished, consistent
+         design system.
+      ------------------------------------------------------------------ */
       tailwind.config = {
         theme: {
           extend: {
+            fontFamily: {
+              sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
+              display: ['Manrope', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+              mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+            },
             colors: {
               brand: {
                 light: '#5DCAA5',
@@ -22,6 +42,34 @@
                 dark: '#085041',
                 deepest: '#04342C',
                 pale: '#E1F5EE',
+                50:  '#F1FBF7',
+                100: '#E1F5EE',
+                200: '#C2EADB',
+                300: '#93D9BF',
+                400: '#5DCAA5',
+                500: '#2FA583',
+                600: '#0F6E56',
+                700: '#0B5A47',
+                800: '#085041',
+                900: '#04342C',
+              },
+              ink: {
+                900: '#0F1115',
+                800: '#1A1D21',
+                700: '#2B2F35',
+                600: '#3D3D3A',
+                500: '#6B6A66',
+                400: '#9C9A94',
+                300: '#C4C2BC',
+                200: '#E8E6E1',
+                100: '#F1EFE8',
+                50:  '#FAFAF7',
+              },
+              surface: {
+                canvas: '#FAFAF7',
+                raised: '#FFFFFF',
+                sunken:  '#F5F4F0',
+                overlay: 'rgba(15,17,21,0.55)',
               },
               'near-black': '#1A1A1A',
               'off-white': '#F5F5F3',
@@ -55,25 +103,381 @@
               'chip-inactive-bg': '#F5F4F1',
               'chip-inactive-text': '#6B6A66',
               'chip-inactive-border': '#D0CFC9',
-            }
+            },
+            borderRadius: {
+              'xs': '4px',
+              'sm': '6px',
+              'md': '8px',
+              'lg': '12px',
+              'xl': '16px',
+              '2xl': '20px',
+            },
+            boxShadow: {
+              'xs':       '0 1px 2px rgba(16,24,40,0.04)',
+              'soft':     '0 1px 2px rgba(16,24,40,0.04), 0 1px 3px rgba(16,24,40,0.04), 0 0 0 1px rgba(16,24,40,0.03)',
+              'elevated': '0 2px 4px rgba(16,24,40,0.04), 0 8px 24px -4px rgba(16,24,40,0.08), 0 0 0 1px rgba(16,24,40,0.03)',
+              'premium':  '0 4px 6px -2px rgba(16,24,40,0.04), 0 20px 40px -10px rgba(16,24,40,0.12), 0 0 0 1px rgba(16,24,40,0.04)',
+              'modal':    '0 8px 16px -4px rgba(16,24,40,0.06), 0 32px 64px -16px rgba(16,24,40,0.22), 0 0 0 1px rgba(16,24,40,0.04)',
+              'ring-brand': '0 0 0 4px rgba(15,110,86,0.14)',
+              'ring-danger': '0 0 0 4px rgba(220,79,79,0.16)',
+            },
+            letterSpacing: {
+              tightest: '-0.03em',
+              tighter: '-0.02em',
+              snug: '-0.01em',
+            },
+            transitionTimingFunction: {
+              'out-expo': 'cubic-bezier(0.16, 1, 0.3, 1)',
+              'in-out-soft': 'cubic-bezier(0.4, 0, 0.2, 1)',
+            },
+            keyframes: {
+              fadeIn:   { from: { opacity: 0 }, to: { opacity: 1 } },
+              slideUp:  { from: { opacity: 0, transform: 'translateY(8px)' }, to: { opacity: 1, transform: 'translateY(0)' } },
+              scaleIn:  { from: { opacity: 0, transform: 'scale(0.97)' }, to: { opacity: 1, transform: 'scale(1)' } },
+              shimmer:  { '0%':   { backgroundPosition: '-400px 0' }, '100%': { backgroundPosition: '400px 0' } },
+            },
+            animation: {
+              'fade-in':  'fadeIn 240ms ease-out both',
+              'slide-up': 'slideUp 280ms cubic-bezier(0.16, 1, 0.3, 1) both',
+              'scale-in': 'scaleIn 220ms cubic-bezier(0.16, 1, 0.3, 1) both',
+              'shimmer':  'shimmer 1.6s linear infinite',
+            },
           }
         }
       }
     </script>
+
     <style>
+      /* ================================================================
+         CliniTrack — Premium Design Layer
+         ----------------------------------------------------------------
+         Non-invasive visual polish. Targets already-used class patterns
+         (shadow, rounded-lg, bg-white, modals, tabs, tables, inputs)
+         so the existing JSX is unchanged while the UI gains a cohesive,
+         high-end SaaS feel. No functionality is altered.
+         ================================================================ */
+
+      /* ---- Base ---------------------------------------------------- */
       html {
         scrollbar-gutter: stable;
+        -webkit-text-size-adjust: 100%;
+        text-rendering: optimizeLegibility;
       }
-      .scrollbar-hide {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
+
+      html, body {
+        font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        font-feature-settings: "cv11", "ss01", "ss03";
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        color: #1A1A1A;
+        letter-spacing: -0.005em;
       }
-      .scrollbar-hide::-webkit-scrollbar {
-        display: none;
+
+      /* Ambient canvas — extremely subtle brand wash for perceived depth */
+      body {
+        background:
+          radial-gradient(1200px 600px at -10% -10%, rgba(93,202,165,0.06), transparent 60%),
+          radial-gradient(900px 500px at 110% 0%, rgba(15,110,86,0.04), transparent 60%),
+          #FAFAF7;
+        min-height: 100vh;
       }
-      @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
+
+      /* Refine the login/app gradient to be softer and more premium */
+      .bg-gradient-to-br.from-off-white.to-brand-pale {
+        background:
+          radial-gradient(900px 500px at 0% 0%, rgba(93,202,165,0.16), transparent 60%),
+          radial-gradient(800px 400px at 100% 100%, rgba(15,110,86,0.08), transparent 60%),
+          linear-gradient(135deg, #F7F6F2 0%, #ECF7F2 100%) !important;
+      }
+
+      /* ---- Typography --------------------------------------------- */
+      h1, h2, h3, h4, h5, h6 {
+        font-family: 'Manrope', 'Inter', ui-sans-serif, system-ui, sans-serif;
+        letter-spacing: -0.02em;
+        font-weight: 700;
+        color: #0F1115;
+      }
+      h1 { letter-spacing: -0.03em; }
+      .font-semibold { font-weight: 600; }
+      .font-bold     { font-weight: 700; }
+
+      /* Numeric tabular figures for tables & stats */
+      table, .tabular-nums, [class*="font-mono"] {
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ---- Scrollbar ---------------------------------------------- */
+      .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+      .scrollbar-hide::-webkit-scrollbar { display: none; }
+
+      *::-webkit-scrollbar { width: 10px; height: 10px; }
+      *::-webkit-scrollbar-track { background: transparent; }
+      *::-webkit-scrollbar-thumb {
+        background: #E0DED6;
+        border-radius: 8px;
+        border: 2px solid transparent;
+        background-clip: content-box;
+      }
+      *::-webkit-scrollbar-thumb:hover {
+        background: #C9C7BF;
+        background-clip: content-box;
+        border: 2px solid transparent;
+      }
+      * { scrollbar-color: #E0DED6 transparent; scrollbar-width: thin; }
+
+      /* ---- Shadows: elevate the existing Tailwind utilities ------- */
+      .shadow-sm { box-shadow: 0 1px 2px rgba(16,24,40,0.04) !important; }
+      .shadow,
+      .shadow-md {
+        box-shadow:
+          0 1px 2px rgba(16,24,40,0.04),
+          0 1px 3px rgba(16,24,40,0.04),
+          0 0 0 1px rgba(16,24,40,0.03) !important;
+      }
+      .shadow-lg {
+        box-shadow:
+          0 2px 4px rgba(16,24,40,0.04),
+          0 10px 28px -6px rgba(16,24,40,0.08),
+          0 0 0 1px rgba(16,24,40,0.03) !important;
+      }
+      .shadow-xl {
+        box-shadow:
+          0 4px 6px -2px rgba(16,24,40,0.04),
+          0 22px 44px -12px rgba(16,24,40,0.12),
+          0 0 0 1px rgba(16,24,40,0.04) !important;
+      }
+      .shadow-2xl {
+        box-shadow:
+          0 8px 16px -4px rgba(16,24,40,0.06),
+          0 36px 72px -18px rgba(16,24,40,0.22),
+          0 0 0 1px rgba(16,24,40,0.04) !important;
+      }
+
+      /* ---- Radii: snappier, consistent --------------------------- */
+      .rounded     { border-radius: 8px !important; }
+      .rounded-md  { border-radius: 10px !important; }
+      .rounded-lg  { border-radius: 12px !important; }
+      .rounded-xl  { border-radius: 16px !important; }
+      .rounded-2xl { border-radius: 20px !important; }
+
+      /* Cards — the app's main surface */
+      .bg-white.rounded-lg { border-radius: 14px; }
+      .bg-white.rounded-lg.shadow,
+      .bg-white.rounded-lg.shadow-lg,
+      .bg-white.rounded-lg.shadow-xl {
+        border: 1px solid rgba(16,24,40,0.05);
+      }
+
+      /* ---- Borders: softer, more neutral ------------------------- */
+      .border, .border-t, .border-b, .border-l, .border-r {
+        border-color: #ECE9E1;
+      }
+      .border-bdr-default { border-color: #E5E2D9 !important; }
+      .divide-y > * + * { border-color: #ECE9E1; }
+
+      /* ---- Buttons: polish every <button> without touching JSX --- */
+      button {
+        transition:
+          transform 150ms cubic-bezier(0.16, 1, 0.3, 1),
+          box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1),
+          background-color 180ms cubic-bezier(0.4, 0, 0.2, 1),
+          color 180ms cubic-bezier(0.4, 0, 0.2, 1),
+          border-color 180ms cubic-bezier(0.4, 0, 0.2, 1),
+          opacity 180ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+        letter-spacing: -0.005em;
+      }
+      button:not(:disabled):active {
+        transform: translateY(1px) scale(0.99);
+      }
+      button:disabled { cursor: not-allowed; opacity: 0.55; }
+
+      /* Primary brand buttons — subtle gradient + lift */
+      button.bg-brand-mid,
+      button.bg-brand-dark,
+      button.bg-near-black {
+        background-image: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(0,0,0,0.06));
+        box-shadow:
+          0 1px 1px rgba(16,24,40,0.06),
+          0 1px 2px rgba(16,24,40,0.08),
+          inset 0 1px 0 rgba(255,255,255,0.10);
+      }
+      button.bg-brand-mid:not(:disabled):hover,
+      button.bg-brand-dark:not(:disabled):hover,
+      button.bg-near-black:not(:disabled):hover {
+        box-shadow:
+          0 2px 4px rgba(16,24,40,0.10),
+          0 8px 20px -6px rgba(15,110,86,0.30),
+          inset 0 1px 0 rgba(255,255,255,0.12);
+        transform: translateY(-1px);
+      }
+
+      /* Danger / urgent variants */
+      button.bg-urgent,
+      button.bg-danger-solid {
+        background-image: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(0,0,0,0.05));
+        box-shadow: 0 1px 2px rgba(16,24,40,0.08), inset 0 1px 0 rgba(255,255,255,0.12);
+      }
+      button.bg-urgent:not(:disabled):hover,
+      button.bg-danger-solid:not(:disabled):hover {
+        box-shadow: 0 8px 20px -6px rgba(216,90,48,0.35), inset 0 1px 0 rgba(255,255,255,0.12);
+        transform: translateY(-1px);
+      }
+
+      /* Secondary / ghost buttons */
+      button.bg-brand-pale:not(:disabled):hover,
+      button.bg-off-white:not(:disabled):hover,
+      button.bg-white:not(:disabled):hover {
+        box-shadow: 0 1px 2px rgba(16,24,40,0.06), 0 2px 6px -2px rgba(16,24,40,0.06);
+      }
+
+      /* ---- Inputs, selects, textareas ---------------------------- */
+      input, select, textarea {
+        transition:
+          box-shadow 180ms cubic-bezier(0.4, 0, 0.2, 1),
+          border-color 180ms cubic-bezier(0.4, 0, 0.2, 1),
+          background-color 180ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+        font-family: inherit;
+      }
+      input:hover:not(:focus):not(:disabled),
+      select:hover:not(:focus):not(:disabled),
+      textarea:hover:not(:focus):not(:disabled) {
+        border-color: #C9C7BF;
+      }
+      input:focus, select:focus, textarea:focus {
+        outline: none !important;
+        border-color: #0F6E56 !important;
+        box-shadow:
+          0 0 0 4px rgba(15,110,86,0.14),
+          0 1px 2px rgba(16,24,40,0.04) !important;
+      }
+      input::placeholder, textarea::placeholder { color: #A7A59F; }
+      /* Consistent control height & comfortable padding */
+      select { background-position: right 0.6rem center; }
+
+      /* ---- Focus-visible ring for keyboard a11y ------------------ */
+      a:focus-visible,
+      [role="button"]:focus-visible,
+      button:focus-visible {
+        outline: none;
+        box-shadow:
+          0 0 0 4px rgba(15,110,86,0.22),
+          0 1px 2px rgba(16,24,40,0.06) !important;
+        border-radius: 10px;
+      }
+
+      /* ---- Modals / overlays ------------------------------------- */
+      /* Dim the page beneath modal overlays and add a soft blur — common
+         pattern used here is `fixed inset-0 bg-black bg-opacity-*`. */
+      div[class*="fixed"][class*="inset-0"][class*="bg-black"] {
+        background-color: rgba(15,17,21,0.48) !important;
+        backdrop-filter: blur(6px) saturate(1.05);
+        -webkit-backdrop-filter: blur(6px) saturate(1.05);
+        animation: fadeIn 180ms ease-out both;
+      }
+      /* The modal panel itself (white rounded sheet inside the overlay) */
+      div[class*="fixed"][class*="inset-0"] .bg-white.rounded-lg,
+      div[class*="fixed"][class*="inset-0"] .bg-white.rounded {
+        box-shadow:
+          0 8px 16px -4px rgba(16,24,40,0.06),
+          0 36px 72px -18px rgba(16,24,40,0.26),
+          0 0 0 1px rgba(16,24,40,0.04) !important;
+        animation: scaleIn 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+        border-radius: 16px;
+      }
+
+      /* ---- Header: premium dark bar (replaces flat #2D2D2D) ------ */
+      .bg-\[\#2D2D2D\] {
+        background:
+          radial-gradient(600px 200px at 20% 0%, rgba(93,202,165,0.08), transparent 60%),
+          linear-gradient(180deg, #1F2226 0%, #131619 100%) !important;
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,0.06),
+          0 10px 28px -16px rgba(0,0,0,0.5) !important;
+        border-bottom-color: rgba(255,255,255,0.06) !important;
+      }
+      .border-\[\#2D2D2D\] { border-color: rgba(255,255,255,0.06) !important; }
+
+      /* ---- Tabs: sharper active underline, smoother hover -------- */
+      nav button {
+        transition: color 180ms ease, border-color 180ms ease, background-color 180ms ease !important;
+        border-radius: 0 !important;
+      }
+      nav button.border-brand-mid {
+        position: relative;
+      }
+      nav button.border-brand-mid::after {
+        content: "";
+        position: absolute;
+        left: 12px; right: 12px; bottom: -1px;
+        height: 2px;
+        background: linear-gradient(90deg, #5DCAA5 0%, #0F6E56 100%);
+        border-radius: 2px;
+        animation: fadeIn 180ms ease-out both;
+      }
+
+      /* ---- Tables: restrained lines, subtle hover ---------------- */
+      table { border-collapse: separate; border-spacing: 0; }
+      thead th {
+        letter-spacing: 0.045em;
+        text-transform: uppercase;
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: #6B6A66;
+      }
+      tbody tr { transition: background-color 140ms ease; }
+      tbody tr:hover { background-color: rgba(225,245,238,0.38); }
+      tbody td, thead th { border-color: #ECE9E1; }
+
+      /* ---- Status chips: add a subtle hairline border ------------ */
+      [class*="bg-status-"][class*="text-status-"],
+      [class*="bg-urgent-ghost-bg"],
+      [class*="bg-danger-ghost-bg"],
+      [class*="bg-chip-inactive-bg"] {
+        border: 1px solid rgba(16,24,40,0.06);
+      }
+
+      /* ---- Links -------------------------------------------------- */
+      a { transition: color 150ms ease; }
+      a:hover { text-decoration-thickness: 1.5px; }
+
+      /* ---- Micro-interactions ------------------------------------ */
+      @keyframes fadeIn  { from { opacity: 0 } to { opacity: 1 } }
+      @keyframes slideUp { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
+      @keyframes scaleIn { from { opacity: 0; transform: scale(0.97) } to { opacity: 1; transform: scale(1) } }
+
+      /* Skeleton shimmer helper (available for any .skeleton element) */
+      .skeleton {
+        background:
+          linear-gradient(90deg, #F1EFE8 0%, #F8F7F3 50%, #F1EFE8 100%);
+        background-size: 800px 100%;
+        animation: shimmer 1.6s linear infinite;
+        border-radius: 8px;
+      }
+      @keyframes shimmer {
+        0%   { background-position: -400px 0; }
+        100% { background-position:  400px 0; }
+      }
+
+      /* Text selection uses the brand tint */
+      ::selection { background: rgba(93,202,165,0.35); color: #0F1115; }
+
+      /* ---- Images: prevent blur on logos during scale ------------ */
+      img { image-rendering: -webkit-optimize-contrast; }
+
+      /* ---- Responsive touch target boost on small screens -------- */
+      @media (max-width: 640px) {
+        button, [role="button"] { min-height: 40px; }
+        input, select { min-height: 40px; }
+      }
+
+      /* ---- Respect reduced motion -------------------------------- */
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.001ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.001ms !important;
+          scroll-behavior: auto !important;
+        }
       }
     </style>
   </head>
@@ -1857,23 +2261,66 @@
           if (result.found && result.medication) {
             const med = result.medication;
             const sp = parseStrength(med.strength_raw);
-            // Prefill and lock medication fields
-            setBarcodeNewMedForm(prev => ({
-              ...prev,
-              medicationId: med.id,
-              medicationLocked: true,
-              name: med.name,
-              strengthValue: sp.value,
-              strengthUnit: sp.unit,
-              volumeValue: sp.volumeValue,
-              volumeUnit: sp.volumeUnit,
-              strengthType: med.strength_raw ? 'value' : 'na',
-              type: med.type.toLowerCase() || 'tablet',
-              itemsPerBox: med.standard_items_per_box ? String(med.standard_items_per_box) : '',
-              brand: med.brand || '',
-              existingBatches: result.existingBatches || [],
-              existingBatchId: null // Reset batch selection
-            }));
+            const existingBatches = result.existingBatches || [];
+            // Prefill and lock medication fields. If a batch number was pre-populated
+            // by the GS1 scanner, auto-match it against existing batches (or fall
+            // through to "enter new batch" mode) so the scanned batch stays visible.
+            setBarcodeNewMedForm(prev => {
+              const scannedBatch = (prev.batchNumber || '').trim();
+              const scannedKey = scannedBatch.toLowerCase();
+              const matched = scannedKey
+                ? existingBatches.find(b => (b.batchCode || '').trim().toLowerCase() === scannedKey)
+                : null;
+
+              const base = {
+                ...prev,
+                medicationId: med.id,
+                medicationLocked: true,
+                name: med.name,
+                strengthValue: sp.value,
+                strengthUnit: sp.unit,
+                volumeValue: sp.volumeValue,
+                volumeUnit: sp.volumeUnit,
+                strengthType: med.strength_raw ? 'value' : 'na',
+                type: med.type.toLowerCase() || 'tablet',
+                itemsPerBox: med.standard_items_per_box ? String(med.standard_items_per_box) : '',
+                brand: med.brand || '',
+                existingBatches,
+              };
+
+              if (matched) {
+                const expiry = matched.expiryDate ? new Date(matched.expiryDate) : null;
+                const expiryMonth = expiry ? String(expiry.getMonth() + 1).padStart(2, '0') : prev.expiryMonth;
+                const expiryYear  = expiry ? String(expiry.getFullYear()) : prev.expiryYear;
+                return {
+                  ...base,
+                  existingBatchId: matched.id,
+                  batchLocked: true,
+                  batchExists: true,
+                  batchNumber: matched.batchCode || prev.batchNumber,
+                  brand: matched.brand || base.brand,
+                  expiryMonth,
+                  expiryYear,
+                  itemsPerBox: matched.itemsPerBox ? String(matched.itemsPerBox) : base.itemsPerBox,
+                  enteringNewBatch: false,
+                };
+              }
+
+              if (scannedBatch && existingBatches.length > 0) {
+                return {
+                  ...base,
+                  existingBatchId: null,
+                  enteringNewBatch: true,
+                  batchLocked: false,
+                  batchExists: false,
+                };
+              }
+
+              return {
+                ...base,
+                existingBatchId: null,
+              };
+            });
           } else {
             // Medication not found - unlock fields for manual entry
             setBarcodeNewMedForm(prev => ({
@@ -10199,7 +10646,7 @@ ${tc.name()} Stock Management System`;
             {/* Barcode New Medication Modal */}
             {modals.showBarcodeNewMedication && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4" style={{zIndex: 9999}} onMouseDown={(e) => { if (e.target === e.currentTarget) e.currentTarget.dataset.mousedownOnOverlay = 'true'; }} onClick={(e) => { if (e.target === e.currentTarget && e.currentTarget.dataset.mousedownOnOverlay === 'true') { delete e.currentTarget.dataset.mousedownOnOverlay; resetBarcodeNewMedForm(); setModals(prev => ({ ...prev, showBarcodeNewMedication: false })); } else { delete e.currentTarget.dataset.mousedownOnOverlay; } }}>
-                <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-2xl w-full flex flex-col m-2 sm:m-4" style={{maxHeight: '90vh'}}>
+                <div className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-3xl w-full flex flex-col m-2 sm:m-4" style={{maxHeight: '90vh'}}>
                   <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-bdr-default flex-shrink-0">
                     <h2 className="text-base sm:text-lg font-bold text-near-black">
                       {barcodeNewMedForm.medicationLocked
