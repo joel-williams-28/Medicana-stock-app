@@ -3285,30 +3285,65 @@
           const cleanBarcode = normalizeBarcode(lookupBarcode.trim().replace(/\s+/g, ''));
 
           // API-first lookup: the local `medications` array comes from meds-get
-          // and may omit medications with no stock, so a DB round-trip is the
-          // only reliable source of truth. Fall back to the local array only on
-          // network failure so offline-ish scans still work.
+          // and filters out medications with no stock (no batches, no pending
+          // orders — see meds-get.js:144-148). So a med you registered via the
+          // Med Database tab is missing from local state until it has stock.
+          // Fall back to the local array only on network failure so offline-ish
+          // scans still work.
           let foundMedication = null;
+          let isNoStockSynthesis = false;
           try {
             const result = await window.api.lookupByBarcode(cleanBarcode);
             if (result && result.found && result.medication) {
               const apiMed = result.medication;
-              const localCopy = medications.find(m => String(m.id) === String(apiMed.id));
-              foundMedication = localCopy || {
-                id: apiMed.id,
-                name: apiMed.name,
-                strength: apiMed.strength_raw || '',
-                form: apiMed.type || '',
-                brand: apiMed.brand || '',
-                barcode: apiMed.barcode || cleanBarcode,
-                standard_items_per_box: apiMed.standard_items_per_box || null,
-                fefo: apiMed.fefo !== false,
-                min_level_boxes: apiMed.min_level_boxes || 0,
-                batches: [],
-                locations: {}
-              };
-              // Background refresh so the stock-adjust modal has full batch/location data
-              if (!localCopy) {
+              // Try to match the API result to an existing local row first —
+              // preferred because local rows carry batches/location/unit etc.
+              const apiInternalId = String(apiMed.id);
+              const localCopy = medications.find(m => String(m.internalId) === apiInternalId)
+                || medications.find(m => normalizeBarcode(m.barcode) === cleanBarcode);
+              if (localCopy) {
+                foundMedication = localCopy;
+              } else {
+                // No stock yet — synthesize an object that matches the meds-get
+                // shape so the Quick Stock Adjustment modal renders correctly.
+                // Default the location to the current view when it's specific;
+                // otherwise fall back to the first available cupboard/location.
+                const strengthRaw = apiMed.strength_raw || '';
+                const displayName = strengthRaw && strengthRaw !== 'N/A'
+                  ? `${apiMed.name} ${strengthRaw}`
+                  : apiMed.name;
+                let defaultLoc = null;
+                if (ui.currentLocation && ui.currentLocation !== 'All' && !isGroupName(ui.currentLocation, locations)) {
+                  defaultLoc = locations.find(l => l.displayName === ui.currentLocation) || null;
+                }
+                if (!defaultLoc) {
+                  defaultLoc = locations.find(l => ['Cupboard 1', 'Cupboard 2', 'Cupboard 3'].includes(l.displayName))
+                    || locations[0]
+                    || null;
+                }
+                foundMedication = {
+                  id: displayName,
+                  internalId: apiMed.id,
+                  name: displayName,
+                  medicationName: apiMed.name,
+                  strength: strengthRaw,
+                  strengthRaw: strengthRaw,
+                  medicationDisplayId: displayName,
+                  minLevelBoxes: apiMed.min_level_boxes || 0,
+                  unit: apiMed.type || 'units',
+                  type: apiMed.type || 'stock',
+                  location: defaultLoc?.displayName || '',
+                  locationId: defaultLoc?.id || null,
+                  locationGroup: defaultLoc?.groupName || null,
+                  barcode: apiMed.barcode || cleanBarcode,
+                  standardItemsPerBox: apiMed.standard_items_per_box || null,
+                  fefo: apiMed.fefo !== false,
+                  batches: [],
+                  numberOfBoxes: 0
+                };
+                isNoStockSynthesis = true;
+                // Background refresh so a later scan finds the med locally once
+                // the first batch has been posted.
                 window.api.fetchAllData()
                   .then(data => { if (data && data.medications) setMedications(data.medications); })
                   .catch(() => { /* non-critical */ });
@@ -3338,18 +3373,23 @@
             // Default quantity type to boxes
             const defaultQuantityType = 'boxes';
 
+            // No-stock synthesis can't Transfer Out (no batches) — default to
+            // Stock In > New Delivery > New Batch so the user lands on a form
+            // they can actually submit.
+            const initialAction = isNoStockSynthesis ? 'in' : 'out';
+
             // Open the barcode stock adjustment modal
             setModals(prev => ({ ...prev, showBarcodeStockAdjust: true }));
-            setAdjustmentForm({ amount: '', note: '', location: '', type: defaultQuantityType, action: 'out', batchId: '', sourceDepartment: '', stockInSource: 'delivery', transferBatchOption: 'existing', deliveryBatchOption: 'new', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' });
+            setAdjustmentForm({ amount: '', note: '', location: '', type: defaultQuantityType, action: initialAction, batchId: '', sourceDepartment: '', stockInSource: 'delivery', transferBatchOption: 'existing', deliveryBatchOption: 'new', stockOutPurpose: 'transfer', patientLastName: '', patientLocalId: '', useReason: '', error: '' });
 
-            // Populate deliveryForm with GS1 data if available (for stock-in with new batch)
+            // Populate deliveryForm with GS1 data and the med's standard items-per-box
             setDeliveryForm({
-              brand: '',
+              brand: foundMedication.brand || '',
               expiryMonth: expiryMonth,
               expiryYear: expiryYear,
               quantityType: defaultQuantityType,
               boxQuantity: '',
-              itemsPerBox: '',
+              itemsPerBox: foundMedication.standardItemsPerBox ? String(foundMedication.standardItemsPerBox) : '',
               individualQuantity: '',
               batchNumber: batchNumber
             });
